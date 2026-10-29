@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Editar producto</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap">
+<style>
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917}
+a{color:inherit;text-decoration:none}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:880px;background:#F7F5F2;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917">
+  <nav aria-label="Panel" style="flex:1 1 240px;max-width:260px;box-sizing:border-box;padding:24px 16px;background:#fff;border-right:1px solid #E7E2DC;display:flex;flex-direction:column;gap:6px">
+    <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px;padding:0 12px 16px">menucito<span style="color:#C2410C">.</span></span>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#F7F5F2;border-radius:12px;margin-bottom:12px">
+      <span style="width:36px;height:36px;border-radius:10px;background:#C2410C;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:14px">LM</span>
+      <span style="display:flex;flex-direction:column"><span style="font-weight:700;font-size:14px">Lo de Marta</span><span style="font-size:12px;color:#57534E">Plan Básico</span></span>
+    </div>
+    <a href="Resumen.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Resumen</a>
+    <a href="MiMenu.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px">Mi menú</a>
+    <a href="Local.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Mi local</a>
+    <a href="QR.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Link y QR</a>
+    <a href="Estadisticas.dc.html" style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Estadísticas<span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></a>
+    <a href="Plan.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Plan y pagos</a>
+    <a href="Login.dc.html" style="margin-top:auto;min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#57534E;font-size:14px">Cerrar sesión</a>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;box-sizing:border-box;padding:32px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;flex-direction:column;gap:6px">
+      <a href="MiMenu.dc.html" style="font-size:14px;color:#9A3412;font-weight:700">← Volver a Mi menú</a>
+      <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px">Hamburguesa completa</h1>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <section style="flex:1 1 360px;min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:18px">
+        <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Datos básicos</h2>
+        <div style="display:flex;gap:16px;align-items:center">
+          <div style="flex:none;width:96px;height:96px;border-radius:14px;background:#EBD9C6"></div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <button type="button" style="min-height:44px;padding:0 18px;border:1px solid #D6D3D1;border-radius:10px;background:#fff;font:700 14px 'DM Sans',sans-serif;color:#1C1917">Cambiar foto</button>
+            <span style="font-size:12px;color:#57534E">Se comprime sola antes de subir.</span>
+          </div>
+        </div>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Nombre
+          <input type="text" value="Hamburguesa completa" style="height:48px;box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:0 14px;font:400 16px 'DM Sans',sans-serif;color:#1C1917;background:#fff">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Descripción
+          <textarea rows="3" style="resize:none;border:1px solid #E7E2DC;border-radius:12px;padding:12px;font:400 16px 'DM Sans',sans-serif;color:#1C1917;background:#fff">Carne 180 g, queso, lechuga, tomate y huevo.</textarea>
+        </label>
+        <div style="display:flex;flex-wrap:wrap;gap:16px">
+          <label style="flex:1 1 160px;display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Categoría
+            <select style="height:48px;box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:0 12px;font:400 16px 'DM Sans',sans-serif;color:#1C1917;background:#fff"><option>Hamburguesas</option><option>Milanesas</option></select>
+          </label>
+          <label style="flex:1 1 160px;display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Precio
+            <input type="text" value="$ 9.000" style="height:48px;box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:0 14px;font:400 16px 'DM Sans',sans-serif;color:#1C1917;background:#fff">
+          </label>
+        </div>
+        <label style="display:flex;align-items:center;gap:12px;min-height:44px;font-size:15px"><input type="checkbox" checked style="accent-color:#C2410C;width:20px;height:20px;margin:0"> Disponible para pedir</label>
+      </section>
+      <div style="flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:20px">
+      <section style="min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:12px">
+        <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Ingredientes</h2><span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></div>
+        <p style="margin:0;font-size:14px;line-height:1.45;color:#57534E">Lo que trae el producto. El cliente puede sumar o quitar unidades; cada unidad por encima de lo incluido cuesta el extra.</p>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1fr);gap:8px;font-size:12px;font-weight:700;color:#57534E;padding-top:4px"><span>Ingrediente</span><span>Incluye</span><span>Mín–Máx</span><span>Extra c/u</span></div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1fr);gap:8px;align-items:center;min-height:48px;border-top:1px solid #F0ECE6;font-size:15px"><b>Cebolla</b><span>1</span><span>0–2</span><span>+ $0</span></div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1fr);gap:8px;align-items:center;min-height:48px;border-top:1px solid #F0ECE6;font-size:15px"><b>Queso</b><span>1</span><span>0–3</span><span>+ $800</span></div>
+        <div style="display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,.9fr) minmax(0,1fr);gap:8px;align-items:center;min-height:48px;border-top:1px solid #F0ECE6;font-size:15px"><b>Bacon</b><span>1</span><span>0–3</span><span style="color:#9A3412;font-weight:700">+ $1.500</span></div>
+        <span style="font-size:12px;color:#57534E">Quitar un ingrediente no descuenta el precio.</span>
+        <button type="button" style="min-height:48px;border:1px dashed #A8A29E;border-radius:12px;background:transparent;font:700 14px 'DM Sans',sans-serif;color:#44403C">+ Agregar ingrediente</button>
+      </section>
+      <section style="min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:16px">
+        <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Opciones y extras</h2><span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></div>
+        <div style="border:1px solid #E7E2DC;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:15px">Punto de la carne</b><span style="font-size:12px;color:#57534E">Elige 1 · obligatorio</span></div>
+          <div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;font-size:15px;border-top:1px solid #F0ECE6"><span>Jugoso</span><span style="color:#57534E">+ $0</span></div>
+          <div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;font-size:15px;border-top:1px solid #F0ECE6"><span>A punto</span><span style="color:#57534E">+ $0</span></div>
+          <div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;font-size:15px;border-top:1px solid #F0ECE6"><span>Bien cocido</span><span style="color:#57534E">+ $0</span></div>
+        </div>
+        <div style="border:1px solid #E7E2DC;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:15px">Extras</b><span style="font-size:12px;color:#57534E">Hasta 2 · opcional</span></div>
+          <div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;font-size:15px;border-top:1px solid #F0ECE6"><span>Papas</span><span style="color:#57534E">+ $2.000</span></div>
+          <div style="display:flex;justify-content:space-between;min-height:40px;align-items:center;font-size:15px;border-top:1px solid #F0ECE6"><span>Panceta</span><span style="color:#57534E">+ $1.200</span></div>
+        </div>
+        <button type="button" style="min-height:48px;border:1px dashed #A8A29E;border-radius:12px;background:transparent;font:700 14px 'DM Sans',sans-serif;color:#44403C">+ Agregar grupo de opciones</button>
+      </section>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;justify-content:space-between;align-items:center">
+      <button type="button" style="min-height:48px;padding:0 20px;border:0;background:transparent;font:700 15px 'DM Sans',sans-serif;color:#B91C1C">Eliminar producto</button>
+      <div style="display:flex;gap:12px">
+        <a href="MiMenu.dc.html" style="min-height:48px;display:flex;align-items:center;padding:0 22px;border-radius:12px;border:1px solid #D6D3D1;background:#fff;font-weight:700;font-size:15px">Cancelar</a>
+        <a href="MiMenu.dc.html" style="min-height:48px;display:flex;align-items:center;padding:0 26px;border-radius:12px;background:#C2410C;color:#fff;font-weight:700;font-size:15px">Guardar</a>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Mi menú</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap">
+<style>
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917}
+a{color:inherit;text-decoration:none}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:880px;background:#F7F5F2;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917">
+  <nav aria-label="Panel" style="flex:1 1 240px;max-width:260px;box-sizing:border-box;padding:24px 16px;background:#fff;border-right:1px solid #E7E2DC;display:flex;flex-direction:column;gap:6px">
+    <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px;padding:0 12px 16px">menucito<span style="color:#C2410C">.</span></span>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#F7F5F2;border-radius:12px;margin-bottom:12px">
+      <span style="width:36px;height:36px;border-radius:10px;background:#C2410C;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:14px">LM</span>
+      <span style="display:flex;flex-direction:column"><span style="font-weight:700;font-size:14px">Lo de Marta</span><span style="font-size:12px;color:#57534E">Plan Básico</span></span>
+    </div>
+    <a href="Resumen.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Resumen</a>
+    <a href="MiMenu.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px">Mi menú</a>
+    <a href="Local.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Mi local</a>
+    <a href="QR.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Link y QR</a>
+    <a href="Estadisticas.dc.html" style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Estadísticas<span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></a>
+    <a href="Plan.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Plan y pagos</a>
+    <a href="Login.dc.html" style="margin-top:auto;min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#57534E;font-size:14px">Cerrar sesión</a>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;box-sizing:border-box;padding:32px;display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:16px">
+      <div style="display:flex;flex-direction:column;gap:2px">
+        <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px">Mi menú</h1>
+        <span style="font-size:14px;color:#57534E">24 de 40 productos en el plan Básico</span>
+      </div>
+      <a href="ProductoEditor.dc.html" style="min-height:48px;display:flex;align-items:center;padding:0 22px;border-radius:12px;background:#C2410C;color:#fff;font-weight:700;font-size:15px">Nuevo producto</a>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:#FFF7ED;border:1px solid #FDBA74;border-radius:14px">
+      <span style="font-size:15px;color:#7C2D12"><b>Tenés cambios sin publicar.</b> Tus clientes todavía ven la versión anterior.</span>
+      <button type="button" style="min-height:44px;padding:0 20px;border:0;border-radius:10px;background:#C2410C;color:#fff;font:700 14px 'DM Sans',sans-serif">Publicar cambios</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
+      <aside style="flex:1 1 220px;max-width:280px;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:4px">
+        <span style="font-size:12px;font-weight:700;color:#57534E;padding:8px 10px;letter-spacing:.05em">CATEGORÍAS</span>
+        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px"><span>Hamburguesas</span><span style="font-size:13px">8</span></div>
+        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Milanesas</span><span style="font-size:13px;color:#57534E">6</span></div>
+        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Bebidas</span><span style="font-size:13px;color:#57534E">7</span></div>
+        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Postres</span><span style="font-size:13px;color:#57534E">3</span></div>
+        <button type="button" style="margin-top:6px;min-height:44px;border:1px dashed #A8A29E;border-radius:10px;background:transparent;font:700 14px 'DM Sans',sans-serif;color:#44403C">+ Nueva categoría</button>
+      </aside>
+      <section style="flex:3 1 420px;min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;display:flex;flex-direction:column">
+        <div style="padding:16px 20px;border-bottom:1px solid #E7E2DC;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Hamburguesas</div>
+        <a href="ProductoEditor.dc.html" style="display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid #F0ECE6">
+          <span style="flex:none;width:56px;height:56px;border-radius:12px;background:#EBD9C6"></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Hamburguesa completa</b><span style="font-size:13px;color:#57534E">3 ingredientes · 2 grupos de opciones</span></span>
+          <b style="font-size:15px">$9.000</b>
+          <span style="font-size:13px;font-weight:700;color:#166534;background:#DCFCE7;padding:6px 12px;border-radius:99px">Disponible</span>
+        </a>
+        <a href="ProductoEditor.dc.html" style="display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid #F0ECE6">
+          <span style="flex:none;width:56px;height:56px;border-radius:12px;background:#E3C9AE"></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Doble cheddar</b><span style="font-size:13px;color:#57534E">1 grupo de opciones</span></span>
+          <b style="font-size:15px">$11.500</b>
+          <span style="font-size:13px;font-weight:700;color:#166534;background:#DCFCE7;padding:6px 12px;border-radius:99px">Disponible</span>
+        </a>
+        <a href="ProductoEditor.dc.html" style="display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid #F0ECE6">
+          <span style="flex:none;width:56px;height:56px;border-radius:12px;background:#D9DCC2"></span>
+          <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Veggie</b><span style="font-size:13px;color:#57534E">Sin opciones</span></span>
+          <b style="font-size:15px">$8.500</b>
+          <span style="font-size:13px;font-weight:700;color:#44403C;background:#EDE9E3;padding:6px 12px;border-radius:99px">Agotado</span>
+        </a>
+      </section>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>

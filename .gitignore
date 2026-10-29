@@ -1,0 +1,13 @@
+node_modules
+dist
+.wrangler
+.turbo
+.dev.vars
+*.log
+.env
+.env.*
+!.env.example
+!.dev.vars.example
+
+# Local secrets (never commit)
+data_sensible/

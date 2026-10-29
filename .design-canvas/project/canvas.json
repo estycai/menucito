@@ -1,0 +1,33 @@
+{
+  "v": 3,
+  "createdOnFiles": { "v": 1, "at": "2026-10-28T12:00:00Z" },
+  "title": "Menucito App Screens",
+  "launch": { "view": "canvas" },
+  "pages": [],
+  "boards": {
+    "Main.dc.html": { "x": 0, "y": 0, "w": 390, "h": 844, "title": "1 · Menú público", "is_interactive": true },
+    "Producto.dc.html": { "x": 470, "y": 0, "w": 390, "h": 1000, "title": "2 · Detalle de producto", "is_interactive": true },
+    "Carrito.dc.html": { "x": 940, "y": 0, "w": 390, "h": 844, "title": "3 · Carrito", "is_interactive": true },
+    "Pedido.dc.html": { "x": 1410, "y": 0, "w": 390, "h": 844, "title": "4 · Datos del pedido", "is_interactive": true },
+    "Whatsapp.dc.html": { "x": 1880, "y": 0, "w": 390, "h": 844, "title": "5 · Pedido en WhatsApp", "is_interactive": true },
+    "Login.dc.html": { "x": 0, "y": 1300, "w": 1280, "h": 880, "expand": "fill", "title": "6 · Login y registro", "is_interactive": true },
+    "Onboarding.dc.html": { "x": 1360, "y": 1300, "w": 1280, "h": 880, "expand": "fill", "title": "7 · Crear mi restaurante", "is_interactive": true },
+    "Resumen.dc.html": { "x": 0, "y": 2300, "w": 1280, "h": 880, "expand": "fill", "title": "8 · Resumen", "is_interactive": true },
+    "MiMenu.dc.html": { "x": 1360, "y": 2300, "w": 1280, "h": 880, "expand": "fill", "title": "9 · Mi menú", "is_interactive": true },
+    "ProductoEditor.dc.html": { "x": 0, "y": 3300, "w": 1280, "h": 1040, "expand": "fill", "title": "10 · Editar producto", "is_interactive": true },
+    "Local.dc.html": { "x": 1360, "y": 3300, "w": 1280, "h": 880, "expand": "fill", "title": "11 · Mi local", "is_interactive": true },
+    "QR.dc.html": { "x": 0, "y": 4460, "w": 1280, "h": 880, "expand": "fill", "title": "12 · Link y QR", "is_interactive": true },
+    "Estadisticas.dc.html": { "x": 1360, "y": 4460, "w": 1280, "h": 880, "expand": "fill", "title": "13 · Estadísticas (Pro)", "is_interactive": true },
+    "Plan.dc.html": { "x": 0, "y": 5460, "w": 1280, "h": 880, "expand": "fill", "title": "14 · Plan y pagos", "is_interactive": true }
+  },
+  "order": [
+    "Main.dc.html", "Producto.dc.html", "Carrito.dc.html", "Pedido.dc.html", "Whatsapp.dc.html",
+    "Login.dc.html", "Onboarding.dc.html", "Resumen.dc.html", "MiMenu.dc.html", "ProductoEditor.dc.html",
+    "Local.dc.html", "QR.dc.html", "Estadisticas.dc.html", "Plan.dc.html"
+  ],
+  "notes": {
+    "t1": { "x": 0, "y": -300, "text": "Menú público (comensal, móvil)", "kind": "title1", "maxW": 2270 },
+    "t2": { "x": 0, "y": 1000, "text": "Panel del restaurante (escritorio)", "kind": "title1", "maxW": 2640 }
+  },
+  "designSystems": []
+}

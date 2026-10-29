@@ -1,0 +1,8 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+allowBuilds:
+  esbuild: true
+  workerd: true
+  better-sqlite3: false
+  "@prisma/client": false

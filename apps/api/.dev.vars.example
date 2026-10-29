@@ -1,0 +1,9 @@
+# Copy to .dev.vars (gitignored) and fill in.
+# Generate the secret with: openssl rand -base64 32
+BETTER_AUTH_SECRET=
+BETTER_AUTH_URL=http://localhost:5173
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+# Leave RESEND_API_KEY empty to log emails to the console instead of sending them.
+RESEND_API_KEY=
+EMAIL_FROM=onboarding@resend.dev

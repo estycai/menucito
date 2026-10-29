@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Plan y pagos</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap">
+<style>
+body{margin:0;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917}
+a{color:inherit;text-decoration:none}
+</style>
+</helmet>
+<div style="display:flex;flex-wrap:wrap;min-height:880px;background:#F7F5F2;font-family:'DM Sans',system-ui,sans-serif;color:#1C1917">
+  <nav aria-label="Panel" style="flex:1 1 240px;max-width:260px;box-sizing:border-box;padding:24px 16px;background:#fff;border-right:1px solid #E7E2DC;display:flex;flex-direction:column;gap:6px">
+    <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px;padding:0 12px 16px">menucito<span style="color:#C2410C">.</span></span>
+    <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:#F7F5F2;border-radius:12px;margin-bottom:12px">
+      <span style="width:36px;height:36px;border-radius:10px;background:#C2410C;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:14px">LM</span>
+      <span style="display:flex;flex-direction:column"><span style="font-weight:700;font-size:14px">Lo de Marta</span><span style="font-size:12px;color:#57534E">Plan Básico</span></span>
+    </div>
+    <a href="Resumen.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Resumen</a>
+    <a href="MiMenu.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Mi menú</a>
+    <a href="Local.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Mi local</a>
+    <a href="QR.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Link y QR</a>
+    <a href="Estadisticas.dc.html" style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-radius:12px;color:#44403C;font-size:15px">Estadísticas<span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></a>
+    <a href="Plan.dc.html" style="min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px">Plan y pagos</a>
+    <a href="Login.dc.html" style="margin-top:auto;min-height:44px;display:flex;align-items:center;padding:0 14px;border-radius:12px;color:#57534E;font-size:14px">Cerrar sesión</a>
+  </nav>
+  <main style="flex:999 1 560px;min-width:0;box-sizing:border-box;padding:32px;display:flex;flex-direction:column;gap:20px">
+    <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px">Plan y pagos</h1>
+    <div style="display:flex;flex-wrap:wrap;gap:20px">
+      <section style="flex:1 1 320px;min-width:0;background:#fff;border:2px solid #1C1917;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px">Básico</h2><span style="font-size:12px;font-weight:700;background:#DCFCE7;color:#166534;padding:5px 12px;border-radius:99px">Tu plan actual</span></div>
+        <div style="display:flex;align-items:baseline;gap:6px"><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:40px">$3.300</span><span style="color:#57534E">/ mes</span></div>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:15px">
+          <li>Hasta 40 productos</li><li>1 foto por producto</li><li>Pedidos por WhatsApp</li><li>QR, horarios y logo propio</li><li style="color:#57534E">Leyenda “Hecho con Menucito”</li>
+        </ul>
+        <span style="margin-top:auto;font-size:14px;color:#57534E">Próximo cobro: 28 de noviembre</span>
+      </section>
+      <section style="flex:1 1 320px;min-width:0;background:#1C1917;color:#fff;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px">Pro</h2><span style="font-size:12px;font-weight:700;background:#FDBA74;color:#1C1917;padding:5px 12px;border-radius:99px">Recomendado</span></div>
+        <div style="display:flex;align-items:baseline;gap:6px"><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:40px">$8.200</span><span style="color:#D6D3D1">/ mes</span></div>
+        <ul style="margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:8px;font-size:15px">
+          <li>Todo ilimitado</li><li>Sin la marca de Menucito</li><li>Colores propios</li><li>Extras y variantes</li><li>Estadísticas</li><li>Carga del menú desde una foto con IA</li>
+        </ul>
+        <button type="button" style="margin-top:auto;min-height:52px;border:0;border-radius:14px;background:#fff;color:#1C1917;font:700 16px 'DM Sans',sans-serif">Pasar a Pro</button>
+      </section>
+    </div>
+    <section style="background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:4px">
+      <h2 style="margin:0 0 10px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Historial de pagos</h2>
+      <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6;font-size:15px"><span style="flex:1">28/10/2026</span><span style="flex:1">$3.300</span><span style="font-size:13px;font-weight:700;color:#166534;background:#DCFCE7;padding:5px 12px;border-radius:99px">Aprobado</span></div>
+      <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6;font-size:15px"><span style="flex:1">28/09/2026</span><span style="flex:1">$3.300</span><span style="font-size:13px;font-weight:700;color:#166534;background:#DCFCE7;padding:5px 12px;border-radius:99px">Aprobado</span></div>
+      <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding-top:16px;border-top:1px solid #F0ECE6">
+        <span style="font-size:14px;color:#57534E">Pagás con Mercado Pago. Cancelás cuando quieras.</span>
+        <button type="button" style="min-height:44px;padding:0 20px;border:1px solid #D6D3D1;border-radius:10px;background:#fff;font:700 14px 'DM Sans',sans-serif;color:#B91C1C">Cancelar suscripción</button>
+      </div>
+    </section>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":880}}'>
+class Component extends DCLogic {
+  renderVals() { return {}; }
+}
+</script>
+</body>
+</html>
