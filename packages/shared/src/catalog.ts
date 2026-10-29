@@ -5,6 +5,10 @@ export const PRODUCT_NAME_MAX_LENGTH = 80;
 export const PRODUCT_DESCRIPTION_MAX_LENGTH = 300;
 /** Highest accepted price: $999.999,99 (in cents). */
 export const PRICE_MAX_CENTS = 99_999_999;
+export const INGREDIENT_NAME_MAX_LENGTH = 40;
+/** Highest quantity accepted for an ingredient's included, min and max. */
+export const INGREDIENT_QTY_MAX = 99;
+export const INGREDIENTS_MAX_PER_PRODUCT = 20;
 
 export const CATALOG_MESSAGES = {
   categoryNameRequired: "Ingresá el nombre de la categoría",
@@ -17,6 +21,15 @@ export const CATALOG_MESSAGES = {
   descriptionTooLong: `La descripción puede tener hasta ${PRODUCT_DESCRIPTION_MAX_LENGTH} caracteres`,
   priceRequired: "Ingresá el precio",
   priceInvalid: "Precio inválido. Usá el formato 9.000 o 9.000,50 (hasta $999.999,99).",
+  ingredientNameRequired: "Ingresá el nombre del ingrediente",
+  ingredientNameTooLong: `El nombre puede tener hasta ${INGREDIENT_NAME_MAX_LENGTH} caracteres`,
+  ingredientNameTaken: "Ya hay un ingrediente con ese nombre en este producto",
+  ingredientQtyInvalid: `Usá un número entero de 0 a ${INGREDIENT_QTY_MAX}`,
+  ingredientMaxTooLow: "El máximo debe ser al menos 1",
+  ingredientMinAboveIncluded: "El mínimo no puede ser mayor que lo incluido",
+  ingredientIncludedAboveMax: "Lo incluido no puede ser mayor que el máximo",
+  ingredientExtraPriceInvalid: "Precio inválido. Usá $0 o más, con el formato 1.500 o 1.500,50.",
+  ingredientsTooMany: `Podés cargar hasta ${INGREDIENTS_MAX_PER_PRODUCT} ingredientes por producto`,
 } as const;
 
 export const categoryNameSchema = z
@@ -75,6 +88,85 @@ export const reorderSchema = z.object({
 
 export type ReorderInput = z.infer<typeof reorderSchema>;
 
+const ingredientQty = z
+  .number(CATALOG_MESSAGES.ingredientQtyInvalid)
+  .int(CATALOG_MESSAGES.ingredientQtyInvalid)
+  .min(0, CATALOG_MESSAGES.ingredientQtyInvalid)
+  .max(INGREDIENT_QTY_MAX, CATALOG_MESSAGES.ingredientQtyInvalid);
+
+/**
+ * A customizable ingredient of a product. `extraPriceCents` is charged for each unit above
+ * `includedQty`. The position in the product's list is the position in the array.
+ * Cross-field rules run only when every field is valid on its own.
+ */
+export const ingredientSchema = z
+  .object({
+    name: z
+      .string()
+      .trim()
+      .min(1, CATALOG_MESSAGES.ingredientNameRequired)
+      .max(INGREDIENT_NAME_MAX_LENGTH, CATALOG_MESSAGES.ingredientNameTooLong),
+    includedQty: ingredientQty,
+    minQty: ingredientQty,
+    maxQty: ingredientQty,
+    extraPriceCents: z
+      .number(CATALOG_MESSAGES.ingredientExtraPriceInvalid)
+      .int(CATALOG_MESSAGES.ingredientExtraPriceInvalid)
+      .min(0, CATALOG_MESSAGES.ingredientExtraPriceInvalid)
+      .max(PRICE_MAX_CENTS, CATALOG_MESSAGES.ingredientExtraPriceInvalid),
+  })
+  .refine((value) => value.maxQty >= 1, { message: CATALOG_MESSAGES.ingredientMaxTooLow, path: ["maxQty"] })
+  .refine((value) => value.minQty <= value.includedQty, {
+    message: CATALOG_MESSAGES.ingredientMinAboveIncluded,
+    path: ["minQty"],
+  })
+  .refine((value) => value.includedQty <= value.maxQty, {
+    message: CATALOG_MESSAGES.ingredientIncludedAboveMax,
+    path: ["includedQty"],
+  });
+
+export type Ingredient = z.infer<typeof ingredientSchema>;
+
+/** Lowercase key used to detect duplicated ingredient names inside a product. */
+export const ingredientNameKey = (name: string) => name.trim().toLowerCase();
+
+/**
+ * Body of `PUT /api/products/:id/ingredients`: the whole ordered list (it replaces the saved one).
+ * Names must be unique inside the list ignoring case; the error points at the repeated item.
+ */
+export const replaceIngredientsSchema = z
+  .object({
+    ingredients: z.array(ingredientSchema).max(INGREDIENTS_MAX_PER_PRODUCT, CATALOG_MESSAGES.ingredientsTooMany),
+  })
+  .superRefine((value, ctx) => {
+    const seen = new Set<string>();
+    value.ingredients.forEach((ingredient, index) => {
+      const key = ingredientNameKey(ingredient.name);
+      if (seen.has(key)) {
+        ctx.addIssue({
+          code: "custom",
+          message: CATALOG_MESSAGES.ingredientNameTaken,
+          path: ["ingredients", index, "name"],
+        });
+      }
+      seen.add(key);
+    });
+  });
+
+export type ReplaceIngredientsInput = z.infer<typeof replaceIngredientsSchema>;
+
+/** Response of `PUT /api/products/:id/ingredients`: the saved list, in order. */
+export interface ReplaceIngredientsResult {
+  ingredients: Ingredient[];
+}
+
+/** One-line summary: `Bacon · incluye 1 · mín 0 · máx 3 · +$1.500 c/u extra`. */
+export function describeIngredient(ingredient: Ingredient): string {
+  const extra =
+    ingredient.extraPriceCents > 0 ? `+${formatArs(ingredient.extraPriceCents)} c/u extra` : "sin costo extra";
+  return `${ingredient.name} · incluye ${ingredient.includedQty} · mín ${ingredient.minQty} · máx ${ingredient.maxQty} · ${extra}`;
+}
+
 /** Product as returned by the API (dates as ISO strings). */
 export interface Product {
   id: string;
@@ -87,6 +179,8 @@ export interface Product {
   imageUrl: string | null;
   /** `false` means "Agotado" (sold out). */
   available: boolean;
+  /** Customizable ingredients in display order (empty when none; readable on every plan). */
+  ingredients: Ingredient[];
   position: number;
   createdAt: string;
   updatedAt: string;

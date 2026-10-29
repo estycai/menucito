@@ -15,6 +15,7 @@ import {
 import { Notice } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
 import { ProductPhotoUploader } from "@/components/ProductPhotoUploader";
+import { ProductProSections } from "@/components/ProductProSections";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import {
@@ -138,6 +139,7 @@ function ProductForm({
   );
   const descriptionId = useId();
   const categoryFieldId = useId();
+  const formId = useId();
 
   const requestedCategory = params.get("category");
   const defaultCategory =
@@ -221,7 +223,8 @@ function ProductForm({
   return (
     <EditorShell title={product?.name ?? "Nuevo producto"}>
       {isNew && atLimit && <Notice tone="error">{limitMessage}</Notice>}
-      <form noValidate onSubmit={handleSubmit(onValid)} className="flex flex-col gap-5">
+      {/* The form holds only "Datos básicos"; its buttons sit below the Pro sections and submit it by id. */}
+      <form id={formId} noValidate onSubmit={handleSubmit(onValid)} className="flex flex-col gap-5">
         <section className="flex min-w-0 flex-col gap-[18px] rounded-2xl border border-line bg-white p-4 sm:p-6">
           <h2 className="m-0 font-display text-xl font-extrabold">Datos básicos</h2>
 
@@ -286,31 +289,33 @@ function ProductForm({
             Disponible para pedir
           </label>
         </section>
-
-        {error && <Notice tone="error">{error}</Notice>}
-
-        <div className={cn("flex flex-col-reverse gap-3 sm:flex-row sm:items-center", product ? "sm:justify-between" : "sm:justify-end")}>
-          {product && (
-            <Button
-              type="button"
-              variant="ghost"
-              className="min-h-12 px-5 text-danger hover:bg-danger/5"
-              disabled={busy}
-              onClick={onDelete}
-            >
-              Eliminar producto
-            </Button>
-          )}
-          <div className="flex flex-col-reverse gap-3 sm:flex-row">
-            <Button type="button" variant="outline" className="px-[22px]" disabled={busy} onClick={() => navigate(backToMenu(defaultCategory))}>
-              Cancelar
-            </Button>
-            <Button type="submit" className="min-h-12 w-full rounded-xl px-[26px] text-[15px] sm:w-auto" disabled={busy || (isNew && atLimit)}>
-              Guardar
-            </Button>
-          </div>
-        </div>
       </form>
+
+      {restaurant && <ProductProSections product={product} plan={restaurant.plan} />}
+
+      {error && <Notice tone="error">{error}</Notice>}
+
+      <div className={cn("flex flex-col-reverse gap-3 sm:flex-row sm:items-center", product ? "sm:justify-between" : "sm:justify-end")}>
+        {product && (
+          <Button
+            type="button"
+            variant="ghost"
+            className="min-h-12 px-5 text-danger hover:bg-danger/5"
+            disabled={busy}
+            onClick={onDelete}
+          >
+            Eliminar producto
+          </Button>
+        )}
+        <div className="flex flex-col-reverse gap-3 sm:flex-row">
+          <Button type="button" variant="outline" className="px-[22px]" disabled={busy} onClick={() => navigate(backToMenu(defaultCategory))}>
+            Cancelar
+          </Button>
+          <Button type="submit" form={formId} className="min-h-12 w-full rounded-xl px-[26px] text-[15px] sm:w-auto" disabled={busy || (isNew && atLimit)}>
+            Guardar
+          </Button>
+        </div>
+      </div>
     </EditorShell>
   );
 }

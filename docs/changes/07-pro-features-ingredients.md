@@ -49,17 +49,17 @@ Scenarios (Given / When / Then):
 - Why `ProLock` shows a static example instead of disabled inputs: disabled form fields confuse screen readers and look broken; an example explains the feature and the upgrade path in one glance.
 
 ## Tasks
-- [ ] 1. `packages/shared`: `customIngredients` in `PLAN_LIMITS`, ingredient schemas, types, messages + Vitest tests.
-- [ ] 2. API: migration + Drizzle schema for `ingredients`, repository, service rules (plan check, ownership, replace), `PUT /api/products/:id/ingredients`, catalog reads carry `ingredients`; API tests for scenarios 7-10 (Pro and Basic, other restaurant, invalid list, cascade, downgrade keeps data).
-- [ ] 3. Admin: `ProLock`, `IngredientsEditor`, `useReplaceIngredients`, wiring in `ProductEditorPage` (locked on Basic, editable on Pro, "guardá primero" on new products), locked "Extras y variantes".
-- [ ] 4. Docs: `README.md` (endpoint table, plan flags), vault `Modelo-de-datos.md` and `Personalizacion-de-ingredientes.md` (in Spanish, only the decisions above).
-- [ ] 5. Manual browser run of scenarios 1-12 at 375px and 1280px on Basic and Pro (switch plan on `/plan`, spec 06), including a downgrade with saved ingredients; stop any servers you started.
+- [x] 1. `packages/shared`: `customIngredients` in `PLAN_LIMITS`, ingredient schemas, types, messages + Vitest tests.
+- [x] 2. API: migration + Drizzle schema for `ingredients`, repository, service rules (plan check, ownership, replace), `PUT /api/products/:id/ingredients`, catalog reads carry `ingredients`; API tests for scenarios 7-10 (Pro and Basic, other restaurant, invalid list, cascade, downgrade keeps data).
+- [x] 3. Admin: `ProLock`, `IngredientsEditor`, `useReplaceIngredients`, wiring in `ProductEditorPage` (locked on Basic, editable on Pro, "guardá primero" on new products), locked "Extras y variantes".
+- [x] 4. Docs: `README.md` (endpoint table, plan flags), vault `Modelo-de-datos.md` and `Personalizacion-de-ingredientes.md` (in Spanish, only the decisions above).
+- [x] 5. Manual browser run of scenarios 1-12 at 375px and 1280px on Basic and Pro (switch plan on `/plan`, spec 06), including a downgrade with saved ingredients; stop any servers you started.
 
 ## Verify
-- [ ] Scenarios 1..12 pass (4-10 with shared and API tests where noted, the rest manually in a browser)
-- [ ] Basic cannot write ingredients through the API even with a hand-made request
-- [ ] Locked sections have no focusable controls and expose "Disponible en el plan Pro" as text
-- [ ] No data lost on downgrade; no orphan rows after deleting a product
-- [ ] No public menu, price calculation or option-group code added
-- [ ] Lint, types, tests and build pass (`pnpm turbo lint typecheck test build`)
-- [ ] `README.md` and the two vault notes updated
+- [x] Scenarios 1..12 pass (4-10 with shared and API tests where noted, the rest manually in a browser)
+- [x] Basic cannot write ingredients through the API even with a hand-made request
+- [x] Locked sections have no focusable controls and expose "Disponible en el plan Pro" as text (the only focusable element is the "Ver plan Pro" link)
+- [x] No data lost on downgrade; no orphan rows after deleting a product
+- [x] No public menu, price calculation or option-group code added
+- [x] Lint, types, tests and build pass (`pnpm turbo lint typecheck test build`)
+- [x] `README.md` and the two vault notes updated

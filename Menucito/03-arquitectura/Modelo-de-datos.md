@@ -16,7 +16,7 @@ categories        (id, restaurant_id, name, position)
 products          (id, restaurant_id, category_id, name, description,
                    price_cents, image_url, available, position)
 ingredients       (id, product_id, name, included_qty, min_qty,
-                   max_qty, extra_price, position)        ← Pro: ej: Bacon incluye 1, +$1.500 c/u extra
+                   max_qty, extra_price_cents, position)  ← Pro: ej: Bacon incluye 1, +$1.500 c/u extra
 option_groups     (id, product_id, name, min, max)        ← ej: "Punto de la carne"
 options           (id, group_id, name, price_delta)
 subscriptions     (id, restaurant_id, mp_preapproval_id, plan, status,
@@ -35,11 +35,16 @@ order_events      (id, restaurant_id, total, items_count, created_at)  ← estad
   - `position` empieza en 0: por local para las categorías y por categoría para los productos. Las listas se ordenan por `position` y después por `created_at`. Lo nuevo (y un producto que cambia de categoría) va al final. Reordenar reescribe `0..n-1` en un solo batch; después de borrar pueden quedar huecos y no pasa nada.
   - `available = false` es "Agotado". Todavía no existe "oculto".
   - Borrar una categoría con productos está **bloqueado** (409 `CATEGORY_NOT_EMPTY`, y además `on delete restrict` en la base). Se descartó el borrado en cascada: con un clic se perderían muchos productos y sus fotos.
+- Estado actual: `ingredients` existe (migración `0004_ingredients`), ver `docs/changes/07-pro-features-ingredients.md` y [Personalización de ingredientes](Personalizacion-de-ingredientes.md).
+  - Columnas: `id, product_id, name, included_qty, min_qty, max_qty, extra_price_cents, position`. Índice `(product_id, position)`. Sin `restaurant_id` propio: el tenant se resuelve por el producto, y la lectura del catálogo hace un join con `products` filtrando por local.
+  - `product_id` tiene `on delete cascade`: al borrar un producto (o su local) se borran sus ingredientes, sin filas huérfanas.
+  - `position` empieza en 0 y es el orden dentro del producto. La lista se reemplaza completa en un solo batch de D1: si algo falla queda la lista anterior.
 - Diferencias con el modelo planeado:
+  - `extra_price` pasó a `extra_price_cents` (en `ingredients`): entero en centavos de ARS, igual que `price_cents`.
   - `price` pasó a `price_cents`: entero en centavos de ARS. Sin redondeos de punto flotante; el total del pedido por WhatsApp y los montos de Mercado Pago suman exacto.
   - `image_url` guarda **una** foto por producto (la ruta pública; la clave de R2 se deriva de ella).
   - `description` es NOT NULL con valor por defecto `''`.
-- Límites del plan: solo en `packages/shared/src/plans.ts`. Básico: hasta 40 productos y fotos incluidas; Pro: productos ilimitados. Sin límite de categorías. Solo se limita la creación de productos.
+- Límites del plan: solo en `packages/shared/src/plans.ts`. Básico: hasta 40 productos y fotos incluidas; Pro: productos ilimitados. Sin límite de categorías. Solo se limita la creación de productos. Además hay un indicador `customIngredients` (Básico: no, Pro: sí) que habilita escribir ingredientes.
 
 - Los pedidos no pasan por el servidor: van directo a WhatsApp. `order_events` guarda solo un evento anónimo para estadísticas.
 - Los ingredientes con cantidad incluida y costo por unidad extra se explican en [Personalización de ingredientes](Personalizacion-de-ingredientes.md).

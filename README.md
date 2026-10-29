@@ -90,10 +90,13 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `GET /api/products/:id` | 200 product, 404 `PRODUCT_NOT_FOUND` |
 | `PATCH /api/products/:id` | any subset of the create fields; a new `categoryId` moves it to the end of that category; 200, 404, 422 |
 | `DELETE /api/products/:id` | 204 (also deletes its photo), 404 |
+| `PUT /api/products/:id/ingredients` | body `{ingredients: [{name, includedQty, minQty, maxQty, extraPriceCents}]}` (the whole ordered list; it replaces the saved one in one batch, `[]` clears it); 200 `{ingredients}`, 403 `PLAN_FEATURE` (plan without `customIngredients`), 404 `PRODUCT_NOT_FOUND`, 422 `VALIDATION_ERROR` |
 | `PUT /api/products/:id/photo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{imageUrl}`, 403 `PLAN_LIMIT`, 404, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE` |
 | `DELETE /api/products/:id/photo` | 204 (also when there is no photo), 404 |
 
-Product: `{id, categoryId, name, description, priceCents, imageUrl, available, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado".
+Product: `{id, categoryId, name, description, priceCents, imageUrl, available, ingredients, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado". `ingredients` is the ordered list of customizable ingredients (`[]` when none), returned on every plan by `GET /api/categories` and `GET /api/products/:id`.
+
+Ingredient: `{name, includedQty, minQty, maxQty, extraPriceCents}`. `extraPriceCents` is charged for each unit above `includedQty`. Rules (shared Zod schema, enforced by the API and the admin form): name 1-40 characters and unique inside the product ignoring case, quantities are integers 0-99, `maxQty >= 1`, `minQty <= includedQty <= maxQty`, extra price is zero or more, at most 20 per product. Ingredients are deleted with their product. This change only covers saving them in the admin; ordering them from the public menu and the price calculation come with the public menu.
 
 All `/api/restaurants/*`, `/api/categories/*` and `/api/products/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
 
@@ -108,6 +111,8 @@ All `/api/restaurants/*`, `/api/categories/*` and `/api/products/*` endpoints an
 ### Plan limits
 
 Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLimitsFor`); unknown plans get Basic. Basic: up to 40 products, product photos included. Pro: unlimited products. One photo per product on every plan; no category limit. Only creating products is limited (403 `PLAN_LIMIT`): a restaurant above the limit keeps, edits, moves and deletes its products.
+
+Plan flags (`PlanLimits`): `maxProducts` (Basic 40, Pro unlimited), `productPhotos` (both plans) and `customIngredients` (`false` on Basic, `true` on Pro). Customizable ingredients are a Pro feature: writing them without the flag answers 403 `PLAN_FEATURE` and changes nothing, while reading is open to every plan. A downgrade never deletes them: the admin shows the saved list read-only inside the locked "Ingredientes" section until the account is Pro again. The admin and the API read the flag from `planLimitsFor(plan)`, never from `plan === "pro"`. In the product editor, Basic accounts see "Ingredientes" and "Extras y variantes" greyed out with the PRO badge and a "Ver plan Pro" link (`ProLock`); "Extras y variantes" is a "Próximamente" placeholder on every plan (no data, no API).
 
 ### Plan switch (testing aid)
 

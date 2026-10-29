@@ -1,5 +1,10 @@
 import { Hono } from "hono";
-import { PRODUCT_PHOTO_MAX_BYTES, createProductSchema, updateProductSchema } from "@menucito/shared";
+import {
+  PRODUCT_PHOTO_MAX_BYTES,
+  createProductSchema,
+  replaceIngredientsSchema,
+  updateProductSchema,
+} from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { catalogServiceFor } from "../services/catalog";
@@ -34,6 +39,17 @@ export const productsRoutes = new Hono<AppEnv>()
   .delete("/:id", async (c) => {
     await catalogServiceFor(c.env.DB, c.env.MEDIA).deleteProduct(c.get("userId"), c.req.param("id"));
     return c.body(null, 204);
+  })
+
+  .put("/:id/ingredients", async (c) => {
+    const body = await parseJsonBody(c, replaceIngredientsSchema);
+    if ("response" in body) return body.response;
+    const ingredients = await catalogServiceFor(c.env.DB, c.env.MEDIA).replaceIngredients(
+      c.get("userId"),
+      c.req.param("id"),
+      body.data.ingredients,
+    );
+    return c.json({ ingredients });
   })
 
   .put("/:id/photo", uploadBodyLimit("photo", PRODUCT_PHOTO_MAX_BYTES), async (c) => {

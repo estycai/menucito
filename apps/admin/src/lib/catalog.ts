@@ -3,8 +3,10 @@ import type {
   Catalog,
   Category,
   CreateProductInput,
+  Ingredient,
   Product,
   ProductPhotoUploadResult,
+  ReplaceIngredientsResult,
   UpdateProductInput,
 } from "@menucito/shared";
 import { api } from "./restaurant";
@@ -75,6 +77,13 @@ export function useUpdateProduct() {
 
 export function useDeleteProduct() {
   return useCatalogMutation((id: string) => api<void>(`/api/products/${id}`, { method: "DELETE" }));
+}
+
+/** Replaces the whole ingredient list of a product (Pro only; the API answers 403 `PLAN_FEATURE` otherwise). */
+export function useReplaceIngredients() {
+  return useCatalogMutation(({ id, ingredients }: { id: string; ingredients: Ingredient[] }) =>
+    api<ReplaceIngredientsResult>(`/api/products/${id}/ingredients`, jsonBody("PUT", { ingredients })),
+  );
 }
 
 /** Uploads an already normalized WebP photo (see `normalizeProductPhoto`). */

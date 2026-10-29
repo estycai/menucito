@@ -6,6 +6,7 @@ import {
   PRODUCT_PHOTO_MAX_BYTES,
   type Catalog,
   type Category,
+  type Ingredient,
   type Product,
   type ProductPhotoUploadResult,
   type Restaurant,
@@ -13,10 +14,12 @@ import {
 import { Client, captureEmails } from "./helpers";
 import { createCategoriesRepository } from "../src/repositories/categories";
 import { UniqueViolationError, asUniqueViolation } from "../src/repositories/errors";
+import { createIngredientsRepository } from "../src/repositories/ingredients";
 import { createProductsRepository, type ProductsRepository } from "../src/repositories/products";
 import { createRestaurantsRepository } from "../src/repositories/restaurants";
-import { PlanLimitError, createCatalogService } from "../src/services/catalog";
+import { PlanFeatureError, PlanLimitError, createCatalogService } from "../src/services/catalog";
 import { createMediaStorage, type MediaStorage } from "../src/storage/media";
+import type { Env } from "../src/env";
 import type { ProductRow, RestaurantRow } from "../src/db/schema";
 
 let sink: ReturnType<typeof captureEmails>;
@@ -29,18 +32,18 @@ let counter = 0;
 const unique = () => `${Date.now()}${counter++}`;
 
 /** Signs up, verifies (which opens a session) and returns the logged-in client. */
-async function loggedInClient() {
+async function loggedInClient(bindings: Partial<Env> = {}) {
   const email = `menu${unique()}@example.com`;
   await new Client().post("/api/auth/sign-up/email", { name: "Marta", email, password: "password-123", callbackURL: "/" });
-  const client = new Client();
+  const client = new Client(bindings);
   await client.open(sink.last().link);
   expect(client.hasSession).toBe(true);
   return client;
 }
 
 /** A logged-in owner with a restaurant on the default (Basic) plan. */
-async function owner() {
-  const client = await loggedInClient();
+async function owner(bindings: Partial<Env> = {}) {
+  const client = await loggedInClient(bindings);
   const res = await client.post("/api/restaurants", {
     name: "Lo de Marta",
     slug: `menu-${unique()}`,
@@ -136,6 +139,7 @@ describe("authentication and tenant (scenario 21)", () => {
     ["DELETE", "/api/products/x"],
     ["PUT", "/api/products/x/photo"],
     ["DELETE", "/api/products/x/photo"],
+    ["PUT", "/api/products/x/ingredients"],
   ];
 
   it.each(endpoints)("%s %s answers 401 without a session", async (method, path) => {
@@ -153,6 +157,7 @@ describe("authentication and tenant (scenario 21)", () => {
       await client.post("/api/products", { categoryId: "x", name: "P", priceCents: 1 }),
       await client.request("/api/products/x"),
       await client.request("/api/products/x/photo", { method: "DELETE" }),
+      await client.request("/api/products/x/ingredients", json("PUT", { ingredients: [] })),
     ]) {
       expect(res.status).toBe(404);
       expect(await errorCode(res)).toBe("RESTAURANT_NOT_FOUND");
@@ -518,8 +523,9 @@ describe("plan limits", () => {
       restaurants: createRestaurantsRepository(env.DB),
       categories: createCategoriesRepository(env.DB),
       products: createProductsRepository(env.DB),
+      ingredients: createIngredientsRepository(env.DB),
       storage: createMediaStorage(env.MEDIA),
-      limitsFor: () => ({ maxProducts: null, productPhotos: false }),
+      limitsFor: () => ({ maxProducts: null, productPhotos: false, customIngredients: false }),
     });
     const upload = { bytes: webpBytes().buffer as ArrayBuffer, contentType: "image/webp" };
     await expect(service.uploadProductPhoto(userId.id, product.id, upload)).rejects.toBeInstanceOf(PlanLimitError);
@@ -603,6 +609,7 @@ describe("catalog service photo ordering (no R2)", () => {
       restaurants: { findByOwner: async () => restaurant } as never,
       categories: {} as never,
       products: { find: async () => product, updateImageUrl } as unknown as ProductsRepository,
+      ingredients: {} as never,
       storage,
     });
   }
@@ -630,5 +637,317 @@ describe("catalog service photo ordering (no R2)", () => {
     const [putKey] = storage.put.mock.calls[0] as unknown as [string];
     expect(storage.delete).toHaveBeenCalledWith(putKey);
     expect(storage.delete).not.toHaveBeenCalledWith("products/r1/old.webp");
+  });
+});
+
+// --- Customizable ingredients (spec 07) ---
+
+const ingredient = (name: string, overrides: Partial<Ingredient> = {}): Ingredient => ({
+  name,
+  includedQty: 1,
+  minQty: 0,
+  maxQty: 3,
+  extraPriceCents: 150_000,
+  ...overrides,
+});
+
+const putIngredients = (client: Client, productId: string, ingredients: unknown) =>
+  client.request(`/api/products/${productId}/ingredients`, json("PUT", { ingredients }));
+
+const FLAG_ON = { ALLOW_PLAN_SWITCH: "true" };
+
+async function setPlan(client: Client, plan: "basic" | "pro") {
+  const res = await client.request("/api/restaurants/me/plan", json("PUT", { plan }));
+  expect(res.status).toBe(200);
+}
+
+/** A logged-in owner on the Pro plan (the test switch is on for this client only). */
+async function proOwner() {
+  const result = await owner(FLAG_ON);
+  await setPlan(result.client, "pro");
+  return result;
+}
+
+const ingredientNames = async (client: Client, productId: string) =>
+  (await getProduct(client, productId)).ingredients.map((i) => i.name);
+const ingredientRowCount = async (productId: string) =>
+  (await env.DB.prepare("SELECT count(*) AS n FROM ingredients WHERE product_id = ?").bind(productId).first<{ n: number }>())?.n;
+
+describe("PUT /api/products/:id/ingredients (scenarios 4, 6, 7)", () => {
+  it("replaces the list on Pro, answers it in order and keeps it after reloading", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const list = [
+      ingredient("Bacon"),
+      ingredient("Queso", { includedQty: 1, minQty: 1, maxQty: 2, extraPriceCents: 0 }),
+      ingredient("Cebolla"),
+    ];
+
+    const res = await putIngredients(client, product.id, list);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ingredients: list });
+    expect((await getProduct(client, product.id)).ingredients).toEqual(list);
+  });
+
+  it("trims names and stores prices in cents", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    await putIngredients(client, product.id, [ingredient("  Bacon  ", { extraPriceCents: 150_050 })]);
+    expect((await getProduct(client, product.id)).ingredients).toEqual([ingredient("Bacon", { extraPriceCents: 150_050 })]);
+  });
+
+  it("replaces the whole list: edit, remove and reorder are one save (scenario 6)", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    await putIngredients(client, product.id, [ingredient("A"), ingredient("B"), ingredient("C")]);
+
+    const next = [ingredient("C"), ingredient("A", { maxQty: 5 })];
+    expect((await putIngredients(client, product.id, next)).status).toBe(200);
+    expect((await getProduct(client, product.id)).ingredients).toEqual(next);
+    expect(await ingredientRowCount(product.id)).toBe(2);
+
+    expect((await putIngredients(client, product.id, [])).status).toBe(200);
+    expect((await getProduct(client, product.id)).ingredients).toEqual([]);
+    expect(await ingredientRowCount(product.id)).toBe(0);
+  });
+
+  it("only touches the product it names", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const a = await createProduct(client, category.id, { name: "A" });
+    const b = await createProduct(client, category.id, { name: "B" });
+    await putIngredients(client, a.id, [ingredient("Bacon")]);
+    await putIngredients(client, b.id, [ingredient("Queso"), ingredient("Cebolla")]);
+    await putIngredients(client, a.id, []);
+    expect(await ingredientNames(client, a.id)).toEqual([]);
+    expect(await ingredientNames(client, b.id)).toEqual(["Queso", "Cebolla"]);
+  });
+
+  it("answers 403 PLAN_FEATURE on Basic and changes nothing, even with a hand-made request", async () => {
+    const { client } = await owner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const res = await putIngredients(client, product.id, [ingredient("Bacon")]);
+    expect(res.status).toBe(403);
+    expect(await errorCode(res)).toBe("PLAN_FEATURE");
+    expect(await ingredientNames(client, product.id)).toEqual([]);
+    expect(await ingredientRowCount(product.id)).toBe(0);
+  });
+
+  it("answers 404 PRODUCT_NOT_FOUND for an unknown id, on any plan", async () => {
+    for (const { client } of [await owner(), await proOwner()]) {
+      const res = await putIngredients(client, "missing", [ingredient("Bacon")]);
+      expect(res.status).toBe(404);
+      expect(await errorCode(res)).toBe("PRODUCT_NOT_FOUND");
+    }
+  });
+
+  it("answers 404 for another restaurant's product and leaves its list unchanged", async () => {
+    const a = await proOwner();
+    const b = await proOwner();
+    const category = await createCategory(a.client, "Hamburguesas");
+    const product = await createProduct(a.client, category.id);
+    await putIngredients(a.client, product.id, [ingredient("Bacon")]);
+
+    const res = await putIngredients(b.client, product.id, [ingredient("Hackeado")]);
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe("PRODUCT_NOT_FOUND");
+    expect(await ingredientNames(a.client, product.id)).toEqual(["Bacon"]);
+    expect((await b.client.request(`/api/products/${product.id}`)).status).toBe(404);
+  });
+
+  it.each([
+    ["an empty name", [ingredient("  ")]],
+    ["a name over 40 characters", [ingredient("a".repeat(41))]],
+    ["a max of 0", [ingredient("Bacon", { includedQty: 0, minQty: 0, maxQty: 0 })]],
+    ["min above included", [ingredient("Bacon", { includedQty: 1, minQty: 2, maxQty: 3 })]],
+    ["included above max", [ingredient("Bacon", { includedQty: 4, minQty: 0, maxQty: 3 })]],
+    ["a decimal quantity", [ingredient("Bacon", { includedQty: 1.5 })]],
+    ["a quantity over 99", [ingredient("Bacon", { maxQty: 100 })]],
+    ["a negative extra price", [ingredient("Bacon", { extraPriceCents: -1 })]],
+    ["a duplicated name in another casing", [ingredient("Bacon"), ingredient("bacon")]],
+    ["more than 20 ingredients", Array.from({ length: 21 }, (_, i) => ingredient(`Ingrediente ${i}`))],
+    ["a list that is not an array", "Bacon"],
+  ])("answers 422 VALIDATION_ERROR for %s and keeps the saved list", async (_label, list) => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    await putIngredients(client, product.id, [ingredient("Queso")]);
+
+    const res = await putIngredients(client, product.id, list);
+    expect(res.status).toBe(422);
+    expect(await errorCode(res)).toBe("VALIDATION_ERROR");
+    expect(await ingredientNames(client, product.id)).toEqual(["Queso"]);
+  });
+
+  it("accepts exactly 20 ingredients", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const list = Array.from({ length: 20 }, (_, i) => ingredient(`Ingrediente ${i}`));
+    expect((await putIngredients(client, product.id, list)).status).toBe(200);
+    expect(await ingredientNames(client, product.id)).toEqual(list.map((i) => i.name));
+  });
+
+  it("answers 422 for a body that is not JSON", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const res = await client.request(`/api/products/${product.id}/ingredients`, { method: "PUT", body: "nope" });
+    expect(res.status).toBe(422);
+  });
+
+  it("checks the plan with the injected limits (PlanFeatureError)", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const userId = ((await client.session())?.user as unknown as { id: string }).id;
+    const service = createCatalogService({
+      restaurants: createRestaurantsRepository(env.DB),
+      categories: createCategoriesRepository(env.DB),
+      products: createProductsRepository(env.DB),
+      ingredients: createIngredientsRepository(env.DB),
+      storage: createMediaStorage(env.MEDIA),
+      limitsFor: () => ({ maxProducts: null, productPhotos: true, customIngredients: false }),
+    });
+    await expect(service.replaceIngredients(userId, product.id, [ingredient("Bacon")])).rejects.toBeInstanceOf(PlanFeatureError);
+    expect(await ingredientNames(client, product.id)).toEqual([]);
+  });
+});
+
+describe("ingredients in catalog reads (scenario 8)", () => {
+  it("carries an empty ingredients array on every plan when there are none", async () => {
+    const { client } = await owner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    expect(product.ingredients).toEqual([]);
+    expect((await getProduct(client, product.id)).ingredients).toEqual([]);
+    expect((await catalog(client)).categories[0]?.products[0]?.ingredients).toEqual([]);
+  });
+
+  it("carries each product's own ingredients, in order, in the catalog and in the product", async () => {
+    const { client } = await proOwner();
+    const burgers = await createCategory(client, "Hamburguesas");
+    const drinks = await createCategory(client, "Bebidas");
+    const a = await createProduct(client, burgers.id, { name: "A" });
+    const b = await createProduct(client, burgers.id, { name: "B" });
+    const c = await createProduct(client, drinks.id, { name: "C" });
+    await putIngredients(client, a.id, [ingredient("Queso"), ingredient("Bacon")]);
+    await putIngredients(client, c.id, [ingredient("Hielo")]);
+
+    const { categories } = await catalog(client);
+    const byName = Object.fromEntries(
+      categories.flatMap((cat) => cat.products).map((p) => [p.name, p.ingredients.map((i) => i.name)]),
+    );
+    expect(byName).toEqual({ A: ["Queso", "Bacon"], B: [], C: ["Hielo"] });
+    expect(await ingredientNames(client, b.id)).toEqual([]);
+  });
+
+  it("keeps the ingredients when the product is edited or moved", async () => {
+    const { client } = await proOwner();
+    const burgers = await createCategory(client, "Hamburguesas");
+    const drinks = await createCategory(client, "Bebidas");
+    const product = await createProduct(client, burgers.id);
+    await putIngredients(client, product.id, [ingredient("Bacon")]);
+    const res = await client.request(`/api/products/${product.id}`, json("PATCH", { categoryId: drinks.id, name: "Otra" }));
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as Product).ingredients).toEqual([ingredient("Bacon")]);
+    expect(await ingredientNames(client, product.id)).toEqual(["Bacon"]);
+  });
+
+  it("never shows another restaurant's ingredients", async () => {
+    const a = await proOwner();
+    const b = await proOwner();
+    const category = await createCategory(a.client, "Hamburguesas");
+    await putIngredients(a.client, (await createProduct(a.client, category.id)).id, [ingredient("Bacon")]);
+    const bCategory = await createCategory(b.client, "Bebidas");
+    await createProduct(b.client, bCategory.id);
+    expect((await catalog(b.client)).categories[0]?.products[0]?.ingredients).toEqual([]);
+  });
+});
+
+describe("downgrade keeps ingredients (scenario 9)", () => {
+  it("keeps, shows and protects the saved list until the account is Pro again", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    const saved = [ingredient("Bacon"), ingredient("Queso")];
+    await putIngredients(client, product.id, saved);
+
+    await setPlan(client, "basic");
+    expect((await getProduct(client, product.id)).ingredients).toEqual(saved);
+    expect((await catalog(client)).categories[0]?.products[0]?.ingredients).toEqual(saved);
+
+    for (const list of [[ingredient("Otro")], []]) {
+      const res = await putIngredients(client, product.id, list);
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("PLAN_FEATURE");
+    }
+    expect((await getProduct(client, product.id)).ingredients).toEqual(saved);
+
+    await setPlan(client, "pro");
+    expect((await putIngredients(client, product.id, [ingredient("Otro")])).status).toBe(200);
+    expect(await ingredientNames(client, product.id)).toEqual(["Otro"]);
+  });
+});
+
+describe("ingredients are deleted with their product (scenario 10)", () => {
+  it("leaves no rows after deleting the product, and keeps other products' rows", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id, { name: "A" });
+    const other = await createProduct(client, category.id, { name: "B" });
+    await putIngredients(client, product.id, [ingredient("Bacon"), ingredient("Queso")]);
+    await putIngredients(client, other.id, [ingredient("Cebolla")]);
+    expect(await ingredientRowCount(product.id)).toBe(2);
+
+    expect((await client.request(`/api/products/${product.id}`, { method: "DELETE" })).status).toBe(204);
+    expect(await ingredientRowCount(product.id)).toBe(0);
+    expect(await ingredientRowCount(other.id)).toBe(1);
+  });
+
+  it("leaves no rows after deleting the restaurant", async () => {
+    const { client, restaurant } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    await putIngredients(client, product.id, [ingredient("Bacon")]);
+
+    await env.DB.prepare("DELETE FROM restaurants WHERE id = ?").bind(restaurant.id).run();
+    expect(await ingredientRowCount(product.id)).toBe(0);
+  });
+});
+
+describe("ingredients repository", () => {
+  it("keeps the old list when the replacement fails midway (one atomic batch)", async () => {
+    const { client } = await proOwner();
+    const category = await createCategory(client, "Hamburguesas");
+    const product = await createProduct(client, category.id);
+    await putIngredients(client, product.id, [ingredient("Queso")]);
+
+    const repository = createIngredientsRepository(env.DB);
+    const row = (name: string | null, position: number) => ({
+      id: crypto.randomUUID(),
+      productId: product.id,
+      name: name as string,
+      includedQty: 1,
+      minQty: 0,
+      maxQty: 3,
+      extraPriceCents: 0,
+      position,
+    });
+    await expect(repository.replace(product.id, [row("Nuevo", 0), row(null, 1)])).rejects.toThrow();
+    expect(await ingredientNames(client, product.id)).toEqual(["Queso"]);
+  });
+
+  it("reports a missing product as a foreign key violation", async () => {
+    const repository = createIngredientsRepository(env.DB);
+    await expect(
+      repository.replace("missing", [
+        { id: crypto.randomUUID(), productId: "missing", name: "X", includedQty: 1, minQty: 0, maxQty: 1, extraPriceCents: 0, position: 0 },
+      ]),
+    ).rejects.toMatchObject({ name: "ForeignKeyViolationError" });
   });
 });

@@ -136,7 +136,30 @@ export const products = sqliteTable(
   (t) => [index("products_restaurant_category_position_idx").on(t.restaurantId, t.categoryId, t.position)],
 );
 
+// Customizable ingredients of a product (Pro). `position` is the 0-based order inside the product.
+// `extra_price_cents` is charged per unit above `included_qty`. The list is always replaced as a
+// whole, so there is no per-ingredient uniqueness constraint (the service validates names).
+// Deleting a product deletes its ingredients.
+export const ingredients = sqliteTable(
+  "ingredients",
+  {
+    id: text("id").primaryKey(),
+    productId: text("product_id")
+      .notNull()
+      .references(() => products.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    includedQty: integer("included_qty").notNull(),
+    minQty: integer("min_qty").notNull(),
+    maxQty: integer("max_qty").notNull(),
+    extraPriceCents: integer("extra_price_cents").notNull(),
+    position: integer("position").notNull(),
+  },
+  (t) => [index("ingredients_product_position_idx").on(t.productId, t.position)],
+);
+
 export type CategoryRow = typeof categories.$inferSelect;
 export type NewCategoryRow = typeof categories.$inferInsert;
 export type ProductRow = typeof products.$inferSelect;
 export type NewProductRow = typeof products.$inferInsert;
+export type IngredientRow = typeof ingredients.$inferSelect;
+export type NewIngredientRow = typeof ingredients.$inferInsert;

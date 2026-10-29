@@ -5,14 +5,16 @@ import {
   type Catalog,
   type Category,
   type CreateProductInput,
+  type Ingredient,
   type PlanLimits,
   type Product,
   type ProductPhotoUploadResult,
   type UpdateProductInput,
 } from "@menucito/shared";
-import type { CategoryRow, ProductRow } from "../db/schema";
+import type { CategoryRow, IngredientRow, ProductRow } from "../db/schema";
 import { CATEGORY_NAME_UNIQUE_INDEX, createCategoriesRepository, type CategoriesRepository } from "../repositories/categories";
 import { ForeignKeyViolationError, UniqueViolationError } from "../repositories/errors";
+import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import { createProductsRepository, type ProductChanges, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
 import { createMediaStorage, publicPathFor, type MediaStorage } from "../storage/media";
@@ -51,11 +53,26 @@ export class PlanLimitError extends DomainError {
   readonly code = "PLAN_LIMIT";
 }
 
+/** The restaurant's plan does not include the feature that was used. */
+export class PlanFeatureError extends DomainError {
+  readonly code = "PLAN_FEATURE";
+}
+
 function toCategory(row: CategoryRow): Category {
   return { id: row.id, name: row.name, position: row.position };
 }
 
-function toProduct(row: ProductRow): Product {
+function toIngredient(row: IngredientRow): Ingredient {
+  return {
+    name: row.name,
+    includedQty: row.includedQty,
+    minQty: row.minQty,
+    maxQty: row.maxQty,
+    extraPriceCents: row.extraPriceCents,
+  };
+}
+
+function toProduct(row: ProductRow, ingredients: readonly IngredientRow[] = []): Product {
   return {
     id: row.id,
     categoryId: row.categoryId,
@@ -64,6 +81,7 @@ function toProduct(row: ProductRow): Product {
     priceCents: row.priceCents,
     imageUrl: row.imageUrl,
     available: row.available,
+    ingredients: ingredients.map(toIngredient),
     position: row.position,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -89,6 +107,7 @@ export interface CatalogDependencies {
   restaurants: RestaurantsRepository;
   categories: CategoriesRepository;
   products: ProductsRepository;
+  ingredients: IngredientsRepository;
   storage: MediaStorage;
   /** Plan limits lookup; injectable so tests can simulate other plans. */
   limitsFor?: (plan: string) => PlanLimits;
@@ -103,6 +122,7 @@ export function createCatalogService({
   restaurants,
   categories,
   products,
+  ingredients,
   storage,
   limitsFor = planLimitsFor,
 }: CatalogDependencies) {
@@ -134,15 +154,27 @@ export function createCatalogService({
   }
 
   return {
-    /** Every category with its products (both ordered by position) and the plan usage. */
+    /**
+     * Every category with its products (both ordered by position), each with its ingredients
+     * (one extra query for the whole restaurant), and the plan usage.
+     */
     async getCatalog(ownerId: string): Promise<Catalog> {
       const restaurant = await restaurantOf(ownerId);
-      const [categoryRows, productRows] = await Promise.all([
+      const [categoryRows, productRows, ingredientRows] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
+        ingredients.listByRestaurant(restaurant.id),
       ]);
+      const ingredientsByProduct = new Map<string, IngredientRow[]>();
+      for (const row of ingredientRows) {
+        const list = ingredientsByProduct.get(row.productId) ?? [];
+        list.push(row);
+        ingredientsByProduct.set(row.productId, list);
+      }
       const byCategory = new Map<string, Product[]>(categoryRows.map((row) => [row.id, []]));
-      for (const row of productRows) byCategory.get(row.categoryId)?.push(toProduct(row));
+      for (const row of productRows) {
+        byCategory.get(row.categoryId)?.push(toProduct(row, ingredientsByProduct.get(row.id)));
+      }
 
       const limits = limitsFor(restaurant.plan);
       return {
@@ -209,7 +241,8 @@ export function createCatalogService({
 
     async getProduct(ownerId: string, id: string): Promise<Product> {
       const restaurant = await restaurantOf(ownerId);
-      return toProduct(await productOf(restaurant.id, id));
+      const product = await productOf(restaurant.id, id);
+      return toProduct(product, await ingredients.listByProduct(product.id));
     },
 
     /**
@@ -256,10 +289,34 @@ export function createCatalogService({
 
       const row = await products.update(restaurant.id, id, changes, new Date()).catch(translateMissingCategory);
       if (!row) throw new ProductNotFoundError();
-      return toProduct(row);
+      return toProduct(row, await ingredients.listByProduct(row.id));
     },
 
-    /** Deletes the product, then its photo (best effort). */
+    /**
+     * Replaces the product's whole ingredient list (the order of `list` is the display order).
+     * Only plans with `customIngredients` can write; reading is open to every plan, and a downgrade
+     * keeps the saved list (it just cannot be changed until the plan includes the feature again).
+     * `list` must already be validated (`replaceIngredientsSchema`).
+     */
+    async replaceIngredients(ownerId: string, id: string, list: readonly Ingredient[]): Promise<Ingredient[]> {
+      const restaurant = await restaurantOf(ownerId);
+      const product = await productOf(restaurant.id, id);
+      if (!limitsFor(restaurant.plan).customIngredients) {
+        throw new PlanFeatureError("Customizable ingredients are not included in your plan");
+      }
+      await ingredients
+        .replace(
+          product.id,
+          list.map((ingredient, position) => ({ id: crypto.randomUUID(), productId: product.id, ...ingredient, position })),
+        )
+        .catch((error: unknown) => {
+          // The product was deleted between the check and the write.
+          throw error instanceof ForeignKeyViolationError ? new ProductNotFoundError() : error;
+        });
+      return (await ingredients.listByProduct(product.id)).map(toIngredient);
+    },
+
+    /** Deletes the product (its ingredients go with it), then its photo (best effort). */
     async deleteProduct(ownerId: string, id: string): Promise<void> {
       const restaurant = await restaurantOf(ownerId);
       const deleted = await products.delete(restaurant.id, id);
@@ -320,6 +377,7 @@ export function catalogServiceFor(db: D1Database, bucket: R2Bucket): CatalogServ
     restaurants: createRestaurantsRepository(db),
     categories: createCategoriesRepository(db),
     products: createProductsRepository(db),
+    ingredients: createIngredientsRepository(db),
     storage: createMediaStorage(bucket),
   });
 }
