@@ -12,6 +12,19 @@ export type MenuResult =
   | { status: "unavailable" }
   | { status: "redirect"; slug: string };
 
+/**
+ * HTTP status and cache policy of a menu page, shared by every page that resolves a menu so the
+ * menu and the order detail cannot drift. Errors are real statuses and are never cached.
+ */
+export function responseFor(result: Exclude<MenuResult, { status: "redirect" }>): {
+  status: 200 | 404 | 503;
+  cacheControl: string;
+} {
+  if (result.status === "not-found") return { status: 404, cacheControl: "no-store" };
+  if (result.status === "unavailable") return { status: 503, cacheControl: "no-store" };
+  return { status: 200, cacheControl: "public, max-age=60" };
+}
+
 /** `apiUrl` without a trailing slash. */
 function trimBase(apiUrl: string) {
   return apiUrl.replace(/\/+$/, "");

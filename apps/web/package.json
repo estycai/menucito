@@ -13,8 +13,10 @@
   },
   "dependencies": {
     "@astrojs/cloudflare": "~14.3.4",
+    "@astrojs/preact": "~6.0.6",
     "@menucito/shared": "workspace:*",
-    "astro": "~7.3.8"
+    "astro": "~7.3.8",
+    "preact": "^10.29.8"
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.12",

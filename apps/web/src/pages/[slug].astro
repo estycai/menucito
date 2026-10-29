@@ -1,8 +1,12 @@
 ---
 import { formatArs } from "@menucito/shared";
+import { AddControl } from "../components/AddControl";
+import { CartBar } from "../components/CartBar";
+import MenuProblem from "../components/MenuProblem.astro";
 import Layout from "../layouts/Layout.astro";
+import { toCatalog, toCatalogProduct } from "../lib/catalog";
 import { initials } from "../lib/initials";
-import { DEFAULT_API_URL, assetUrl, resolveMenu } from "../lib/menu";
+import { DEFAULT_API_URL, assetUrl, resolveMenu, responseFor } from "../lib/menu";
 
 // Menus change whenever the owner edits them and new restaurants appear without a rebuild.
 export const prerender = false;
@@ -13,17 +17,13 @@ const result = await resolveMenu(Astro.params.slug ?? "", apiUrl);
 if (result.status === "redirect") return Astro.redirect(`/${result.slug}`, 301);
 
 // Real HTTP statuses so caches and monitors behave. Error pages are never cached.
-if (result.status === "not-found") {
-  Astro.response.status = 404;
-  Astro.response.headers.set("Cache-Control", "no-store");
-} else if (result.status === "unavailable") {
-  Astro.response.status = 503;
-  Astro.response.headers.set("Cache-Control", "no-store");
-} else {
-  Astro.response.headers.set("Cache-Control", "public, max-age=60");
-}
+const { status, cacheControl } = responseFor(result);
+Astro.response.status = status;
+Astro.response.headers.set("Cache-Control", cacheControl);
 
 const menu = result.status === "ok" ? result.menu : null;
+// The islands price and reconcile the cart with this data, embedded by the server render.
+const catalog = menu ? toCatalog(menu) : [];
 const logo = menu ? assetUrl(apiUrl, menu.restaurant.logoUrl) : null;
 const title = menu ? `${menu.restaurant.name} · Menucito` : "Menucito";
 const description = menu ? `Menú de ${menu.restaurant.name}` : "Menucito";
@@ -65,6 +65,11 @@ const description = menu ? `Menú de ${menu.restaurant.name}` : "Menucito";
                 <h2 class="category-title" id={`categoria-${index + 1}`}>
                   {category.name}
                 </h2>
+                {index === 0 && (
+                  <noscript>
+                    <p class="noscript-note">Para agregar productos al pedido necesitás activar JavaScript.</p>
+                  </noscript>
+                )}
                 <ul class="products">
                   {category.products.map((product) => {
                     const photo = assetUrl(apiUrl, product.imageUrl);
@@ -87,6 +92,9 @@ const description = menu ? `Menú de ${menu.restaurant.name}` : "Menucito";
                           <div class="product-footer">
                             <span class="product-price">{formatArs(product.priceCents)}</span>
                             {!product.available && <span class="sold-out-badge">Agotado</span>}
+                            {product.available && (
+                              <AddControl client:load slug={menu.restaurant.slug} product={toCatalogProduct(product)} />
+                            )}
                           </div>
                         </div>
                       </li>
@@ -96,26 +104,12 @@ const description = menu ? `Menú de ${menu.restaurant.name}` : "Menucito";
               </section>
             ))}
             <div class="menu-footer-space"></div>
+            <CartBar client:load slug={menu.restaurant.slug} products={catalog} />
           </>
         )}
       </main>
     </Layout>
-  ) : result.status === "not-found" ? (
-    <Layout title="No encontramos este menú · Menucito" description="No encontramos este menú">
-      <main class="centered">
-        <h1 class="message-title">No encontramos este menú</h1>
-        <p class="message-text">Revisá que el link esté bien escrito.</p>
-        <a class="button-link" href="/">
-          Ir al inicio
-        </a>
-      </main>
-    </Layout>
   ) : (
-    <Layout title="Menú no disponible · Menucito" description="No pudimos cargar el menú">
-      <main class="centered">
-        <h1 class="message-title">Algo salió mal</h1>
-        <p class="message-text">No pudimos cargar el menú. Probá de nuevo en un momento.</p>
-      </main>
-    </Layout>
+    <MenuProblem kind={result.status === "not-found" ? "not-found" : "unavailable"} />
   )
 }

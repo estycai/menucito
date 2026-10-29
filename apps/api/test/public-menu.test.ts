@@ -1,6 +1,6 @@
 import { env } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Category, Product, PublicMenu, Restaurant } from "@menucito/shared";
+import type { Category, Ingredient, Product, PublicMenu, Restaurant } from "@menucito/shared";
 import { Client, captureEmails } from "./helpers";
 
 let sink: ReturnType<typeof captureEmails>;
@@ -49,6 +49,20 @@ async function createProduct(client: Client, categoryId: string, overrides: Reco
   return (await res.json()) as Product;
 }
 
+const BACON: Ingredient = { name: "Bacon", includedQty: 1, minQty: 0, maxQty: 3, extraPriceCents: 150_000 };
+const ONION: Ingredient = { name: "Cebolla", includedQty: 1, minQty: 0, maxQty: 2, extraPriceCents: 0 };
+
+const setPlan = (restaurantId: string, plan: "basic" | "pro") =>
+  env.DB.prepare("UPDATE restaurants SET plan = ? WHERE id = ?").bind(plan, restaurantId).run();
+
+async function putIngredients(client: Client, productId: string, ingredients: Ingredient[]) {
+  const res = await client.request(`/api/products/${productId}/ingredients`, {
+    method: "PUT",
+    body: JSON.stringify({ ingredients }),
+  });
+  expect(res.status).toBe(200);
+}
+
 const anonymous = () => new Client();
 const getMenu = (slug: string) => anonymous().request(`/api/public/menus/${slug}`);
 
@@ -56,17 +70,32 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
   it("answers 200 without a session, with the minimal shape and a short cache", async () => {
     const { client, restaurant } = await owner();
     const drinks = await createCategory(client, "Bebidas");
-    await createProduct(client, drinks.id, { name: "Coca 1.5L", description: "", priceCents: 350_000, available: false });
+    const coke = await createProduct(client, drinks.id, {
+      name: "Coca 1.5L",
+      description: "",
+      priceCents: 350_000,
+      available: false,
+    });
 
     const res = await getMenu(restaurant.slug);
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=60");
     expect(await res.json()).toEqual({
-      restaurant: { name: "Lo de Marta", slug: restaurant.slug, logoUrl: null },
+      restaurant: { name: "Lo de Marta", slug: restaurant.slug, logoUrl: null, delivery: true, takeaway: true },
       categories: [
         {
           name: "Bebidas",
-          products: [{ name: "Coca 1.5L", description: "", priceCents: 350_000, imageUrl: null, available: false }],
+          products: [
+            {
+              id: coke.id,
+              name: "Coca 1.5L",
+              description: "",
+              priceCents: 350_000,
+              imageUrl: null,
+              available: false,
+              ingredients: [],
+            },
+          ],
         },
       ],
     } satisfies PublicMenu);
@@ -76,10 +105,8 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     const { client, restaurant } = await owner();
     const category = await createCategory(client, "Hamburguesas");
     const product = await createProduct(client, category.id);
-    await client.request(`/api/products/${product.id}/ingredients`, {
-      method: "PUT",
-      body: JSON.stringify({ ingredients: [] }),
-    });
+    await setPlan(restaurant.id, "pro");
+    await putIngredients(client, product.id, [BACON]);
 
     const text = await (await getMenu(restaurant.slug)).text();
     const keys = new Set<string>();
@@ -95,9 +122,29 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     walk(JSON.parse(text));
 
     expect([...keys].sort()).toEqual(
-      ["available", "categories", "description", "imageUrl", "logoUrl", "name", "priceCents", "products", "restaurant", "slug"].sort(),
+      [
+        "available",
+        "categories",
+        "delivery",
+        "description",
+        "extraPriceCents",
+        "id",
+        "imageUrl",
+        "includedQty",
+        "ingredients",
+        "logoUrl",
+        "maxQty",
+        "minQty",
+        "name",
+        "priceCents",
+        "products",
+        "restaurant",
+        "slug",
+        "takeaway",
+      ].sort(),
     );
-    for (const secret of [restaurant.id, product.id, category.id, restaurant.whatsapp, "5491112345678"]) {
+    // Product ids are public on purpose (the cart key); nothing else with an id is.
+    for (const secret of [restaurant.id, category.id, restaurant.whatsapp, "5491112345678"]) {
       expect(text).not.toContain(secret);
     }
   });
@@ -125,6 +172,47 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     const menu = (await (await getMenu(restaurant.slug)).json()) as PublicMenu;
     expect(menu.categories.map((category) => category.name)).toEqual(["Último", "Primero"]);
     expect(menu.categories[1]?.products.map((product) => product.name)).toEqual(["C", "A", "B"]);
+  });
+
+  it("returns the product id, the delivery flags and the ingredients of a Pro restaurant in order (scenarios 3 and 5)", async () => {
+    const { client, restaurant } = await owner();
+    const category = await createCategory(client, "Hamburguesas");
+    const burger = await createProduct(client, category.id);
+    const plain = await createProduct(client, category.id, { name: "Papas" });
+    await setPlan(restaurant.id, "pro");
+    await putIngredients(client, burger.id, [BACON, ONION]);
+
+    const menu = (await (await getMenu(restaurant.slug)).json()) as PublicMenu;
+    const [first, second] = menu.categories[0]?.products ?? [];
+    expect(first).toMatchObject({ id: burger.id, ingredients: [BACON, ONION] });
+    expect(second).toMatchObject({ id: plain.id, ingredients: [] });
+    expect(menu.restaurant).toMatchObject({ delivery: true, takeaway: true });
+  });
+
+  it("publishes no ingredients on Basic, even when some were saved before a downgrade (scenario 5)", async () => {
+    const { client, restaurant } = await owner();
+    const category = await createCategory(client, "Hamburguesas");
+    const burger = await createProduct(client, category.id);
+    await setPlan(restaurant.id, "pro");
+    await putIngredients(client, burger.id, [BACON]);
+    await setPlan(restaurant.id, "basic");
+
+    const res = await getMenu(restaurant.slug);
+    const menu = (await res.json()) as PublicMenu;
+    expect(menu.categories[0]?.products[0]?.ingredients).toEqual([]);
+    expect(JSON.stringify(menu)).not.toContain("Bacon");
+
+    // The owner still sees what was saved.
+    await setPlan(restaurant.id, "pro");
+    const back = (await (await getMenu(restaurant.slug)).json()) as PublicMenu;
+    expect(back.categories[0]?.products[0]?.ingredients).toEqual([BACON]);
+  });
+
+  it("reflects delivery-only and takeaway-only restaurants", async () => {
+    const { restaurant } = await owner();
+    await env.DB.prepare("UPDATE restaurants SET delivery = 0, takeaway = 1 WHERE id = ?").bind(restaurant.id).run();
+    const menu = (await (await getMenu(restaurant.slug)).json()) as PublicMenu;
+    expect(menu.restaurant).toMatchObject({ delivery: false, takeaway: true });
   });
 
   it("returns the header only for a restaurant without products", async () => {

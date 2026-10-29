@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { initials } from "./initials";
-import { assetUrl, resolveMenu } from "./menu";
+import { assetUrl, resolveMenu, responseFor } from "./menu";
+import { toCatalog } from "./catalog";
 
 const API = "http://127.0.0.1:8787";
-const menu = { restaurant: { name: "Lo de Marta", slug: "lo-de-marta", logoUrl: null }, categories: [] };
+const menu = {
+  restaurant: { name: "Lo de Marta", slug: "lo-de-marta", logoUrl: null, delivery: true, takeaway: true },
+  categories: [],
+};
 
 const respond = (status: number, body: unknown = {}) =>
   vi.fn(async () => new Response(JSON.stringify(body), { status }) as Response) as unknown as typeof fetch;
@@ -54,6 +58,36 @@ describe("resolveMenu", () => {
       throw new TypeError("fetch failed");
     }) as unknown as typeof fetch;
     expect(await resolveMenu("lo-de-marta", API, fetchImpl)).toEqual({ status: "unavailable" });
+  });
+});
+
+describe("responseFor", () => {
+  it("caches a menu briefly and never caches an error", () => {
+    expect(responseFor({ status: "ok", menu })).toEqual({ status: 200, cacheControl: "public, max-age=60" });
+    expect(responseFor({ status: "not-found" })).toEqual({ status: 404, cacheControl: "no-store" });
+    expect(responseFor({ status: "unavailable" })).toEqual({ status: 503, cacheControl: "no-store" });
+  });
+});
+
+describe("toCatalog", () => {
+  it("lists every product, sold out ones included, with only what the cart needs", () => {
+    const ingredients = [{ name: "Bacon", includedQty: 1, minQty: 0, maxQty: 3, extraPriceCents: 150_000 }];
+    const catalog = toCatalog({
+      ...menu,
+      categories: [
+        {
+          name: "Comidas",
+          products: [
+            { id: "p1", name: "Burger", description: "x", priceCents: 900_000, imageUrl: "/a", available: true, ingredients },
+            { id: "p2", name: "Flan", description: "", priceCents: 300_000, imageUrl: null, available: false, ingredients: [] },
+          ],
+        },
+        { name: "Bebidas", products: [{ id: "p3", name: "Coca", description: "", priceCents: 1, imageUrl: null, available: true, ingredients: [] }] },
+      ],
+    });
+    expect(catalog.map((product) => product.id)).toEqual(["p1", "p2", "p3"]);
+    expect(catalog[0]).toEqual({ id: "p1", name: "Burger", priceCents: 900_000, available: true, ingredients });
+    expect(catalog[1]?.available).toBe(false);
   });
 });
 

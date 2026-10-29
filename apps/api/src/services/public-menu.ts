@@ -1,6 +1,13 @@
-import { checkSlug, type PublicMenu, type PublicMenuCategory, type PublicMenuProduct } from "@menucito/shared";
-import type { ProductRow } from "../db/schema";
+import {
+  checkSlug,
+  planLimitsFor,
+  type PublicMenu,
+  type PublicMenuCategory,
+  type PublicMenuProduct,
+} from "@menucito/shared";
+import type { IngredientRow, ProductRow } from "../db/schema";
 import { createCategoriesRepository, type CategoriesRepository } from "../repositories/categories";
+import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import { createProductsRepository, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
 import { DomainError } from "./errors";
@@ -17,24 +24,33 @@ export interface PublicMenuDependencies {
   restaurants: RestaurantsRepository;
   categories: CategoriesRepository;
   products: ProductsRepository;
+  ingredients: IngredientsRepository;
 }
 
-function toPublicProduct(row: ProductRow): PublicMenuProduct {
+function toPublicProduct(row: ProductRow, ingredients: readonly IngredientRow[]): PublicMenuProduct {
   return {
+    id: row.id,
     name: row.name,
     description: row.description,
     priceCents: row.priceCents,
     imageUrl: row.imageUrl,
     available: row.available,
+    ingredients: ingredients.map((ingredient) => ({
+      name: ingredient.name,
+      includedQty: ingredient.includedQty,
+      minQty: ingredient.minQty,
+      maxQty: ingredient.maxQty,
+      extraPriceCents: ingredient.extraPriceCents,
+    })),
   };
 }
 
 /**
  * The diner-facing menu of a restaurant, looked up by its public slug. Read only and independent of
- * the plan and the restaurant status. Only whitelisted fields are mapped, so a new column of the
- * database never leaks into the public shape by accident.
+ * the restaurant status; only the plan decides whether ingredients are published. Only whitelisted
+ * fields are mapped, so a new column of the database never leaks into the public shape by accident.
  */
-export function createPublicMenuService({ restaurants, categories, products }: PublicMenuDependencies) {
+export function createPublicMenuService({ restaurants, categories, products, ingredients }: PublicMenuDependencies) {
   return {
     /** Throws `MenuNotFoundError` for a malformed, reserved or unknown slug. */
     async getBySlug(slug: string): Promise<PublicMenu> {
@@ -43,14 +59,25 @@ export function createPublicMenuService({ restaurants, categories, products }: P
       const restaurant = await restaurants.findBySlug(slug);
       if (!restaurant) throw new MenuNotFoundError();
 
-      const [categoryRows, productRows] = await Promise.all([
+      // Ingredients saved before a downgrade stay in the database but are never published on a plan
+      // without customizable ingredients, so skip the query altogether.
+      const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
+      const [categoryRows, productRows, ingredientRows] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
+        withIngredients ? ingredients.listByRestaurant(restaurant.id) : Promise.resolve([]),
       ]);
+      const ingredientsByProduct = new Map<string, IngredientRow[]>();
+      for (const row of ingredientRows) {
+        const list = ingredientsByProduct.get(row.productId) ?? [];
+        list.push(row);
+        ingredientsByProduct.set(row.productId, list);
+      }
+
       const byCategory = new Map<string, PublicMenuProduct[]>();
       for (const row of productRows) {
         const list = byCategory.get(row.categoryId) ?? [];
-        list.push(toPublicProduct(row));
+        list.push(toPublicProduct(row, ingredientsByProduct.get(row.id) ?? []));
         byCategory.set(row.categoryId, list);
       }
 
@@ -61,7 +88,13 @@ export function createPublicMenuService({ restaurants, categories, products }: P
       }
 
       return {
-        restaurant: { name: restaurant.name, slug: restaurant.slug, logoUrl: restaurant.logoUrl },
+        restaurant: {
+          name: restaurant.name,
+          slug: restaurant.slug,
+          logoUrl: restaurant.logoUrl,
+          delivery: restaurant.delivery,
+          takeaway: restaurant.takeaway,
+        },
         categories: menuCategories,
       };
     },
@@ -76,5 +109,6 @@ export function publicMenuServiceFor(db: D1Database): PublicMenuService {
     restaurants: createRestaurantsRepository(db),
     categories: createCategoriesRepository(db),
     products: createProductsRepository(db),
+    ingredients: createIngredientsRepository(db),
   });
 }

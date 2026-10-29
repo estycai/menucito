@@ -1,0 +1,30 @@
+---
+import Layout from "../layouts/Layout.astro";
+
+interface Props {
+  kind: "not-found" | "unavailable";
+}
+
+const { kind } = Astro.props;
+---
+
+{
+  kind === "not-found" ? (
+    <Layout title="No encontramos este menú · Menucito" description="No encontramos este menú">
+      <main class="centered">
+        <h1 class="message-title">No encontramos este menú</h1>
+        <p class="message-text">Revisá que el link esté bien escrito.</p>
+        <a class="button-link" href="/">
+          Ir al inicio
+        </a>
+      </main>
+    </Layout>
+  ) : (
+    <Layout title="Menú no disponible · Menucito" description="No pudimos cargar el menú">
+      <main class="centered">
+        <h1 class="message-title">Algo salió mal</h1>
+        <p class="message-text">No pudimos cargar el menú. Probá de nuevo en un momento.</p>
+      </main>
+    </Layout>
+  )
+}

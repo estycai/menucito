@@ -1,0 +1,49 @@
+---
+import { OrderDetail } from "../../components/OrderDetail";
+import MenuProblem from "../../components/MenuProblem.astro";
+import Layout from "../../layouts/Layout.astro";
+import { toCatalog } from "../../lib/catalog";
+import { DEFAULT_API_URL, resolveMenu, responseFor } from "../../lib/menu";
+
+// Same data path as the menu page (fetch, 404, 503, redirect), so the two cannot drift.
+export const prerender = false;
+
+const apiUrl = import.meta.env.PUBLIC_API_URL || DEFAULT_API_URL;
+const result = await resolveMenu(Astro.params.slug ?? "", apiUrl);
+
+if (result.status === "redirect") return Astro.redirect(`/${result.slug}/pedido`, 301);
+
+const { status, cacheControl } = responseFor(result);
+Astro.response.status = status;
+Astro.response.headers.set("Cache-Control", cacheControl);
+
+const menu = result.status === "ok" ? result.menu : null;
+---
+
+{
+  menu ? (
+    <Layout title={`Tu pedido · ${menu.restaurant.name} · Menucito`} description={`Tu pedido en ${menu.restaurant.name}`}>
+      <main class="column order-page">
+        <a class="back-link" href={`/${menu.restaurant.slug}`}>
+          ← Volver al menú
+        </a>
+        <header class="order-header">
+          <h1 class="order-title">Tu pedido</h1>
+          <p class="order-restaurant">{menu.restaurant.name}</p>
+        </header>
+        <noscript>
+          <p class="noscript-note">Para armar tu pedido necesitás activar JavaScript.</p>
+        </noscript>
+        <OrderDetail
+          client:load
+          slug={menu.restaurant.slug}
+          delivery={menu.restaurant.delivery}
+          takeaway={menu.restaurant.takeaway}
+          products={toCatalog(menu)}
+        />
+      </main>
+    </Layout>
+  ) : (
+    <MenuProblem kind={result.status === "not-found" ? "not-found" : "unavailable"} />
+  )
+}
