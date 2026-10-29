@@ -4,6 +4,7 @@ import type { AppEnv } from "./env";
 import { categoriesRoutes } from "./routes/categories";
 import { mediaRoutes } from "./routes/media";
 import { productsRoutes } from "./routes/products";
+import { publicRoutes } from "./routes/public";
 import { restaurantsRoutes } from "./routes/restaurants";
 
 const app = new Hono<AppEnv>();
@@ -25,5 +26,6 @@ app.route("/api/restaurants", restaurantsRoutes);
 app.route("/api/categories", categoriesRoutes);
 app.route("/api/products", productsRoutes);
 app.route("/api/media", mediaRoutes);
+app.route("/api/public", publicRoutes);
 
 export default app;

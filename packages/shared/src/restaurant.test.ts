@@ -42,12 +42,15 @@ describe("slugSchema / checkSlug", () => {
     },
   );
 
-  it.each(["api", "admin", "onboarding", "menucito", "www"])("rejects reserved %s", (slug) => {
-    const result = slugSchema.safeParse(slug);
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toBe(RESTAURANT_MESSAGES.slugReserved);
-    expect(checkSlug(slug)).toBe("reserved");
-  });
+  it.each(["api", "admin", "onboarding", "menucito", "www", "precios", "planes", "terminos", "privacidad", "contacto"])(
+    "rejects reserved %s",
+    (slug) => {
+      const result = slugSchema.safeParse(slug);
+      expect(result.success).toBe(false);
+      expect(result.error?.issues[0]?.message).toBe(RESTAURANT_MESSAGES.slugReserved);
+      expect(checkSlug(slug)).toBe("reserved");
+    },
+  );
 });
 
 describe("normalizeArWhatsapp", () => {

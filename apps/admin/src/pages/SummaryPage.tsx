@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { useCatalog } from "@/lib/catalog";
-import { publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
+import { publicMenuHref } from "@/lib/public-link";
+import { PUBLIC_BASE, publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { useSession } from "@/lib/session";
 
 const WHATSAPP_TEST_MESSAGE = "Hola! Este es un mensaje de prueba de Menucito.";
@@ -46,7 +47,14 @@ export function SummaryPage() {
 
       <section aria-label="Tu link y tu WhatsApp" className="flex flex-col gap-2 rounded-2xl border border-line bg-white p-6">
         <p className="m-0 text-sm text-muted">Tu link</p>
-        <p className="m-0 rounded-xl bg-addon px-3 py-2 text-[15px] font-bold break-all text-link">{publicMenuUrl(restaurant.slug)}</p>
+        <a
+          href={publicMenuHref(PUBLIC_BASE, restaurant.slug)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="m-0 flex min-h-11 items-center rounded-xl bg-addon px-3 py-2 text-[15px] font-bold break-all text-link underline-offset-2 hover:underline"
+        >
+          {publicMenuUrl(restaurant.slug)}
+        </a>
         <p className="m-0 mt-2 text-sm text-muted">Tu WhatsApp</p>
         <p className="m-0 text-[15px] font-bold">{formatWhatsapp(restaurant.whatsapp)}</p>
         <a

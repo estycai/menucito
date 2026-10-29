@@ -12,7 +12,6 @@ import { useSession } from "./session";
 export const PUBLIC_BASE: string = import.meta.env.VITE_PUBLIC_BASE || "menucito.com";
 
 export const publicMenuUrl = (slug: string) => `${PUBLIC_BASE}/${slug}`;
-
 export const RESTAURANT_KEY = ["restaurant", "me"] as const;
 export const SLUG_AVAILABILITY_KEY = ["restaurant", "slug-available"] as const;
 

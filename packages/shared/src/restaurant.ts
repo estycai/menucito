@@ -20,6 +20,12 @@ export const RESERVED_SLUGS: readonly string[] = [
   "assets",
   "static",
   "menucito",
+  // Pages of the root domain (menucito.com/<word>) that must never be a restaurant.
+  "precios",
+  "planes",
+  "terminos",
+  "privacidad",
+  "contacto",
 ];
 
 export const RESTAURANT_MESSAGES = {

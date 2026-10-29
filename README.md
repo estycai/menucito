@@ -4,6 +4,7 @@ Monorepo (pnpm + Turborepo):
 
 - `apps/api` - Hono on Cloudflare Workers, Better Auth, Drizzle, D1 (SQLite), R2 (media), Zod.
 - `apps/admin` - React + Vite + TypeScript, Tailwind, shadcn/ui-style components, TanStack Query, React Hook Form, react-router.
+- `apps/web` - Astro (SSR on Cloudflare through `@astrojs/cloudflare`), the public site: placeholder landing at `/` and the diner's read-only menu at `/<slug>`. No client framework.
 - `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization, media limits, catalog schemas, ARS price parsing/formatting, plan limits).
 
 Docs and specs: `docs/changes/` (current change: `04-menu-catalog.md`). `Menucito/` is the Obsidian vault.
@@ -30,14 +31,19 @@ pnpm --filter @menucito/api db:migrate:local
 
 ## Run
 
-Two terminals:
+Three terminals:
 
 ```bash
 pnpm --filter @menucito/api dev      # API on http://localhost:8787 (wrangler dev --local)
 pnpm --filter @menucito/admin dev    # Admin on http://localhost:5173
+pnpm --filter @menucito/web dev      # Public site on http://localhost:4321
 ```
 
-Open http://localhost:5173.
+Open http://localhost:5173 for the panel and http://localhost:4321/<slug> for a restaurant's public menu (the web app needs the API running; `/` does not).
+
+To make the "Tu link" of the admin's "Resumen" point to the local web app, start the admin with `VITE_PUBLIC_BASE=localhost:4321` (for example in `apps/admin/.env.local`, which is gitignored). The link uses `http://` for `localhost` and `127.0.0.1`, `https://` otherwise.
+
+Node.js note: Astro 7.4 and later require Node 22.22+, so `apps/web` pins Astro `~7.3.8` and `@astrojs/cloudflare` `~14.3.4`, which work on Node 22.12+. Raise both when the team moves to a newer Node 22.
 
 ### How local dev works
 
@@ -63,8 +69,8 @@ If `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are empty, the Google provider is n
 pnpm lint
 pnpm typecheck
 pnpm build
-pnpm test      # Vitest: shared helpers, admin image helpers, and the API in the Workers runtime (in-memory D1 and R2)
-# or everything: pnpm turbo lint typecheck build test
+pnpm test      # Vitest: shared helpers, admin and web helpers, and the API in the Workers runtime (in-memory D1 and R2)
+# or everything: pnpm turbo lint typecheck test build
 ```
 
 ## API
@@ -80,6 +86,7 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `DELETE /api/restaurants/me/logo` | 204 (also when there is no logo) |
 | `PUT /api/restaurants/me/plan` | body `{plan: "basic" \| "pro"}`; 200 restaurant (the current plan is a no-op), 403 `PLAN_SWITCH_DISABLED` unless `ALLOW_PLAN_SWITCH=true`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR`. Free test switch, see "Plan switch" |
 | `GET /api/media/*` | Public, no session. Serves `logos/...` and `products/...` keys only. 200 `image/webp` with `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`; 404 `NOT_FOUND` |
+| `GET /api/public/menus/:slug` | Public, no session. 200 `{restaurant: {name, slug, logoUrl}, categories: [{name, products: [{name, description, priceCents, imageUrl, available}]}]}`; categories without products are left out, no ids, owner, plan, status, WhatsApp, timestamps or ingredients. Works for any plan and status. `Cache-Control: public, max-age=60`. 404 `RESTAURANT_NOT_FOUND` for an unknown, malformed or reserved slug |
 | `GET /api/categories` | 200 `{categories: [{id, name, position, products: [Product]}], usage: {products, maxProducts, productPhotos}}` (both lists ordered by `position`) |
 | `POST /api/categories` | body `{name}` (trimmed, 1-40); 201 category, 409 `CATEGORY_NAME_TAKEN` (case-insensitive), 422 |
 | `PATCH /api/categories/:id` | body `{name}`; 200 category, 404 `CATEGORY_NOT_FOUND`, 409 `CATEGORY_NAME_TAKEN`, 422 |
@@ -143,8 +150,21 @@ Login, sign-up, forgot/reset password, verify email and onboarding render outsid
 
 | Variable | Purpose |
 | --- | --- |
-| `VITE_PUBLIC_BASE` | Host shown in the public menu link (`<host>/<slug>`). Default `menucito.com` (placeholder) |
+| `VITE_PUBLIC_BASE` | Host shown in the public menu link (`<host>/<slug>`), which opens the menu in a new tab. Default `menucito.com` (placeholder); locally `localhost:4321` |
 | `VITE_PLAN_SWITCH` | `true` shows the free plan switch on `/plan` (UI only; the API flag `ALLOW_PLAN_SWITCH` is the real guard). Default off |
+
+### Public web app (`apps/web`)
+
+| Route | Behavior |
+| --- | --- |
+| `/` | Prerendered placeholder landing ("FUTURA LANDING"); works without the API and without client JavaScript |
+| `/<slug>` | Server-rendered menu. Reads `GET /api/public/menus/:slug` from the server (no CORS involved). 200 with `Cache-Control: public, max-age=60`; 404 "No encontramos este menú" for an unknown, invalid or reserved slug (the API is not called for the last two); 503 when the API is down or answers 5xx (`no-store`); 301 to the lowercase URL for an uppercase slug |
+
+Until the "Publicar cambios" flow and the KV copy exist, the menu is read live from the database through the API, so an edit in the admin shows up on a reload (within the 60 seconds of the browser cache). Reserved slugs include the root-domain pages (`precios`, `planes`, `terminos`, `privacidad`, `contacto`).
+
+| Variable | Purpose |
+| --- | --- |
+| `PUBLIC_API_URL` | API base URL used by the web server to fetch menus and to build absolute logo and photo URLs. Default `http://127.0.0.1:8787`. Read at build and dev time (set it in `apps/web/.env`, gitignored) |
 
 ## Environment variables (`apps/api/.dev.vars`)
 
