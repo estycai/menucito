@@ -24,6 +24,7 @@ import {
   useCreateRestaurant,
   useSlugAvailability,
 } from "@/lib/restaurant";
+import { useSession } from "@/lib/session";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { cn } from "@/lib/utils";
 
@@ -41,6 +42,8 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createRestaurant = useCreateRestaurant();
+  const { data: session } = useSession();
+  const firstName = session?.user.name.trim().split(/\s+/)[0];
   /** Once the user types in the slug field we stop suggesting it from the name. */
   const [slugEditedByUser, setSlugEditedByUser] = useState(false);
 
@@ -136,7 +139,10 @@ export function OnboardingPage() {
           onSubmit={handleSubmit(onValid)}
           className="flex flex-col gap-5 rounded-[20px] border border-line bg-white p-8"
         >
-          <h1 className="m-0 font-display text-[30px] leading-[1.1] font-extrabold">Contanos de tu local</h1>
+          <div className="flex flex-col gap-1">
+            <p className="m-0 text-[15px] font-bold text-primary">{firstName ? `¡Hola, ${firstName}!` : "¡Hola!"}</p>
+            <h1 className="m-0 font-display text-[30px] leading-[1.1] font-extrabold">Contanos de tu local</h1>
+          </div>
 
           <FormField
             label="Nombre del local"
@@ -197,7 +203,7 @@ export function OnboardingPage() {
             type="tel"
             autoComplete="tel"
             placeholder="011 15 1234-5678"
-            hint="Con código de área. Nosotros armamos el link internacional."
+            hint="Número de Argentina, con código de área. Nosotros armamos el link internacional."
             error={errors.whatsapp?.message}
             {...register("whatsapp")}
           />

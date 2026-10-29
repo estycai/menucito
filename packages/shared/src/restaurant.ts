@@ -128,6 +128,8 @@ export interface Restaurant {
   whatsapp: string;
   delivery: boolean;
   takeaway: boolean;
+  /** Public path of the logo (served by `GET /api/media/*`), or `null` when there is none. */
+  logoUrl: string | null;
   plan: string;
   status: string;
   createdAt: string;

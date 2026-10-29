@@ -1,9 +1,21 @@
-import { useNavigate } from "react-router";
+import { Link, useNavigate } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { RestaurantAvatar } from "@/components/RestaurantAvatar";
 import { Button } from "@/components/ui/button";
 import { authClient, unwrap } from "@/lib/auth-client";
 import { RESTAURANT_KEY, publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { SESSION_KEY, useSession } from "@/lib/session";
+
+const WHATSAPP_TEST_MESSAGE = "Hola! Este es un mensaje de prueba de Menucito.";
+
+/** `5491112345678` -> `+54 9 1112345678`; the area code length varies, so it is not split further. */
+function formatWhatsapp(digits: string) {
+  return `+${digits.slice(0, 2)} ${digits.slice(2, 3)} ${digits.slice(3)}`;
+}
+
+function whatsappTestUrl(digits: string) {
+  return `https://wa.me/${digits}?text=${encodeURIComponent(WHATSAPP_TEST_MESSAGE)}`;
+}
 
 export function WelcomePage() {
   const navigate = useNavigate();
@@ -28,11 +40,29 @@ export function WelcomePage() {
       <h1 className="m-0 font-display text-[40px] font-extrabold">Bienvenido {session?.user.name}</h1>
       {restaurant && (
         <div className="flex w-full max-w-[420px] flex-col gap-2 rounded-[20px] border border-line bg-white p-6">
-          <h2 className="m-0 font-display text-2xl font-extrabold">{restaurant.name}</h2>
+          <div className="mb-2 flex items-center gap-4 text-left">
+            <RestaurantAvatar name={restaurant.name} logoUrl={restaurant.logoUrl} />
+            <div className="flex min-w-0 flex-col gap-1">
+              <h2 className="m-0 font-display text-2xl font-extrabold break-words">{restaurant.name}</h2>
+              <Link to="/local" className="self-start text-sm font-bold text-link underline-offset-2 hover:underline">
+                Mi local
+              </Link>
+            </div>
+          </div>
           <p className="m-0 text-sm text-muted">Tu link</p>
           <p className="m-0 rounded-xl bg-addon px-3 py-2 text-[15px] font-bold break-all text-link">
             {publicMenuUrl(restaurant.slug)}
           </p>
+          <p className="m-0 mt-2 text-sm text-muted">Tu WhatsApp</p>
+          <p className="m-0 text-[15px] font-bold">{formatWhatsapp(restaurant.whatsapp)}</p>
+          <a
+            href={whatsappTestUrl(restaurant.whatsapp)}
+            target="_blank"
+            rel="noreferrer"
+            className="text-sm font-bold text-link underline-offset-2 hover:underline"
+          >
+            Enviar mensaje de prueba
+          </a>
         </div>
       )}
       <Button type="button" variant="outline" className="px-6" disabled={signOut.isPending} onClick={() => signOut.mutate()}>

@@ -1,5 +1,11 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ApiErrorBody, CreateRestaurantInput, Restaurant, SlugAvailability } from "@menucito/shared";
+import type {
+  ApiErrorBody,
+  CreateRestaurantInput,
+  LogoUploadResult,
+  Restaurant,
+  SlugAvailability,
+} from "@menucito/shared";
 import { useSession } from "./session";
 
 /** Public host of the menus. Placeholder until the real domain is bought. */
@@ -22,15 +28,18 @@ export class ApiError extends Error {
 }
 
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  // JSON for string bodies; FormData gets its multipart Content-Type (with boundary) from the browser.
+  const json = typeof init.body === "string" ? { "Content-Type": "application/json" } : undefined;
   const res = await fetch(path, {
     ...init,
     credentials: "same-origin",
-    headers: { "Content-Type": "application/json", ...init.headers },
+    headers: { ...json, ...init.headers },
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
-    throw new ApiError(res.status, body?.error.code ?? "UNKNOWN", body?.error.message ?? res.statusText);
+    throw new ApiError(res.status, body?.error?.code ?? "UNKNOWN", body?.error?.message ?? res.statusText);
   }
+  if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
 }
 
@@ -77,5 +86,32 @@ export function useCreateRestaurant() {
     onSuccess: (restaurant) => {
       queryClient.setQueryData([...RESTAURANT_KEY, session?.user.id], restaurant);
     },
+  });
+}
+
+/** Invalidates the restaurant query so every screen shows the current logo. */
+function useInvalidateRestaurant() {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: RESTAURANT_KEY });
+}
+
+/** Uploads an already normalized WebP logo (see `normalizeLogo`). */
+export function useUploadLogo() {
+  const invalidate = useInvalidateRestaurant();
+  return useMutation({
+    mutationFn: (webp: Blob) => {
+      const form = new FormData();
+      form.append("file", webp, "logo.webp");
+      return api<LogoUploadResult>("/api/restaurants/me/logo", { method: "PUT", body: form });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveLogo() {
+  const invalidate = useInvalidateRestaurant();
+  return useMutation({
+    mutationFn: () => api<void>("/api/restaurants/me/logo", { method: "DELETE" }),
+    onSuccess: invalidate,
   });
 }

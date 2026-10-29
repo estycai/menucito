@@ -27,7 +27,7 @@ order_events      (id, restaurant_id, total, items_count, created_at)  ← estad
 
 ## Notas
 
-- Estado actual: `restaurants` existe con `id, owner_id (único), slug (único), name, whatsapp, delivery, takeaway, plan, status, created_at, updated_at`. `logo_url`, `colors` y `hours_json` todavía no están (se agregan en cambios posteriores). `whatsapp` se guarda normalizado (`549` + característica + número).
+- Estado actual: `restaurants` existe con `id, owner_id (único), slug (único), name, whatsapp, delivery, takeaway, logo_url, plan, status, created_at, updated_at`. `logo_url` guarda la ruta pública del logo o `NULL` (ver [Storage e imágenes](Storage-e-imagenes.md)). `colors` y `hours_json` todavía no están (se agregan en cambios posteriores). `whatsapp` se guarda normalizado (`549` + característica + número).
 
 - Los pedidos no pasan por el servidor: van directo a WhatsApp. `order_events` guarda solo un evento anónimo para estadísticas.
 - Los ingredientes con cantidad incluida y costo por unidad extra se explican en [Personalización de ingredientes](Personalizacion-de-ingredientes.md).

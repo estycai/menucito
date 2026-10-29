@@ -13,6 +13,7 @@ export default defineConfig(async () => {
           compatibilityDate: "2026-10-01",
           compatibilityFlags: ["nodejs_compat"],
           d1Databases: ["DB"],
+          r2Buckets: ["MEDIA"],
           bindings: {
             TEST_MIGRATIONS: migrations,
             BETTER_AUTH_SECRET: "test-secret-test-secret-test-secret-1234",

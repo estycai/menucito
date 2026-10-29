@@ -48,7 +48,8 @@ export class Client {
   async request(path: string, init: RequestInit = {}): Promise<Response> {
     const headers = new Headers(init.headers);
     headers.set("Origin", ORIGIN);
-    if (init.body) headers.set("Content-Type", "application/json");
+    // FormData bodies get their multipart Content-Type (with boundary) from the runtime.
+    if (typeof init.body === "string") headers.set("Content-Type", "application/json");
     if (this.cookies.size) {
       headers.set("Cookie", [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "));
     }

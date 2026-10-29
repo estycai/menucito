@@ -50,6 +50,7 @@ function toRestaurant(row: RestaurantRow): Restaurant {
     whatsapp: row.whatsapp,
     delivery: row.delivery,
     takeaway: row.takeaway,
+    logoUrl: row.logoUrl,
     plan: row.plan,
     status: row.status,
     createdAt: row.createdAt.toISOString(),

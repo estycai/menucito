@@ -195,6 +195,7 @@ describe("restaurants service (no database)", () => {
         if (insertError) throw insertError;
         return { plan: "basic", status: "trial", ...row } as Awaited<ReturnType<RestaurantsRepository["insert"]>>;
       },
+      updateLogoUrl: async () => null,
     };
   }
 

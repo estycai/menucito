@@ -24,6 +24,8 @@ export interface RestaurantsRepository {
   findBySlug(slug: string): Promise<RestaurantRow | null>;
   /** Inserts a restaurant. Throws `UniqueViolationError` on duplicated `slug` or `owner_id`. */
   insert(row: NewRestaurantRow): Promise<RestaurantRow>;
+  /** Sets (or clears, with `null`) the logo of the restaurant `id`. Returns the updated row, or `null` if missing. */
+  updateLogoUrl(id: string, logoUrl: string | null, updatedAt: Date): Promise<RestaurantRow | null>;
 }
 
 export function createRestaurantsRepository(d1: D1Database): RestaurantsRepository {
@@ -48,6 +50,16 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
         if (column) throw new UniqueViolationError(column);
         throw error;
       }
+    },
+
+    async updateLogoUrl(id, logoUrl, updatedAt) {
+      const row = await db
+        .update(restaurants)
+        .set({ logoUrl, updatedAt })
+        .where(eq(restaurants.id, id))
+        .returning()
+        .get();
+      return row ?? null;
     },
   };
 }

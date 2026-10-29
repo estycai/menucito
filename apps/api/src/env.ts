@@ -1,5 +1,7 @@
 export interface Env {
   DB: D1Database;
+  /** R2 bucket `menucito-media` (logos). Emulated by Miniflare under `wrangler dev --local`. */
+  MEDIA: R2Bucket;
   BETTER_AUTH_SECRET: string;
   BETTER_AUTH_URL: string;
   GOOGLE_CLIENT_ID?: string;

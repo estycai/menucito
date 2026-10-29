@@ -2,11 +2,11 @@
 
 Monorepo (pnpm + Turborepo):
 
-- `apps/api` - Hono on Cloudflare Workers, Better Auth, Drizzle, D1 (SQLite), Zod.
+- `apps/api` - Hono on Cloudflare Workers, Better Auth, Drizzle, D1 (SQLite), R2 (media), Zod.
 - `apps/admin` - React + Vite + TypeScript, Tailwind, shadcn/ui-style components, TanStack Query, React Hook Form, react-router.
-- `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization).
+- `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization, logo limits).
 
-Docs and specs: `docs/changes/` (current change: `02-restaurant-onboarding.md`). `Menucito/` is the Obsidian vault.
+Docs and specs: `docs/changes/` (current change: `03-logo-storage.md`). `Menucito/` is the Obsidian vault.
 
 ## Requirements
 
@@ -63,21 +63,31 @@ If `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` are empty, the Google provider is n
 pnpm lint
 pnpm typecheck
 pnpm build
-pnpm test      # Vitest: shared helpers, and the API in the Workers runtime against an in-memory D1
+pnpm test      # Vitest: shared helpers, admin image helpers, and the API in the Workers runtime (in-memory D1 and R2)
 # or everything: pnpm turbo lint typecheck build test
 ```
 
 ## API
 
-Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, Zod validation, JSON) -> `services/` (business rules, domain errors) -> `repositories/` (Drizzle/D1), plus `middleware/require-session.ts`. The tenant (owner) always comes from the session, never from the request body. Errors use the body `{"error": {"code", "message"}}`.
+Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, Zod validation, JSON) -> `services/` (business rules, domain errors) -> `repositories/` (Drizzle/D1), plus `storage/` (R2, used only by services) and `middleware/require-session.ts`. The tenant (owner) always comes from the session, never from the request body. Errors use the body `{"error": {"code", "message"}}`.
 
 | Method and path | Response |
 | --- | --- |
 | `GET /api/restaurants/me` | 200 restaurant, 404 `RESTAURANT_NOT_FOUND` if the user has none |
 | `GET /api/restaurants/slug-available?slug=` | 200 `{available, reason?: "invalid" | "reserved" | "taken"}` |
 | `POST /api/restaurants` | body `{name, slug, whatsapp, delivery, takeaway}`; 201 restaurant, 409 `SLUG_TAKEN` / `ALREADY_HAS_RESTAURANT`, 422 `VALIDATION_ERROR` |
+| `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
+| `DELETE /api/restaurants/me/logo` | 204 (also when there is no logo) |
+| `GET /api/media/*` | Public, no session. 200 `image/webp` with `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`; 404 `NOT_FOUND` |
 
 All `/api/restaurants/*` endpoints answer 401 `UNAUTHORIZED` without a session. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+
+### Logo and media (R2)
+
+- The restaurant logo is available on every plan (no plan check). The admin (`/local`, "Mi local") normalizes any PNG, JPG, WebP, GIF or SVG in the browser to a 512x512 WebP ("contain", transparent padding) and uploads only that WebP; SVGs are rasterized through an `<img>`, so their scripts never run and the SVG itself is never uploaded.
+- The Worker validates size (<= 1 MB), `Content-Type: image/webp` and the `RIFF....WEBP` signature, writes `logos/<restaurantId>/<random>.webp` to the `MEDIA` bucket (`menucito-media`), stores the public path in `restaurants.logo_url`, then deletes the previous object (a failed delete is only logged).
+- Local: `wrangler dev --local` emulates R2 with Miniflare (data in `apps/api/.wrangler`); no bucket or Cloudflare account is needed. Tests use the Workers-runtime R2 binding.
+- Uploads go through the Worker on purpose (no presigned URLs): presigned R2 URLs need S3 API credentials and do not work with the local emulator. Revisit for product photos.
 
 After pulling schema changes, apply new migrations locally: `pnpm --filter @menucito/api db:migrate:local`.
 

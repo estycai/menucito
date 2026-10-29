@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createAuth } from "./auth";
 import type { AppEnv } from "./env";
+import { mediaRoutes } from "./routes/media";
 import { restaurantsRoutes } from "./routes/restaurants";
 
 const app = new Hono<AppEnv>();
@@ -19,5 +20,6 @@ app.on(["GET", "POST"], "/api/auth/*", (c) => {
 });
 
 app.route("/api/restaurants", restaurantsRoutes);
+app.route("/api/media", mediaRoutes);
 
 export default app;

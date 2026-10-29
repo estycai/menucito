@@ -65,7 +65,8 @@ export const verification = sqliteTable(
 );
 
 // One restaurant per user for now (`owner_id` UNIQUE). `plan`/`status` values are provisional.
-// `logo_url`, `colors` and `hours_json` come in later changes.
+// `logo_url` holds the public path of the logo (the R2 key is derived from it).
+// `colors` and `hours_json` come in later changes.
 export const restaurants = sqliteTable("restaurants", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id")
@@ -77,6 +78,7 @@ export const restaurants = sqliteTable("restaurants", {
   whatsapp: text("whatsapp").notNull(),
   delivery: integer("delivery", { mode: "boolean" }).notNull(),
   takeaway: integer("takeaway", { mode: "boolean" }).notNull(),
+  logoUrl: text("logo_url"),
   plan: text("plan").notNull().default("basic"),
   status: text("status").notNull().default("trial"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),

@@ -48,16 +48,16 @@ Scenarios (Given / When / Then):
 - Admin: `pages/LocalPage.tsx` at `/local` (behind `RequireAuth` + `RequireRestaurant`), `lib/image.ts`, a `LogoUploader` component (avatar with initials fallback, "Cambiar logo", "Quitar logo", loading and error states), `lib/restaurant.ts` mutations that invalidate the restaurant query; `WelcomePage` shows the logo/avatar and a link to "Mi local".
 
 ## Tasks
-- [ ] 1. API data: migration adding `logo_url`, R2 `MEDIA` binding in `wrangler.jsonc` and `Env`, Drizzle schema update.
-- [ ] 2. API layers: `storage/` R2 module, repository update, service (`uploadLogo`, `removeLogo`, validation, no plan gate), exposing `logoUrl` in `/me`.
-- [ ] 3. API routes: `PUT/DELETE /api/restaurants/me/logo`, `GET /api/media/*` with cache and `nosniff` headers, error mapping.
-- [ ] 4. API tests (Vitest, R2 in the Workers runtime): scenarios 3, 4, 5 (Basic plan can upload), 7, 8, 9, 10.
-- [ ] 5. Admin: `lib/image.ts` (normalization incl. SVG rasterization) + unit-testable pure parts.
-- [ ] 6. Admin: `LocalPage` + `LogoUploader`, route `/local`, `WelcomePage` update.
-- [ ] 7. Manual browser run of scenarios 1-12 with a real PNG, JPG, GIF and SVG with the default Basic plan, update `README.md` and `Storage-e-imagenes.md`, stop any servers you started.
+- [x] 1. API data: migration adding `logo_url`, R2 `MEDIA` binding in `wrangler.jsonc` and `Env`, Drizzle schema update.
+- [x] 2. API layers: `storage/` R2 module, repository update, service (`uploadLogo`, `removeLogo`, validation, no plan gate), exposing `logoUrl` in `/me`.
+- [x] 3. API routes: `PUT/DELETE /api/restaurants/me/logo`, `GET /api/media/*` with cache and `nosniff` headers, error mapping.
+- [x] 4. API tests (Vitest, R2 in the Workers runtime): scenarios 3, 4, 5 (Basic plan can upload), 7, 8, 9, 10.
+- [x] 5. Admin: `lib/image.ts` (normalization incl. SVG rasterization) + unit-testable pure parts.
+- [x] 6. Admin: `LocalPage` + `LogoUploader`, route `/local`, `WelcomePage` update.
+- [x] 7. Manual browser run of scenarios 1-12 with a real PNG, JPG, GIF and SVG with the default Basic plan, update `README.md` and `Storage-e-imagenes.md`, stop any servers you started.
 
 ## Verify
-- [ ] Scenarios 1..12 pass (API with Vitest, browser ones manually, including an SVG with an embedded `<script>` that must not execute and must not be stored)
-- [ ] Lint, types, tests and build pass (`pnpm turbo lint typecheck test build`)
-- [ ] Storage code is only reachable through service -> `storage/` (not from routes)
-- [ ] `README.md` and `Menucito/03-arquitectura/Storage-e-imagenes.md` updated
+- [x] Scenarios 1..12 pass (API with Vitest, browser ones manually, including an SVG with an embedded `<script>` that must not execute and must not be stored)
+- [x] Lint, types, tests and build pass (`pnpm turbo lint typecheck test build`)
+- [x] Storage code is only reachable through service -> `storage/` (not from routes)
+- [x] `README.md` and `Menucito/03-arquitectura/Storage-e-imagenes.md` updated

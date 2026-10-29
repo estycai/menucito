@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GuestOnly, RequireAuth, RequireNoRestaurant, RequireRestaurant } from "@/components/guards";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
+import { LocalPage } from "@/pages/LocalPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -23,6 +24,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
           <Route element={<RequireAuth />}>
             <Route element={<RequireRestaurant />}>
               <Route path="/" element={<WelcomePage />} />
+              <Route path="/local" element={<LocalPage />} />
             </Route>
             <Route element={<RequireNoRestaurant />}>
               <Route path="/onboarding" element={<OnboardingPage />} />
