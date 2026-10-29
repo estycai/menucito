@@ -1,6 +1,6 @@
 # 07 · Pro features in the admin: locked state and customizable ingredients
 
-Status: draft
+Status: done
 Date: 2026-10-28
 Depends on: `docs/changes/06-plan-switch.md` (must be done first: the plan switch is how a Basic account tries Pro)
 

@@ -1,6 +1,6 @@
 # 06 · Plan and payments screen with a test plan switch
 
-Status: draft
+Status: done
 Date: 2026-10-28
 Depends on: `docs/changes/05-admin-shell.md` (must be done first)
 

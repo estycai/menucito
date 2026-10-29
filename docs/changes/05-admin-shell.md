@@ -1,6 +1,6 @@
 # 05 · Admin panel shell (persistent navigation)
 
-Status: draft
+Status: done
 Date: 2026-10-28
 Depends on: `docs/changes/04-menu-catalog.md` (must be done first)
 
@@ -61,12 +61,12 @@ Scenarios (Given / When / Then):
 - [x] 3. Shell: `AdminShell`, `NavPanel`, `MobileTopBar`, `NavDrawer` (native `<dialog>`), skip link.
 - [x] 4. Routes in `main.tsx`; `SummaryPage` replacing `WelcomePage`; `ComingSoon` + `/qr`, `/estadisticas`, `/plan`.
 - [x] 5. Move `MenuPage`, `ProductEditorPage`, `LocalPage` into the shell: remove "Volver al inicio", outer wrappers and nested `<main>`; keep the editor back link and `/menu`'s sticky button.
-- [ ] 6. Manual browser run of scenarios 1-15 at 375px (mobile emulation, touch, keyboard in the drawer) and at 1280px, with and without a logo, on Basic and Pro (switch `plan` in the local D1 only); update `README.md` (admin routes and shell); stop any servers you started.
+- [x] 6. Manual browser run of scenarios 1-15 at 375px (mobile emulation, touch, keyboard in the drawer) and at 1280px, with and without a logo, on Basic and Pro (switch `plan` in the local D1 only); update `README.md` (admin routes and shell); stop any servers you started.
 
 ## Verify
-- [ ] Scenarios 1..15 pass (`lib/nav.ts` with Vitest, the rest manually in a browser at 375px and 1280px)
-- [ ] No "Volver al inicio" left in the admin; exactly one `<main>` per shell page; no horizontal scroll from 360px
-- [ ] Drawer: focus contained, Escape/backdrop/close/nav-click close it, focus returns to "☰"
+- [x] Scenarios 1..15 pass (`lib/nav.ts` with Vitest, the rest manually in a browser at 375px and 1280px)
+- [x] No "Volver al inicio" left in the admin; exactly one `<main>` per shell page; no horizontal scroll from 360px
+- [x] Drawer: focus contained, Escape/backdrop/close/nav-click close it, focus returns to "☰"
 - [x] No API, `packages/shared` or vault change; the shell uses only `useMyRestaurant`, `useSession` and `useCatalog`
 - [x] Lint, types, tests and build pass (`pnpm turbo lint typecheck test build`)
 - [x] `README.md` updated
