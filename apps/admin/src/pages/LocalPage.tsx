@@ -11,7 +11,7 @@ export function LocalPage() {
   return (
     <div className="min-h-screen bg-bg px-8 py-8 text-ink">
       <main className="mx-auto flex w-full max-w-[640px] flex-col gap-5">
-        <Link to="/" className="text-sm font-bold text-link underline-offset-2 hover:underline">
+        <Link to="/" className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline">
           Volver al inicio
         </Link>
         <h1 className="m-0 font-display text-[32px] font-extrabold">Mi local</h1>

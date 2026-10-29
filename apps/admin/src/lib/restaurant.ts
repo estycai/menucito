@@ -27,7 +27,7 @@ export class ApiError extends Error {
   }
 }
 
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   // JSON for string bodies; FormData gets its multipart Content-Type (with boundary) from the browser.
   const json = typeof init.body === "string" ? { "Content-Type": "application/json" } : undefined;
   const res = await fetch(path, {

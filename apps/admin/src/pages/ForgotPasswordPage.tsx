@@ -39,7 +39,7 @@ export function ForgotPasswordPage() {
         </form>
       )}
 
-      <Link to="/login" className="text-center text-sm font-bold text-link">
+      <Link to="/login" className="inline-flex min-h-11 items-center justify-center text-sm font-bold text-link">
         Volver a ingresar
       </Link>
     </AuthLayout>

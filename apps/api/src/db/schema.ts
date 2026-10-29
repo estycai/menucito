@@ -1,4 +1,5 @@
-import { integer, sqliteTable, text, index } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
+import { integer, sqliteTable, text, index, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Tables follow the Better Auth core schema (user, session, account, verification).
 
@@ -87,3 +88,55 @@ export const restaurants = sqliteTable("restaurants", {
 
 export type RestaurantRow = typeof restaurants.$inferSelect;
 export type NewRestaurantRow = typeof restaurants.$inferInsert;
+
+// Menu categories. `position` is 0-based per restaurant; lists sort by position, then created_at.
+// Names are unique per restaurant ignoring case. SQLite `lower()` only folds ASCII, so names that
+// differ only in the case of an accented letter (e.g. "Ñoquis" / "ñoquis") are both accepted.
+export const categories = sqliteTable(
+  "categories",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [
+    index("categories_restaurant_position_idx").on(t.restaurantId, t.position),
+    uniqueIndex("categories_restaurant_name_unique").on(t.restaurantId, sql`lower(${t.name})`),
+  ],
+);
+
+// Products. `price_cents` is an integer amount of ARS cents (no float rounding). `image_url` holds
+// the public path of the single photo (the R2 key is derived from it). `available = false` means
+// "Agotado". `position` is 0-based per category. A category with products cannot be deleted
+// (`on delete restrict`, also checked by the service).
+export const products = sqliteTable(
+  "products",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    description: text("description").notNull().default(""),
+    priceCents: integer("price_cents").notNull(),
+    imageUrl: text("image_url"),
+    available: integer("available", { mode: "boolean" }).notNull().default(true),
+    position: integer("position").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("products_restaurant_category_position_idx").on(t.restaurantId, t.categoryId, t.position)],
+);
+
+export type CategoryRow = typeof categories.$inferSelect;
+export type NewCategoryRow = typeof categories.$inferInsert;
+export type ProductRow = typeof products.$inferSelect;
+export type NewProductRow = typeof products.$inferInsert;

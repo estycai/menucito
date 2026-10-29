@@ -14,7 +14,7 @@ restaurants       (id, owner_id, slug, name, whatsapp, logo_url, colors,
                    delivery, takeaway, hours_json, plan, status)
 categories        (id, restaurant_id, name, position)
 products          (id, restaurant_id, category_id, name, description,
-                   price, image_url, available, position)
+                   price_cents, image_url, available, position)
 ingredients       (id, product_id, name, included_qty, min_qty,
                    max_qty, extra_price, position)        ← Pro: ej: Bacon incluye 1, +$1.500 c/u extra
 option_groups     (id, product_id, name, min, max)        ← ej: "Punto de la carne"
@@ -28,6 +28,18 @@ order_events      (id, restaurant_id, total, items_count, created_at)  ← estad
 ## Notas
 
 - Estado actual: `restaurants` existe con `id, owner_id (único), slug (único), name, whatsapp, delivery, takeaway, logo_url, plan, status, created_at, updated_at`. `logo_url` guarda la ruta pública del logo o `NULL` (ver [Storage e imágenes](Storage-e-imagenes.md)). `colors` y `hours_json` todavía no están (se agregan en cambios posteriores). `whatsapp` se guarda normalizado (`549` + característica + número).
+
+- Estado actual: `categories` y `products` existen (migración `0003_catalog`), ver `docs/changes/04-menu-catalog.md`.
+  - `categories`: `id, restaurant_id, name, position, created_at, updated_at`. Índice `(restaurant_id, position)`. El nombre es único por local sin distinguir mayúsculas (índice único sobre `(restaurant_id, lower(name))`). SQLite `lower()` solo pasa a minúscula letras ASCII: dos nombres que difieren solo en una letra acentuada en mayúscula/minúscula (por ejemplo "Ñoquis" y "ñoquis") se aceptan como distintos.
+  - `products`: `id, restaurant_id, category_id, name, description, price_cents, image_url, available, position, created_at, updated_at`. Índice `(restaurant_id, category_id, position)`.
+  - `position` empieza en 0: por local para las categorías y por categoría para los productos. Las listas se ordenan por `position` y después por `created_at`. Lo nuevo (y un producto que cambia de categoría) va al final. Reordenar reescribe `0..n-1` en un solo batch; después de borrar pueden quedar huecos y no pasa nada.
+  - `available = false` es "Agotado". Todavía no existe "oculto".
+  - Borrar una categoría con productos está **bloqueado** (409 `CATEGORY_NOT_EMPTY`, y además `on delete restrict` en la base). Se descartó el borrado en cascada: con un clic se perderían muchos productos y sus fotos.
+- Diferencias con el modelo planeado:
+  - `price` pasó a `price_cents`: entero en centavos de ARS. Sin redondeos de punto flotante; el total del pedido por WhatsApp y los montos de Mercado Pago suman exacto.
+  - `image_url` guarda **una** foto por producto (la ruta pública; la clave de R2 se deriva de ella).
+  - `description` es NOT NULL con valor por defecto `''`.
+- Límites del plan: solo en `packages/shared/src/plans.ts`. Básico: hasta 40 productos y fotos incluidas; Pro: productos ilimitados. Sin límite de categorías. Solo se limita la creación de productos.
 
 - Los pedidos no pasan por el servidor: van directo a WhatsApp. `order_events` guarda solo un evento anónimo para estadísticas.
 - Los ingredientes con cantidad incluida y costo por unidad extra se explican en [Personalización de ingredientes](Personalizacion-de-ingredientes.md).

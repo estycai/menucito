@@ -1,6 +1,6 @@
-import { LOGO_CONTENT_TYPE } from "@menucito/shared";
+import { MEDIA_CONTENT_TYPE } from "@menucito/shared";
 import { createMediaStorage, keyFromPublicPath, type MediaStorage, type StoredObject } from "../storage/media";
-import { DomainError } from "./restaurants";
+import { DomainError } from "./errors";
 
 export class MediaNotFoundError extends DomainError {
   readonly code = "NOT_FOUND";
@@ -9,8 +9,11 @@ export class MediaNotFoundError extends DomainError {
   }
 }
 
-/** Only keys written by the logo service are public: `logos/<restaurantId>/<random>.webp`. */
-const PUBLIC_KEY_PATTERN = /^logos\/[A-Za-z0-9-]+\/[A-Za-z0-9-]+\.webp$/;
+/**
+ * Only keys written by the logo and catalog services are public:
+ * `logos/<restaurantId>/<random>.webp` and `products/<restaurantId>/<random>.webp`.
+ */
+const PUBLIC_KEY_PATTERN = /^(logos|products)\/[A-Za-z0-9-]+\/[A-Za-z0-9-]+\.webp$/;
 
 export function createMediaService(storage: MediaStorage) {
   return {
@@ -23,8 +26,8 @@ export function createMediaService(storage: MediaStorage) {
       if (!key || !PUBLIC_KEY_PATTERN.test(key)) throw new MediaNotFoundError();
       const object = await storage.get(key);
       if (!object) throw new MediaNotFoundError();
-      // Everything public is a logo, stored as WebP; never trust anything else as a content type.
-      return { ...object, contentType: LOGO_CONTENT_TYPE };
+      // Everything public is stored as WebP; never trust anything else as a content type.
+      return { ...object, contentType: MEDIA_CONTENT_TYPE };
     },
   };
 }

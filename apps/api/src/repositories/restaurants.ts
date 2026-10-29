@@ -1,23 +1,9 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import { restaurants, type NewRestaurantRow, type RestaurantRow } from "../db/schema";
+import { UniqueViolationError, translatingUniqueViolations } from "./errors";
 
-/** Raised when an insert hits a UNIQUE constraint; `column` names the violated column. */
-export class UniqueViolationError extends Error {
-  constructor(readonly column: string) {
-    super(`Unique constraint failed: restaurants.${column}`);
-    this.name = "UniqueViolationError";
-  }
-}
-
-/** Walks the error cause chain (Drizzle wraps the D1 error) looking for a SQLite UNIQUE failure. */
-function uniqueViolationColumn(error: unknown): string | null {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    const match = /UNIQUE constraint failed: restaurants\.(\w+)/.exec(current.message);
-    if (match?.[1]) return match[1];
-  }
-  return null;
-}
+export { UniqueViolationError };
 
 export interface RestaurantsRepository {
   findByOwner(ownerId: string): Promise<RestaurantRow | null>;
@@ -43,13 +29,7 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
     },
 
     async insert(row) {
-      try {
-        return await db.insert(restaurants).values(row).returning().get();
-      } catch (error) {
-        const column = uniqueViolationColumn(error);
-        if (column) throw new UniqueViolationError(column);
-        throw error;
-      }
+      return translatingUniqueViolations(() => db.insert(restaurants).values(row).returning().get());
     },
 
     async updateLogoUrl(id, logoUrl, updatedAt) {

@@ -4,9 +4,9 @@ Monorepo (pnpm + Turborepo):
 
 - `apps/api` - Hono on Cloudflare Workers, Better Auth, Drizzle, D1 (SQLite), R2 (media), Zod.
 - `apps/admin` - React + Vite + TypeScript, Tailwind, shadcn/ui-style components, TanStack Query, React Hook Form, react-router.
-- `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization, logo limits).
+- `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization, media limits, catalog schemas, ARS price parsing/formatting, plan limits).
 
-Docs and specs: `docs/changes/` (current change: `03-logo-storage.md`). `Menucito/` is the Obsidian vault.
+Docs and specs: `docs/changes/` (current change: `04-menu-catalog.md`). `Menucito/` is the Obsidian vault.
 
 ## Requirements
 
@@ -78,16 +78,35 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `POST /api/restaurants` | body `{name, slug, whatsapp, delivery, takeaway}`; 201 restaurant, 409 `SLUG_TAKEN` / `ALREADY_HAS_RESTAURANT`, 422 `VALIDATION_ERROR` |
 | `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
 | `DELETE /api/restaurants/me/logo` | 204 (also when there is no logo) |
-| `GET /api/media/*` | Public, no session. 200 `image/webp` with `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`; 404 `NOT_FOUND` |
+| `GET /api/media/*` | Public, no session. Serves `logos/...` and `products/...` keys only. 200 `image/webp` with `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`; 404 `NOT_FOUND` |
+| `GET /api/categories` | 200 `{categories: [{id, name, position, products: [Product]}], usage: {products, maxProducts, productPhotos}}` (both lists ordered by `position`) |
+| `POST /api/categories` | body `{name}` (trimmed, 1-40); 201 category, 409 `CATEGORY_NAME_TAKEN` (case-insensitive), 422 |
+| `PATCH /api/categories/:id` | body `{name}`; 200 category, 404 `CATEGORY_NOT_FOUND`, 409 `CATEGORY_NAME_TAKEN`, 422 |
+| `DELETE /api/categories/:id` | 204, 404, 409 `CATEGORY_NOT_EMPTY` (a category with products is never deleted) |
+| `PUT /api/categories/order` | body `{ids}` with every category id exactly once; 204, 422 otherwise |
+| `PUT /api/categories/:id/products/order` | body `{ids}` with every product id of the category exactly once; 204, 404, 422 |
+| `POST /api/products` | body `{categoryId, name, description?, priceCents, available?}`; 201 product, 403 `PLAN_LIMIT`, 404 `CATEGORY_NOT_FOUND`, 422 |
+| `GET /api/products/:id` | 200 product, 404 `PRODUCT_NOT_FOUND` |
+| `PATCH /api/products/:id` | any subset of the create fields; a new `categoryId` moves it to the end of that category; 200, 404, 422 |
+| `DELETE /api/products/:id` | 204 (also deletes its photo), 404 |
+| `PUT /api/products/:id/photo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{imageUrl}`, 403 `PLAN_LIMIT`, 404, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE` |
+| `DELETE /api/products/:id/photo` | 204 (also when there is no photo), 404 |
 
-All `/api/restaurants/*` endpoints answer 401 `UNAUTHORIZED` without a session. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+Product: `{id, categoryId, name, description, priceCents, imageUrl, available, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado".
+
+All `/api/restaurants/*`, `/api/categories/*` and `/api/products/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
 
 ### Logo and media (R2)
 
 - The restaurant logo is available on every plan (no plan check). The admin (`/local`, "Mi local") normalizes any PNG, JPG, WebP, GIF or SVG in the browser to a 512x512 WebP ("contain", transparent padding) and uploads only that WebP; SVGs are rasterized through an `<img>`, so their scripts never run and the SVG itself is never uploaded.
 - The Worker validates size (<= 1 MB), `Content-Type: image/webp` and the `RIFF....WEBP` signature, writes `logos/<restaurantId>/<random>.webp` to the `MEDIA` bucket (`menucito-media`), stores the public path in `restaurants.logo_url`, then deletes the previous object (a failed delete is only logged).
 - Local: `wrangler dev --local` emulates R2 with Miniflare (data in `apps/api/.wrangler`); no bucket or Cloudflare account is needed. Tests use the Workers-runtime R2 binding.
-- Uploads go through the Worker on purpose (no presigned URLs): presigned R2 URLs need S3 API credentials and do not work with the local emulator. Revisit for product photos.
+- Uploads go through the Worker on purpose (no presigned URLs): presigned R2 URLs need S3 API credentials and do not work with the local emulator. Product photos use the same path (an 800x800 WebP is ~50-150 KB).
+- Product photos (admin `/menu`): one photo per product, normalized in the browser to an 800x800 WebP ("cover": scaled to fill and center-cropped). Accepted sources: PNG, JPG, WebP, GIF (no SVG). The file input uses `accept="image/*"` without `capture`, so phones offer both camera and gallery. Stored as `products/<restaurantId>/<random>.webp`, same validation and replace order as the logo; deleting a product deletes its photo.
+
+### Plan limits
+
+Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLimitsFor`); unknown plans get Basic. Basic: up to 40 products, product photos included. Pro: unlimited products. One photo per product on every plan; no category limit. Only creating products is limited (403 `PLAN_LIMIT`): a restaurant above the limit keeps, edits, moves and deletes its products.
 
 After pulling schema changes, apply new migrations locally: `pnpm --filter @menucito/api db:migrate:local`.
 

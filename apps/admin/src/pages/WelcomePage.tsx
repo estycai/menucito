@@ -44,9 +44,14 @@ export function WelcomePage() {
             <RestaurantAvatar name={restaurant.name} logoUrl={restaurant.logoUrl} />
             <div className="flex min-w-0 flex-col gap-1">
               <h2 className="m-0 font-display text-2xl font-extrabold break-words">{restaurant.name}</h2>
-              <Link to="/local" className="self-start text-sm font-bold text-link underline-offset-2 hover:underline">
-                Mi local
-              </Link>
+              <div className="flex flex-wrap gap-x-4">
+                <Link to="/menu" className="inline-flex min-h-11 min-w-11 items-center text-sm font-bold text-link underline-offset-2 hover:underline">
+                  Mi menú
+                </Link>
+                <Link to="/local" className="inline-flex min-h-11 min-w-11 items-center text-sm font-bold text-link underline-offset-2 hover:underline">
+                  Mi local
+                </Link>
+              </div>
             </div>
           </div>
           <p className="m-0 text-sm text-muted">Tu link</p>
@@ -59,7 +64,7 @@ export function WelcomePage() {
             href={whatsappTestUrl(restaurant.whatsapp)}
             target="_blank"
             rel="noreferrer"
-            className="text-sm font-bold text-link underline-offset-2 hover:underline"
+            className="inline-flex min-h-11 items-center justify-center text-sm font-bold text-link underline-offset-2 hover:underline"
           >
             Enviar mensaje de prueba
           </a>

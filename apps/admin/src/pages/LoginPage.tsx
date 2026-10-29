@@ -45,14 +45,14 @@ export function LoginPage() {
         {tab === "login" ? (
           <>
             ¿Primera vez?{" "}
-            <button type="button" onClick={() => setTab("signup")} className="cursor-pointer font-bold text-link">
+            <button type="button" onClick={() => setTab("signup")} className="inline-flex min-h-11 cursor-pointer items-center font-bold text-link">
               Creá tu cuenta
             </button>
           </>
         ) : (
           <>
             ¿Ya tenés cuenta?{" "}
-            <button type="button" onClick={() => setTab("login")} className="cursor-pointer font-bold text-link">
+            <button type="button" onClick={() => setTab("login")} className="inline-flex min-h-11 cursor-pointer items-center font-bold text-link">
               Ingresá
             </button>
           </>
@@ -137,7 +137,7 @@ function LoginForm() {
         error={errors.password?.message}
         {...register("password")}
       />
-      <Link to="/forgot-password" className="-mt-2 self-end text-sm font-bold text-link">
+      <Link to="/forgot-password" className="-mt-2 inline-flex min-h-11 items-center self-end text-sm font-bold text-link">
         Olvidé mi contraseña
       </Link>
 
@@ -151,7 +151,7 @@ function LoginForm() {
               type="button"
               disabled={resend.isPending}
               onClick={() => resend.mutate(unverifiedEmail)}
-              className="cursor-pointer text-sm font-bold text-link"
+              className="inline-flex min-h-11 cursor-pointer items-center text-sm font-bold text-link"
             >
               Reenviar email de verificación
             </button>

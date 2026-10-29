@@ -11,18 +11,7 @@ import {
   createRestaurantsRepository,
   type RestaurantsRepository,
 } from "../repositories/restaurants";
-
-/** Base class for business rule violations; routes translate them to HTTP responses. */
-export abstract class DomainError extends Error {
-  abstract readonly code: string;
-}
-
-export class RestaurantNotFoundError extends DomainError {
-  readonly code = "RESTAURANT_NOT_FOUND";
-  constructor() {
-    super("You do not have a restaurant yet");
-  }
-}
+import { DomainError, RestaurantNotFoundError, ValidationError } from "./errors";
 
 export class SlugTakenError extends DomainError {
   readonly code = "SLUG_TAKEN";
@@ -38,9 +27,7 @@ export class AlreadyHasRestaurantError extends DomainError {
   }
 }
 
-export class InvalidRestaurantError extends DomainError {
-  readonly code = "VALIDATION_ERROR";
-}
+export class InvalidRestaurantError extends ValidationError {}
 
 function toRestaurant(row: RestaurantRow): Restaurant {
   return {
