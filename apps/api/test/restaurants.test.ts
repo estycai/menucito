@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { Restaurant, SlugAvailability } from "@menucito/shared";
+import { env } from "cloudflare:workers";
+import { PLAN_LIMITS, type Catalog, type Restaurant, type SlugAvailability } from "@menucito/shared";
+import type { Env } from "../src/env";
 import { Client, captureEmails } from "./helpers";
 import { createRestaurantsService } from "../src/services/restaurants";
 import { UniqueViolationError, type RestaurantsRepository } from "../src/repositories/restaurants";
@@ -14,10 +16,10 @@ let counter = 0;
 const unique = () => `${Date.now()}${counter++}`;
 
 /** Signs up, verifies (which opens a session) and returns the logged-in client. */
-async function loggedInClient() {
+async function loggedInClient(bindings: Partial<Env> = {}) {
   const email = `owner${unique()}@example.com`;
   await new Client().post("/api/auth/sign-up/email", { name: "Marta", email, password: "password-123", callbackURL: "/" });
-  const client = new Client();
+  const client = new Client(bindings);
   await client.open(sink.last().link);
   expect(client.hasSession).toBe(true);
   return client;
@@ -184,6 +186,125 @@ describe("GET /api/restaurants/slug-available", () => {
   });
 });
 
+describe("PUT /api/restaurants/me/plan", () => {
+  const FLAG_ON = { ALLOW_PLAN_SWITCH: "true" };
+  const putPlan = (client: Client, body: unknown) =>
+    client.request("/api/restaurants/me/plan", { method: "PUT", body: JSON.stringify(body) });
+  const planOf = async (client: Client) => ((await (await client.request("/api/restaurants/me")).json()) as Restaurant).plan;
+
+  async function ownerWithRestaurant(bindings: Partial<Env> = {}) {
+    const client = await loggedInClient(bindings);
+    const res = await client.post("/api/restaurants", validBody());
+    expect(res.status).toBe(201);
+    return { client, restaurant: (await res.json()) as Restaurant };
+  }
+
+  it.each([undefined, "false", "1", "TRUE", ""])(
+    "answers 403 PLAN_SWITCH_DISABLED and keeps the plan when the flag is %j (scenario 1)",
+    async (flag) => {
+      const { client } = await ownerWithRestaurant(flag === undefined ? {} : { ALLOW_PLAN_SWITCH: flag });
+      const res = await putPlan(client, { plan: "pro" });
+      expect(res.status).toBe(403);
+      expect(await errorCode(res)).toBe("PLAN_SWITCH_DISABLED");
+      expect(await planOf(client)).toBe("basic");
+    },
+  );
+
+  it("switches to pro, back to basic, and treats the current plan as a no-op (scenario 2)", async () => {
+    const { client } = await ownerWithRestaurant(FLAG_ON);
+
+    const up = await putPlan(client, { plan: "pro" });
+    expect(up.status).toBe(200);
+    expect((await up.json()) as Restaurant).toMatchObject({ plan: "pro" });
+    expect(await planOf(client)).toBe("pro");
+
+    const same = await putPlan(client, { plan: "pro" });
+    expect(same.status).toBe(200);
+    expect((await same.json()) as Restaurant).toMatchObject({ plan: "pro" });
+
+    const down = await putPlan(client, { plan: "basic" });
+    expect(down.status).toBe(200);
+    expect((await down.json()) as Restaurant).toMatchObject({ plan: "basic" });
+    expect(await planOf(client)).toBe("basic");
+  });
+
+  it("returns the same restaurant shape as GET /me (scenario 2)", async () => {
+    const { client, restaurant } = await ownerWithRestaurant(FLAG_ON);
+    const res = await putPlan(client, { plan: "pro" });
+    expect(await res.json()).toMatchObject({ id: restaurant.id, slug: restaurant.slug, name: restaurant.name, plan: "pro" });
+  });
+
+  it("answers 401 without a session (scenario 3)", async () => {
+    const res = await putPlan(new Client(FLAG_ON), { plan: "pro" });
+    expect(res.status).toBe(401);
+    expect(await errorCode(res)).toBe("UNAUTHORIZED");
+  });
+
+  it("answers 404 RESTAURANT_NOT_FOUND for a user without a restaurant (scenario 3)", async () => {
+    const client = await loggedInClient(FLAG_ON);
+    const res = await putPlan(client, { plan: "pro" });
+    expect(res.status).toBe(404);
+    expect(await errorCode(res)).toBe("RESTAURANT_NOT_FOUND");
+  });
+
+  it.each([
+    ["an unknown plan", { plan: "enterprise" }],
+    ["a missing plan", {}],
+    ["a non-string plan", { plan: 1 }],
+  ])("answers 422 VALIDATION_ERROR for %s and keeps the plan (scenario 3)", async (_label, body) => {
+    const { client } = await ownerWithRestaurant(FLAG_ON);
+    const res = await putPlan(client, body);
+    expect(res.status).toBe(422);
+    expect(await errorCode(res)).toBe("VALIDATION_ERROR");
+    expect(await planOf(client)).toBe("basic");
+  });
+
+  it("answers 422 when there is no body or it is malformed (scenario 3)", async () => {
+    const { client } = await ownerWithRestaurant(FLAG_ON);
+    for (const body of [undefined, "{not json"]) {
+      const res = await client.request("/api/restaurants/me/plan", { method: "PUT", body });
+      expect(res.status).toBe(422);
+      expect(await errorCode(res)).toBe("VALIDATION_ERROR");
+    }
+  });
+
+  it("only changes the plan of the caller's restaurant", async () => {
+    const { client } = await ownerWithRestaurant(FLAG_ON);
+    const { client: other } = await ownerWithRestaurant(FLAG_ON);
+    await putPlan(client, { plan: "pro" });
+    expect(await planOf(other)).toBe("basic");
+  });
+
+  it("keeps every product on a downgrade and blocks only new ones (scenario 9)", async () => {
+    const { client, restaurant } = await ownerWithRestaurant(FLAG_ON);
+    const limit = PLAN_LIMITS.basic.maxProducts as number;
+    const seeded = limit + 5;
+    expect((await putPlan(client, { plan: "pro" })).status).toBe(200);
+
+    const categoryRes = await client.post("/api/categories", { name: "Hamburguesas" });
+    const category = (await categoryRes.json()) as { id: string };
+    const insert = env.DB.prepare(
+      "INSERT INTO products (id, restaurant_id, category_id, name, price_cents, position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    );
+    const now = Date.now();
+    await env.DB.batch(
+      Array.from({ length: seeded }, (_, i) =>
+        insert.bind(crypto.randomUUID(), restaurant.id, category.id, `Seed ${i}`, 100, i, now, now),
+      ),
+    );
+
+    expect((await putPlan(client, { plan: "basic" })).status).toBe(200);
+
+    const catalog = (await (await client.request("/api/categories")).json()) as Catalog;
+    expect(catalog.usage).toMatchObject({ products: seeded, maxProducts: limit });
+    expect(catalog.categories[0]?.products).toHaveLength(seeded);
+
+    const blocked = await client.post("/api/products", { categoryId: category.id, name: "Una más", priceCents: 100 });
+    expect(blocked.status).toBe(403);
+    expect(await errorCode(blocked)).toBe("PLAN_LIMIT");
+  });
+});
+
 describe("restaurants service (no database)", () => {
   const input = { name: "Lo de Marta", slug: "lo-de-marta", whatsapp: "11 1234 5678", delivery: true, takeaway: false };
 
@@ -196,6 +317,7 @@ describe("restaurants service (no database)", () => {
         return { plan: "basic", status: "trial", ...row } as Awaited<ReturnType<RestaurantsRepository["insert"]>>;
       },
       updateLogoUrl: async () => null,
+      updatePlan: async () => null,
     };
   }
 

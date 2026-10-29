@@ -7,3 +7,6 @@ GOOGLE_CLIENT_SECRET=
 # Leave RESEND_API_KEY empty to log emails to the console instead of sending them.
 RESEND_API_KEY=
 EMAIL_FROM=onboarding@resend.dev
+# Local testing aid only: lets an owner switch plans for free (PUT /api/restaurants/me/plan).
+# Never set it in wrangler.jsonc or in a deployed environment.
+ALLOW_PLAN_SWITCH=true

@@ -78,6 +78,7 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `POST /api/restaurants` | body `{name, slug, whatsapp, delivery, takeaway}`; 201 restaurant, 409 `SLUG_TAKEN` / `ALREADY_HAS_RESTAURANT`, 422 `VALIDATION_ERROR` |
 | `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
 | `DELETE /api/restaurants/me/logo` | 204 (also when there is no logo) |
+| `PUT /api/restaurants/me/plan` | body `{plan: "basic" \| "pro"}`; 200 restaurant (the current plan is a no-op), 403 `PLAN_SWITCH_DISABLED` unless `ALLOW_PLAN_SWITCH=true`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR`. Free test switch, see "Plan switch" |
 | `GET /api/media/*` | Public, no session. Serves `logos/...` and `products/...` keys only. 200 `image/webp` with `Cache-Control: public, max-age=31536000, immutable` and `X-Content-Type-Options: nosniff`; 404 `NOT_FOUND` |
 | `GET /api/categories` | 200 `{categories: [{id, name, position, products: [Product]}], usage: {products, maxProducts, productPhotos}}` (both lists ordered by `position`) |
 | `POST /api/categories` | body `{name}` (trimmed, 1-40); 201 category, 409 `CATEGORY_NAME_TAKEN` (case-insensitive), 422 |
@@ -108,6 +109,15 @@ All `/api/restaurants/*`, `/api/categories/*` and `/api/products/*` endpoints an
 
 Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLimitsFor`); unknown plans get Basic. Basic: up to 40 products, product photos included. Pro: unlimited products. One photo per product on every plan; no category limit. Only creating products is limited (403 `PLAN_LIMIT`): a restaurant above the limit keeps, edits, moves and deletes its products.
 
+### Plan switch (testing aid)
+
+Until Mercado Pago exists there is no way to pay, so `/plan` ("Plan y pagos") can switch the restaurant between Basic and Pro for free. This lets the plan limits and Pro behavior be tested end to end; it is not a product feature and the future checkout and webhook will replace it. It is guarded by two flags, both off by default:
+
+- `ALLOW_PLAN_SWITCH=true` (API, `apps/api/.dev.vars`): the real guard. Without it `PUT /api/restaurants/me/plan` answers 403 `PLAN_SWITCH_DISABLED` and never changes a plan. It is deliberately absent from `wrangler.jsonc`, so no deployed environment has it unless someone adds it on purpose.
+- `VITE_PLAN_SWITCH=true` (admin, build time): only shows or hides the switch button on `/plan`. Without it the page shows the plans and "El pago de planes estará disponible pronto."
+
+Set both together locally; keep both unset in staging and production. Downgrading never deletes or hides products: a restaurant above the Basic limit keeps them all and only new products are blocked (403 `PLAN_LIMIT`).
+
 After pulling schema changes, apply new migrations locally: `pnpm --filter @menucito/api db:migrate:local`.
 
 ### Admin panel routes and shell
@@ -119,7 +129,8 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/` | Resumen (public link, WhatsApp, product and category counts) |
 | `/menu`, `/menu/products/new`, `/menu/products/:id` | Mi menú |
 | `/local` | Mi local |
-| `/qr`, `/estadisticas`, `/plan` | Link y QR, Estadísticas, Plan y pagos: "Próximamente" placeholders |
+| `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
+| `/qr`, `/estadisticas` | Link y QR, Estadísticas: "Próximamente" placeholders |
 
 Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
 
@@ -128,6 +139,7 @@ Login, sign-up, forgot/reset password, verify email and onboarding render outsid
 | Variable | Purpose |
 | --- | --- |
 | `VITE_PUBLIC_BASE` | Host shown in the public menu link (`<host>/<slug>`). Default `menucito.com` (placeholder) |
+| `VITE_PLAN_SWITCH` | `true` shows the free plan switch on `/plan` (UI only; the API flag `ALLOW_PLAN_SWITCH` is the real guard). Default off |
 
 ## Environment variables (`apps/api/.dev.vars`)
 
@@ -138,6 +150,7 @@ Login, sign-up, forgot/reset password, verify email and onboarding render outsid
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth credentials (guide below) |
 | `RESEND_API_KEY` | Resend API key. Empty = log emails to the console |
 | `EMAIL_FROM` | Sender address. Local/no domain: `onboarding@resend.dev` |
+| `ALLOW_PLAN_SWITCH` | `true` enables the free plan switch endpoint. Local testing only; never set it in a deployed environment |
 
 After editing `.dev.vars`, restart the API dev server.
 

@@ -30,6 +30,9 @@ export function captureEmails() {
 export class Client {
   private cookies = new Map<string, string>();
 
+  /** `bindings` are merged over the test environment for every request (e.g. to turn a flag on). */
+  constructor(private readonly bindings: Partial<Env> = {}) {}
+
   private absorb(res: Response) {
     for (const raw of res.headers.getSetCookie()) {
       const [pair = ""] = raw.split(";");
@@ -53,7 +56,7 @@ export class Client {
     if (this.cookies.size) {
       headers.set("Cookie", [...this.cookies].map(([k, v]) => `${k}=${v}`).join("; "));
     }
-    const res = await app.request(path, { ...init, headers, redirect: "manual" }, env as unknown as Env);
+    const res = await app.request(path, { ...init, headers, redirect: "manual" }, { ...env, ...this.bindings } as unknown as Env);
     this.absorb(res);
     return res;
   }

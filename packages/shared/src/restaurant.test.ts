@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { PLAN_LIMITS } from "./plans";
 import {
   RESTAURANT_MESSAGES,
+  changePlanSchema,
   checkSlug,
   createRestaurantSchema,
   normalizeArWhatsapp,
@@ -79,6 +81,29 @@ describe("normalizeArWhatsapp", () => {
     it("accepts a 10-digit number without area code, reading 15 as the area code", () => {
       expect(normalizeArWhatsapp("15 1234 5678")).toBe("5491512345678");
     });
+  });
+});
+
+describe("changePlanSchema", () => {
+  it.each(["basic", "pro"])("accepts %s", (plan) => {
+    expect(changePlanSchema.parse({ plan })).toEqual({ plan });
+  });
+
+  it.each([{ plan: "enterprise" }, { plan: "" }, { plan: "PRO" }, { plan: null }, { plan: 1 }])(
+    "rejects %j",
+    (input) => {
+      expect(changePlanSchema.safeParse(input).success).toBe(false);
+    },
+  );
+
+  it("rejects a missing plan field and non-object input", () => {
+    expect(changePlanSchema.safeParse({}).success).toBe(false);
+    expect(changePlanSchema.safeParse(undefined).success).toBe(false);
+    expect(changePlanSchema.safeParse("pro").success).toBe(false);
+  });
+
+  it("accepts every plan defined in PLAN_LIMITS", () => {
+    for (const plan of Object.keys(PLAN_LIMITS)) expect(changePlanSchema.safeParse({ plan }).success).toBe(true);
   });
 });
 

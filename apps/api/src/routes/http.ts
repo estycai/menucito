@@ -16,6 +16,7 @@ export function errorResponse(c: Context<AppEnv>, status: ContentfulStatusCode, 
 /** HTTP status of each domain error code. Unknown codes answer 400. */
 const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   PLAN_LIMIT: 403,
+  PLAN_SWITCH_DISABLED: 403,
   RESTAURANT_NOT_FOUND: 404,
   CATEGORY_NOT_FOUND: 404,
   PRODUCT_NOT_FOUND: 404,

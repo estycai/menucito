@@ -10,6 +10,7 @@ import { LocalPage } from "@/pages/LocalPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MenuPage } from "@/pages/MenuPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
+import { PlanPage } from "@/pages/PlanPage";
 import { ProductEditorPage } from "@/pages/ProductEditorPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { SummaryPage } from "@/pages/SummaryPage";
@@ -35,7 +36,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 <Route path="/local" element={<LocalPage />} />
                 <Route path="/qr" element={<ComingSoonPage id="qr" />} />
                 <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
-                <Route path="/plan" element={<ComingSoonPage id="plan" />} />
+                <Route path="/plan" element={<PlanPage />} />
               </Route>
             </Route>
             <Route element={<RequireNoRestaurant />}>

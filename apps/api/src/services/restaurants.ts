@@ -2,6 +2,7 @@ import {
   checkSlug,
   normalizeArWhatsapp,
   type CreateRestaurantInput,
+  type PlanId,
   type Restaurant,
   type SlugAvailability,
 } from "@menucito/shared";
@@ -24,6 +25,13 @@ export class AlreadyHasRestaurantError extends DomainError {
   readonly code = "ALREADY_HAS_RESTAURANT";
   constructor() {
     super("You already have a restaurant");
+  }
+}
+
+export class PlanSwitchDisabledError extends DomainError {
+  readonly code = "PLAN_SWITCH_DISABLED";
+  constructor() {
+    super("Switching plans is not enabled in this environment");
   }
 }
 
@@ -59,6 +67,21 @@ export function createRestaurantsService(repository: RestaurantsRepository) {
       if (problem) return { available: false, reason: problem };
       if (await repository.findBySlug(slug)) return { available: false, reason: "taken" };
       return { available: true };
+    },
+
+    /**
+     * Sets the plan of the owner's restaurant, for free. Only a testing aid until payments exist, so it
+     * is refused with `PlanSwitchDisabledError` unless `options.enabled`. Choosing the current plan is a
+     * no-op. Products are never touched: a downgrade only affects the creation limit.
+     */
+    async changePlan(ownerId: string, plan: PlanId, options: { enabled: boolean }): Promise<Restaurant> {
+      if (!options.enabled) throw new PlanSwitchDisabledError();
+      const current = await repository.findByOwner(ownerId);
+      if (!current) throw new RestaurantNotFoundError();
+      if (current.plan === plan) return toRestaurant(current);
+      const updated = await repository.updatePlan(current.id, plan, new Date());
+      if (!updated) throw new RestaurantNotFoundError();
+      return toRestaurant(updated);
     },
 
     /**

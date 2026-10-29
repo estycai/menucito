@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { LOGO_MAX_BYTES, createRestaurantSchema } from "@menucito/shared";
+import { LOGO_MAX_BYTES, changePlanSchema, createRestaurantSchema } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { logoServiceFor } from "../services/logos";
@@ -24,6 +24,15 @@ export const restaurantsRoutes = new Hono<AppEnv>()
     if ("response" in body) return body.response;
     const restaurant = await restaurantsServiceFor(c.env.DB).create(c.get("userId"), body.data);
     return c.json(restaurant, 201);
+  })
+
+  .put("/me/plan", async (c) => {
+    const body = await parseJsonBody(c, changePlanSchema);
+    if ("response" in body) return body.response;
+    // The flag is configuration, so it is read here and handed to the service as a plain boolean.
+    const enabled = c.env.ALLOW_PLAN_SWITCH === "true";
+    const restaurant = await restaurantsServiceFor(c.env.DB).changePlan(c.get("userId"), body.data.plan, { enabled });
+    return c.json(restaurant);
   })
 
   .put("/me/logo", uploadBodyLimit("logo", LOGO_MAX_BYTES), async (c) => {

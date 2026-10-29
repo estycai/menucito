@@ -1,5 +1,6 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
+import type { PlanId } from "@menucito/shared";
 import { restaurants, type NewRestaurantRow, type RestaurantRow } from "../db/schema";
 import { UniqueViolationError, translatingUniqueViolations } from "./errors";
 
@@ -12,6 +13,8 @@ export interface RestaurantsRepository {
   insert(row: NewRestaurantRow): Promise<RestaurantRow>;
   /** Sets (or clears, with `null`) the logo of the restaurant `id`. Returns the updated row, or `null` if missing. */
   updateLogoUrl(id: string, logoUrl: string | null, updatedAt: Date): Promise<RestaurantRow | null>;
+  /** Sets the plan of the restaurant `id`. Returns the updated row, or `null` if missing. */
+  updatePlan(id: string, plan: PlanId, updatedAt: Date): Promise<RestaurantRow | null>;
 }
 
 export function createRestaurantsRepository(d1: D1Database): RestaurantsRepository {
@@ -36,6 +39,16 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
       const row = await db
         .update(restaurants)
         .set({ logoUrl, updatedAt })
+        .where(eq(restaurants.id, id))
+        .returning()
+        .get();
+      return row ?? null;
+    },
+
+    async updatePlan(id, plan, updatedAt) {
+      const row = await db
+        .update(restaurants)
+        .set({ plan, updatedAt })
         .where(eq(restaurants.id, id))
         .returning()
         .get();

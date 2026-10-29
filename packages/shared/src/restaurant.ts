@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { PLAN_IDS } from "./plans";
 
 export const SLUG_MIN_LENGTH = 3;
 export const SLUG_MAX_LENGTH = 40;
@@ -118,6 +119,11 @@ export const createRestaurantSchema = z
   });
 
 export type CreateRestaurantInput = z.infer<typeof createRestaurantSchema>;
+
+/** Body of `PUT /api/restaurants/me/plan`. The accepted values come from `PLAN_LIMITS`, so a new plan is never forgotten. */
+export const changePlanSchema = z.object({ plan: z.enum(PLAN_IDS) });
+
+export type ChangePlanInput = z.infer<typeof changePlanSchema>;
 
 /** Restaurant as returned by the API (dates as ISO strings). */
 export interface Restaurant {
