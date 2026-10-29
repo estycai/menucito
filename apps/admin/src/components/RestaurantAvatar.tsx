@@ -2,6 +2,7 @@ import { initials } from "@/lib/initials";
 import { cn } from "@/lib/utils";
 
 const SIZES = {
+  sm: "size-9 rounded-[10px] text-sm",
   md: "size-16 rounded-2xl text-[22px]",
   lg: "size-20 rounded-[20px] text-[26px]",
 } as const;

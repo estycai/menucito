@@ -19,7 +19,10 @@ import { planName } from "@/lib/plans";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
 import { cn } from "@/lib/utils";
 
-const confirmDelete = (name: string) => window.confirm(`¿Eliminar «${name}»? No se puede deshacer.`);
+/** `?category=all` shows every category's products instead of one. */
+const ALL_CATEGORIES = "all";
+
+const confirmDelete =(name: string) => window.confirm(`¿Eliminar «${name}»? No se puede deshacer.`);
 
 function usageText(usage: CatalogUsage, plan: string) {
   return usage.maxProducts === null
@@ -43,13 +46,15 @@ export function MenuPage() {
   if (!restaurant) return null;
 
   const categories = catalog?.categories ?? [];
-  const selected = categories.find((category) => category.id === selectedId) ?? categories[0] ?? null;
+  const showAll = selectedId === ALL_CATEGORIES && categories.length > 0;
+  const selected = showAll ? null : (categories.find((category) => category.id === selectedId) ?? categories[0] ?? null);
   const usage = catalog?.usage;
   const atLimit = Boolean(usage && usage.maxProducts !== null && usage.products >= usage.maxProducts);
-  const canCreateProduct = Boolean(selected) && !atLimit;
+  const canCreateProduct = categories.length > 0 && !atLimit;
 
   function newProduct() {
-    if (selected) navigate(`/menu/products/new?category=${encodeURIComponent(selected.id)}`);
+    // The editor falls back to the first category when none is requested.
+    navigate(selected ? `/menu/products/new?category=${encodeURIComponent(selected.id)}` : "/menu/products/new");
   }
 
   const newProductButton = (className: string) => (
@@ -59,98 +64,117 @@ export function MenuPage() {
   );
 
   return (
-    <div className="min-h-screen bg-bg px-4 pt-6 pb-24 text-ink sm:px-8 sm:pt-8 md:pb-8">
-      <main className="mx-auto flex w-full max-w-[1100px] flex-col gap-5">
-        <Link to="/" className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline">
-          Volver al inicio
-        </Link>
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <h1 className="m-0 font-display text-[28px] font-extrabold sm:text-[32px]">Mi menú</h1>
-            {usage && <span className="text-sm text-muted">{usageText(usage, restaurant.plan)}</span>}
-          </div>
-          {newProductButton("hidden md:inline-flex")}
+    <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 pb-20 md:pb-0">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h1 className="m-0 font-display text-[28px] font-extrabold sm:text-[32px]">Mi menú</h1>
+          {usage && <span className="text-sm text-muted">{usageText(usage, restaurant.plan)}</span>}
         </div>
+        {newProductButton("hidden md:inline-flex")}
+      </div>
 
-        {atLimit && <Notice tone="error">Llegaste al límite de productos del plan {planName(restaurant.plan)}.</Notice>}
+      {atLimit && <Notice tone="error">Llegaste al límite de productos del plan {planName(restaurant.plan)}.</Notice>}
 
-        {isPending ? (
-          <p className="m-0 text-muted">Cargando tu menú...</p>
-        ) : isError ? (
-          <Notice tone="error">No pudimos cargar tu menú. Recargá la página para intentar de nuevo.</Notice>
-        ) : (
-          <div className="flex flex-col gap-5 md:flex-row md:items-start">
-            <nav aria-label="Categorías" className="min-w-0 md:w-[260px] md:shrink-0">
-              <div className="flex flex-col gap-2 md:gap-1 md:rounded-2xl md:border md:border-line md:bg-white md:p-3">
-                <span className="hidden px-2.5 py-2 text-xs font-bold tracking-[.05em] text-muted md:block">CATEGORÍAS</span>
-                <ul className="-mx-4 m-0 flex list-none gap-2 overflow-x-auto px-4 pb-1 sm:-mx-8 sm:px-8 md:mx-0 md:flex-col md:gap-1 md:overflow-visible md:px-0 md:pb-0">
-                  {categories.map((category) => {
-                    const active = category.id === selected?.id;
-                    return (
-                      <li key={category.id} className="shrink-0">
-                        <button
-                          type="button"
-                          aria-current={active ? "true" : undefined}
-                          onClick={() => setSelectedId(category.id)}
-                          className={cn(
-                            "flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-4 text-[15px] whitespace-nowrap md:w-full md:justify-between md:rounded-[10px] md:border-0 md:px-3",
-                            active ? "border-[#FDBA74] bg-[#FFEDD5] font-bold text-link" : "border-line bg-white text-ink md:hover:bg-bg",
-                          )}
-                        >
-                          <span className="max-w-[200px] truncate md:max-w-none">{category.name}</span>
-                          <span className={cn("text-[13px]", !active && "text-muted")}>{category.products.length}</span>
-                        </button>
-                      </li>
-                    );
-                  })}
+      {isPending ? (
+        <p className="m-0 text-muted">Cargando tu menú...</p>
+      ) : isError ? (
+        <Notice tone="error">No pudimos cargar tu menú. Recargá la página para intentar de nuevo.</Notice>
+      ) : (
+        <div className="flex flex-col gap-5 md:flex-row md:items-start">
+          <nav aria-label="Categorías" className="min-w-0 md:w-[260px] md:shrink-0">
+            <div className="flex flex-col gap-2 md:gap-1 md:rounded-2xl md:border md:border-line md:bg-white md:p-3">
+              <span className="hidden px-2.5 py-2 text-xs font-bold tracking-[.05em] text-muted md:block">CATEGORÍAS</span>
+              <ul className="-mx-4 m-0 flex list-none gap-2 overflow-x-auto px-4 pb-1 sm:-mx-8 sm:px-8 md:mx-0 md:flex-col md:gap-1 md:overflow-visible md:px-0 md:pb-0">
+                {categories.length > 1 && (
                   <li className="shrink-0">
                     <button
                       type="button"
-                      onClick={() => setCreating(true)}
-                      className="min-h-11 cursor-pointer rounded-full border border-dashed border-[#A8A29E] bg-transparent px-4 text-sm font-bold whitespace-nowrap text-[#44403C] md:mt-1.5 md:w-full md:rounded-[10px]"
+                      aria-current={showAll ? "true" : undefined}
+                      onClick={() => setSelectedId(ALL_CATEGORIES)}
+                      className={cn(
+                        "flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-4 text-[15px] whitespace-nowrap md:w-full md:justify-between md:rounded-[10px] md:border-0 md:px-3",
+                        showAll ? "border-[#FDBA74] bg-[#FFEDD5] font-bold text-link" : "border-line bg-white text-ink md:hover:bg-bg",
+                      )}
                     >
-                      + Nueva categoría
+                      <span>Ver todas</span>
+                      <span className={cn("text-[13px]", !showAll && "text-muted")}>
+                        {categories.reduce((total, category) => total + category.products.length, 0)}
+                      </span>
                     </button>
                   </li>
-                </ul>
-                {creating && (
-                  <div className="rounded-2xl border border-line bg-white p-3 md:border-0 md:p-0 md:pt-2">
-                    <CategoryNameForm
-                      label="Nombre de la categoría"
-                      submitLabel="Crear"
-                      onCancel={() => setCreating(false)}
-                      onSubmit={async (name) => {
-                        const category = await createCategory.mutateAsync(name);
-                        setSelectedId(category.id);
-                        setCreating(false);
-                      }}
-                    />
-                  </div>
                 )}
-              </div>
-            </nav>
+                {categories.map((category) => {
+                  const active = category.id === selected?.id;
+                  return (
+                    <li key={category.id} className="shrink-0">
+                      <button
+                        type="button"
+                        aria-current={active ? "true" : undefined}
+                        onClick={() => setSelectedId(category.id)}
+                        className={cn(
+                          "flex min-h-11 cursor-pointer items-center gap-2 rounded-full border px-4 text-[15px] whitespace-nowrap md:w-full md:justify-between md:rounded-[10px] md:border-0 md:px-3",
+                          active ? "border-[#FDBA74] bg-[#FFEDD5] font-bold text-link" : "border-line bg-white text-ink md:hover:bg-bg",
+                        )}
+                      >
+                        <span className="max-w-[200px] truncate md:max-w-none">{category.name}</span>
+                        <span className={cn("text-[13px]", !active && "text-muted")}>{category.products.length}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+                <li className="shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setCreating(true)}
+                    className="min-h-11 cursor-pointer rounded-full border border-dashed border-[#A8A29E] bg-transparent px-4 text-sm font-bold whitespace-nowrap text-[#44403C] md:mt-1.5 md:w-full md:rounded-[10px]"
+                  >
+                    + Nueva categoría
+                  </button>
+                </li>
+              </ul>
+              {creating && (
+                <div className="rounded-2xl border border-line bg-white p-3 md:border-0 md:p-0 md:pt-2">
+                  <CategoryNameForm
+                    label="Nombre de la categoría"
+                    submitLabel="Crear"
+                    onCancel={() => setCreating(false)}
+                    onSubmit={async (name) => {
+                      const category = await createCategory.mutateAsync(name);
+                      setSelectedId(category.id);
+                      setCreating(false);
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          </nav>
 
-            {selected ? (
-              <CategorySection
-                key={selected.id}
-                category={selected}
-                categories={categories}
-              />
-            ) : (
-              <section className="min-w-0 flex-1 rounded-2xl border border-line bg-white p-6">
-                <p className="m-0 text-[15px] text-muted">
-                  Todavía no tenés categorías. Creá la primera para empezar a cargar productos.
-                </p>
-              </section>
-            )}
-          </div>
-        )}
-
-        {/* Phones: "Nuevo producto" stays reachable at the bottom of the screen. */}
-        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur sm:px-8 md:hidden">
-          {newProductButton("w-full")}
+          {showAll ? (
+            <div className="flex min-w-0 flex-1 flex-col gap-5">
+              {categories.map((category) => (
+                <CategorySection key={category.id} category={category} categories={categories} />
+              ))}
+            </div>
+          ) : selected ? (
+            <CategorySection
+              key={selected.id}
+              category={selected}
+              categories={categories}
+            />
+          ) : (
+            <section className="min-w-0 flex-1 rounded-2xl border border-line bg-white p-6">
+              <p className="m-0 text-[15px] text-muted">
+                Todavía no tenés categorías. Creá la primera para empezar a cargar productos.
+              </p>
+            </section>
+          )}
         </div>
-      </main>
+      )}
+
+      {/* Phones: "Nuevo producto" stays reachable at the bottom of the screen. */}
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur sm:px-8 md:hidden">
+        {newProductButton("w-full")}
+      </div>
     </div>
   );
 }

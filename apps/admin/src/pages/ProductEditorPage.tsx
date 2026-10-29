@@ -27,6 +27,7 @@ import {
 } from "@/lib/catalog";
 import { planName } from "@/lib/plans";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
+import { useDocumentTitle } from "@/lib/use-document-title";
 import { cn } from "@/lib/utils";
 
 /** Same rules as `createProductSchema`, with the price as typed (AR format) instead of cents. */
@@ -63,6 +64,7 @@ export function ProductEditorPage() {
   const catalog = useCatalog();
   const product = useProduct(id);
   const notFound = product.error instanceof ApiError && product.error.status === 404;
+  useDocumentTitle(id ? "Editar producto" : "Nuevo producto");
 
   useEffect(() => {
     if (notFound) navigate("/menu", { replace: true });
@@ -97,16 +99,14 @@ export function ProductEditorPage() {
 
 function EditorShell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="min-h-screen bg-bg px-4 py-6 text-ink sm:px-8 sm:py-8">
-      <main className="mx-auto flex w-full max-w-[640px] flex-col gap-5">
-        <div className="flex flex-col gap-1.5">
-          <Link to="/menu" className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline">
-            ← Volver a Mi menú
-          </Link>
-          <h1 className="m-0 font-display text-[28px] font-extrabold break-words sm:text-[32px]">{title}</h1>
-        </div>
-        {children}
-      </main>
+    <div className="mx-auto flex w-full max-w-[640px] flex-col gap-5">
+      <div className="flex flex-col gap-1.5">
+        <Link to="/menu" className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline">
+          ← Volver a Mi menú
+        </Link>
+        <h1 className="m-0 font-display text-[28px] font-extrabold break-words sm:text-[32px]">{title}</h1>
+      </div>
+      {children}
     </div>
   );
 }

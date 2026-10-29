@@ -110,6 +110,19 @@ Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLim
 
 After pulling schema changes, apply new migrations locally: `pnpm --filter @menucito/api db:migrate:local`.
 
+### Admin panel routes and shell
+
+Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/components/shell`), a layout route under `RequireAuth` and `RequireRestaurant`: a 240px sidebar from 1024px, and a top bar with a drawer (native modal `<dialog>`) below it. Both render the same `NavPanel` (restaurant logo or initials, name, plan, sections and "Cerrar sesión"). Navigation items and route matching live in `apps/admin/src/lib/nav.ts`.
+
+| Route | Section |
+| --- | --- |
+| `/` | Resumen (public link, WhatsApp, product and category counts) |
+| `/menu`, `/menu/products/new`, `/menu/products/:id` | Mi menú |
+| `/local` | Mi local |
+| `/qr`, `/estadisticas`, `/plan` | Link y QR, Estadísticas, Plan y pagos: "Próximamente" placeholders |
+
+Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
+
 ### Admin environment
 
 | Variable | Purpose |

@@ -13,8 +13,15 @@
   --color-success: #166534;
   --color-primary-soft: #fff7ed;
   --color-addon: #f5f3ef;
+  --color-nav-active: #ffedd5;
   --font-sans: "DM Sans", system-ui, sans-serif;
   --font-display: "Bricolage Grotesque", sans-serif;
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
 }
 
 body {
