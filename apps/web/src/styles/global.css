@@ -1,16 +1,23 @@
-/* Brand tokens copied from apps/admin/src/index.css (two consumers, no shared CSS package yet). */
+/*
+ * Colors are the default theme (themeFromColors(DEFAULT_COLORS) in @menucito/shared), used by the
+ * landing and error pages. Menu pages override them through a `style` attribute on <body>.
+ */
 :root {
   --color-bg: #f7f5f2;
   --color-ink: #1c1917;
+  --color-surface: #ffffff;
+  --color-muted: #5e5b59;
   --color-primary: #c2410c;
-  --color-link: #9a3412;
-  --color-accent: #fb923c;
-  --color-line: #e7e2dc;
-  --color-muted: #57534e;
-  --color-tab: #ede9e3;
-  --color-primary-soft: #fff7ed;
-  --color-addon: #f5f3ef;
-  --color-nav-active: #ffedd5;
+  --color-on-primary: #ffffff;
+  --color-primary-hover: #c2410c;
+  --color-link: #c2410c;
+  --color-danger: #b91c1c;
+  --color-line: #dddbd8;
+  --color-tab: #e5e3e0;
+  --color-primary-soft: #f8e8e2;
+  --color-nav-active: #f8e8e2;
+  --color-addon: #f6f6f6;
+  --color-cover: #eac8b9;
   --font-sans: "DM Sans", system-ui, sans-serif;
   --font-display: "Bricolage Grotesque", sans-serif;
   --radius-card: 16px;
@@ -18,6 +25,12 @@
   --column: 640px;
   --gutter: 16px;
   --nav-height: 64px;
+  /* Height of the fixed identity bar: 0 without JavaScript, where the bar does not exist. */
+  --bar-height: 0px;
+}
+
+html.js {
+  --bar-height: 56px;
 }
 
 *,
@@ -121,25 +134,42 @@ img {
   padding: 0 20px;
   border-radius: var(--radius-chip);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-weight: 700;
   text-decoration: none;
 }
 
-/* Menu header */
+/* Menu header: cover strip, logo overlapping it, name and description */
 
-.menu-header {
+.cover {
+  width: 100%;
+  max-width: var(--column);
+  margin-inline: auto;
+  aspect-ratio: 3 / 1;
+  background: var(--color-cover);
+  overflow: hidden;
+}
+
+.cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.menu-identity {
   display: flex;
-  align-items: center;
-  gap: 16px;
-  padding-block: 24px 16px;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: -36px;
+  padding-bottom: 4px;
 }
 
 .avatar {
   flex: none;
   width: 72px;
   height: 72px;
-  border-radius: 18px;
+  border: 4px solid var(--color-bg);
+  border-radius: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -147,14 +177,13 @@ img {
 }
 
 img.avatar {
-  border: 1px solid var(--color-line);
-  background: #fff;
+  background: var(--color-surface);
   object-fit: contain;
 }
 
 .avatar-initials {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 26px;
@@ -164,21 +193,181 @@ img.avatar {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 28px;
-  line-height: 1.15;
+  line-height: 1.1;
   overflow-wrap: anywhere;
+}
+
+.menu-description {
+  color: var(--color-muted);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Fixed identity bar: only with JavaScript, only while the category bar is stuck. Purely visual. */
+
+.identity-bar {
+  display: none;
+}
+
+.js .identity-bar {
+  display: block;
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 12;
+  height: var(--bar-height);
+  background: var(--color-bg);
+  transform: translateY(-100%);
+  visibility: hidden;
+}
+
+.js .category-nav[data-stuck] ~ .identity-bar {
+  transform: none;
+  visibility: visible;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .js .identity-bar {
+    transition:
+      transform 0.18s ease-out,
+      visibility 0.18s;
+  }
+}
+
+.identity-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 100%;
+  max-width: var(--column);
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+
+.identity-logo {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  object-fit: contain;
+  background: var(--color-surface);
+}
+
+.identity-initials {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.identity-name {
+  min-width: 0;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 18px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Featured row: the starred category, always first */
+
+.featured {
+  padding-top: 20px;
+}
+
+.featured-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.featured-star {
+  color: var(--color-link);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.featured-row {
+  --row-inset: max(var(--gutter), calc((100% - var(--column)) / 2 + var(--gutter)));
+  list-style: none;
+  margin: 0;
+  padding: 0 var(--row-inset) 4px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  scroll-padding-inline: var(--row-inset);
+}
+
+.feature-card {
+  flex: none;
+  width: 228px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+  scroll-snap-align: start;
+}
+
+.feature-photo {
+  width: 100%;
+  height: 128px;
+  object-fit: cover;
+  background: var(--color-addon);
+}
+
+.feature-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 14px 14px;
+}
+
+.feature-card .product-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+.feature-card .product-footer {
+  padding-top: 6px;
 }
 
 /* Sticky category navigation */
 
+.nav-sentinel {
+  height: 1px;
+  margin-bottom: -1px;
+  pointer-events: none;
+}
+
 .category-nav {
   position: sticky;
-  top: 0;
+  top: var(--bar-height);
   z-index: 10;
+  margin-top: 8px;
   background: var(--color-bg);
+}
+
+.category-nav[data-stuck] {
   border-bottom: 1px solid var(--color-line);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.08);
 }
 
 .category-nav ul {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 10px var(--gutter);
@@ -198,7 +387,7 @@ img.avatar {
   padding: 0 16px;
   border-radius: var(--radius-chip);
   border: 1px solid var(--color-line);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-ink);
   font-weight: 500;
   text-decoration: none;
@@ -209,18 +398,45 @@ img.avatar {
   background: var(--color-nav-active);
 }
 
+.chip[aria-current="true"] {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--color-on-primary);
+  font-weight: 700;
+}
+
+/* Stuck: the pills become underlined tabs. */
+.category-nav[data-stuck] .chip {
+  padding-inline: 12px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-muted);
+}
+
+.category-nav[data-stuck] .chip:hover {
+  background: var(--color-nav-active);
+}
+
+.category-nav[data-stuck] .chip[aria-current="true"] {
+  border-bottom-color: var(--color-primary);
+  background: transparent;
+  color: var(--color-link);
+}
+
 /* Categories and products */
 
 .category {
   padding-top: 24px;
-  scroll-margin-top: calc(var(--nav-height) + 8px);
+  scroll-margin-top: calc(var(--bar-height) + var(--nav-height) + 8px);
 }
 
 .category-title {
   font-family: var(--font-display);
   font-weight: 800;
   font-size: 22px;
-  scroll-margin-top: calc(var(--nav-height) + 8px);
+  scroll-margin-top: calc(var(--bar-height) + var(--nav-height) + 8px);
 }
 
 .products {
@@ -236,7 +452,7 @@ img.avatar {
   display: flex;
   gap: 12px;
   padding: 12px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-card);
 }
@@ -281,6 +497,7 @@ img.avatar {
 }
 
 .product-price {
+  color: var(--color-link);
   font-weight: 700;
 }
 
@@ -294,13 +511,14 @@ img.avatar {
 }
 
 /* A sold out product is dimmed without lowering text contrast: only the photo fades. */
-.product.is-sold-out .product-photo {
+.is-sold-out .product-photo,
+.is-sold-out .feature-photo {
   opacity: 0.45;
   filter: grayscale(1);
 }
 
-.product.is-sold-out .product-name,
-.product.is-sold-out .product-price {
+.is-sold-out .product-name,
+.is-sold-out .product-price {
   color: var(--color-muted);
 }
 
@@ -348,13 +566,13 @@ button:disabled {
   border: 0;
   border-radius: var(--radius-chip);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-weight: 700;
 }
 
 .add-button:hover,
 .primary-button:hover:not(:disabled) {
-  background: var(--color-link);
+  background: var(--color-primary-hover);
 }
 
 .primary-button {
@@ -373,7 +591,7 @@ button:disabled {
   align-items: center;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-chip);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .stepper-button {
@@ -382,7 +600,7 @@ button:disabled {
   border: 0;
   border-radius: var(--radius-chip);
   background: transparent;
-  color: var(--color-primary);
+  color: var(--color-link);
   font-size: 22px;
   font-weight: 700;
   line-height: 1;
@@ -433,7 +651,7 @@ button:disabled {
 .add-refusal,
 .sheet-refusal,
 .field-error {
-  color: #b91c1c;
+  color: var(--color-danger);
   font-size: 14px;
 }
 
@@ -468,7 +686,7 @@ button:disabled {
   padding: 0 20px;
   border-radius: var(--radius-chip);
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-weight: 700;
   text-decoration: none;
   box-shadow: 0 6px 20px rgb(28 25 23 / 0.25);
@@ -476,7 +694,7 @@ button:disabled {
 }
 
 .cart-bar-link:hover {
-  background: var(--color-link);
+  background: var(--color-primary-hover);
 }
 
 .cart-notice,
@@ -486,7 +704,7 @@ button:disabled {
   justify-content: space-between;
   gap: 8px;
   padding: 8px 8px 8px 16px;
-  border: 1px solid var(--color-accent);
+  border: 1px solid var(--color-link);
   border-radius: 12px;
   background: var(--color-primary-soft);
   font-size: 14px;
@@ -512,7 +730,7 @@ button:disabled {
   padding: 0;
   border: 0;
   border-radius: 20px 20px 0 0;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-ink);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -665,7 +883,7 @@ button:disabled {
   flex-direction: column;
   gap: 8px;
   padding: 12px;
-  background: #fff;
+  background: var(--color-surface);
   border: 1px solid var(--color-line);
   border-radius: var(--radius-card);
 }
@@ -736,7 +954,7 @@ button:disabled {
   min-width: 0;
 }
 
-.field label,
+.field > label,
 .field legend {
   padding: 0;
   font-weight: 700;
@@ -748,13 +966,13 @@ button:disabled {
   padding: 0 12px;
   border: 1px solid var(--color-muted);
   border-radius: 12px;
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-ink);
   font: inherit;
 }
 
 .field input[aria-invalid="true"] {
-  border-color: #b91c1c;
+  border-color: var(--color-danger);
 }
 
 .field:focus {
@@ -785,21 +1003,33 @@ button:disabled {
 .choice {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 20px 0 14px;
   border: 1px solid var(--color-line);
   border-radius: var(--radius-chip);
-  background: #fff;
-  font-weight: 500;
+  background: var(--color-surface);
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
   cursor: pointer;
 }
 
 .choice input {
+  appearance: none;
+  flex: none;
   width: 20px;
   height: 20px;
   margin: 0;
-  accent-color: var(--color-primary);
+  border: 2px solid var(--color-muted);
+  border-radius: 50%;
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.choice input:checked {
+  border-color: var(--color-primary);
+  background: radial-gradient(circle, var(--color-primary) 0 45%, var(--color-surface) 50%);
 }
 
 .choice:has(input:checked) {

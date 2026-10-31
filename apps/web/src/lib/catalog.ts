@@ -16,7 +16,11 @@ export function toCatalogProduct(product: PublicMenuProduct): CatalogProduct {
   };
 }
 
-/** Every product of the menu (sold out ones included, so a stored cart can be reconciled against them). */
+/**
+ * Every product of the menu, the featured ones included (they are not repeated in `categories`).
+ * Sold out ones stay, so a stored cart can be reconciled against them.
+ */
 export function toCatalog(menu: PublicMenu): CatalogProduct[] {
-  return menu.categories.flatMap((category) => category.products.map(toCatalogProduct));
+  const categories = menu.featured ? [menu.featured, ...menu.categories] : menu.categories;
+  return categories.flatMap((category) => category.products.map(toCatalogProduct));
 }

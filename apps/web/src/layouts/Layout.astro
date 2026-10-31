@@ -1,12 +1,16 @@
 ---
+import { themeCssVars, themeFromColors, type ThemeColors } from "@menucito/shared";
 import "../styles/global.css";
 
 interface Props {
   title: string;
   description: string;
+  /** The restaurant colors of a menu page; the landing and error pages pass none and keep the default theme. */
+  colors?: ThemeColors;
 }
 
-const { title, description } = Astro.props;
+const { title, description, colors } = Astro.props;
+const themeStyle = colors ? themeCssVars(themeFromColors(colors)) : undefined;
 ---
 
 <!doctype html>
@@ -23,8 +27,9 @@ const { title, description } = Astro.props;
       rel="stylesheet"
       href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=DM+Sans:wght@400;500;700&display=swap"
     />
+    <slot name="head" />
   </head>
-  <body>
+  <body style={themeStyle}>
     <slot />
   </body>
 </html>

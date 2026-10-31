@@ -22,7 +22,11 @@ const menu = result.status === "ok" ? result.menu : null;
 
 {
   menu ? (
-    <Layout title={`Tu pedido · ${menu.restaurant.name} · Menucito`} description={`Tu pedido en ${menu.restaurant.name}`}>
+    <Layout
+      title={`Tu pedido · ${menu.restaurant.name} · Menucito`}
+      description={`Tu pedido en ${menu.restaurant.name}`}
+      colors={menu.restaurant.colors}
+    >
       <main class="column order-page">
         <a class="back-link" href={`/${menu.restaurant.slug}`}>
           ← Volver al menú

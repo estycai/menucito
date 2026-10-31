@@ -1,11 +1,22 @@
+import type { PublicMenu } from "@menucito/shared";
 import { describe, expect, it, vi } from "vitest";
 import { initials } from "./initials";
 import { assetUrl, resolveMenu, responseFor } from "./menu";
 import { toCatalog } from "./catalog";
 
 const API = "http://127.0.0.1:8787";
-const menu = {
-  restaurant: { name: "Lo de Marta", slug: "lo-de-marta", logoUrl: null, delivery: true, takeaway: true },
+const menu: PublicMenu = {
+  restaurant: {
+    name: "Lo de Marta",
+    slug: "lo-de-marta",
+    logoUrl: null,
+    delivery: true,
+    takeaway: true,
+    coverUrl: null,
+    description: "",
+    colors: { background: "#F7F5F2", primary: "#C2410C" },
+  },
+  featured: null,
   categories: [],
 };
 
@@ -88,6 +99,16 @@ describe("toCatalog", () => {
     expect(catalog.map((product) => product.id)).toEqual(["p1", "p2", "p3"]);
     expect(catalog[0]).toEqual({ id: "p1", name: "Burger", priceCents: 900_000, available: true, ingredients });
     expect(catalog[1]?.available).toBe(false);
+  });
+
+  it("includes the featured products, which are not repeated in the categories", () => {
+    const product = { description: "", priceCents: 1, imageUrl: null, available: true, ingredients: [] };
+    const catalog = toCatalog({
+      ...menu,
+      featured: { name: "Promos", products: [{ id: "f1", name: "Combo", ...product }] },
+      categories: [{ name: "Bebidas", products: [{ id: "p3", name: "Coca", ...product }] }],
+    });
+    expect(catalog.map((item) => item.id)).toEqual(["f1", "p3"]);
   });
 });
 
