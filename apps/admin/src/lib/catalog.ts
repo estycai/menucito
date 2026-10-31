@@ -61,6 +61,13 @@ export function useRenameCategory() {
   );
 }
 
+/** Marks (or unmarks) the featured category; marking one moves the star from the previous one. */
+export function useSetFeaturedCategory() {
+  return useCatalogMutation(({ id, featured }: { id: string; featured: boolean }) =>
+    api<void>(`/api/categories/${id}/featured`, jsonBody("PUT", { featured })),
+  );
+}
+
 export function useDeleteCategory() {
   return useCatalogMutation((id: string) => api<void>(`/api/categories/${id}`, { method: "DELETE" }));
 }

@@ -1,4 +1,8 @@
 import {
+  COVER_HEIGHT_PX,
+  COVER_MAX_BYTES,
+  COVER_SOURCE_TYPES,
+  COVER_WIDTH_PX,
   LOGO_MAX_BYTES,
   LOGO_SIZE_PX,
   LOGO_SOURCE_TYPES,
@@ -49,27 +53,28 @@ export interface Rect {
 }
 
 /**
- * Where to draw a `width` x `height` image inside a `box` x `box` square so it fits entirely
- * ("contain"), keeping its aspect ratio and centered. Smaller images are scaled up.
+ * Where to draw a `width` x `height` image inside a `boxWidth` x `boxHeight` box (a square when
+ * `boxHeight` is omitted) so it fits entirely ("contain"), keeping its aspect ratio and centered.
+ * Smaller images are scaled up.
  */
-export function containRect(width: number, height: number, box: number): Rect {
-  const scale = Math.min(box / width, box / height);
+export function containRect(width: number, height: number, boxWidth: number, boxHeight = boxWidth): Rect {
+  const scale = Math.min(boxWidth / width, boxHeight / height);
   // At least 1px, or an extreme aspect ratio (e.g. 5000x1) would round to nothing.
   const w = Math.max(1, Math.round(width * scale));
   const h = Math.max(1, Math.round(height * scale));
-  return { x: Math.round((box - w) / 2), y: Math.round((box - h) / 2), width: w, height: h };
+  return { x: Math.round((boxWidth - w) / 2), y: Math.round((boxHeight - h) / 2), width: w, height: h };
 }
 
 /**
- * Where to draw a `width` x `height` image so it fills a `box` x `box` square entirely ("cover"),
- * keeping its aspect ratio and centered: the overflowing side is cropped evenly on both ends.
- * Smaller images are scaled up.
+ * Where to draw a `width` x `height` image so it fills a `boxWidth` x `boxHeight` box (a square when
+ * `boxHeight` is omitted) entirely ("cover"), keeping its aspect ratio and centered: the overflowing
+ * side is cropped evenly on both ends. Smaller images are scaled up.
  */
-export function coverRect(width: number, height: number, box: number): Rect {
-  const scale = Math.max(box / width, box / height);
-  const w = Math.max(box, Math.round(width * scale));
-  const h = Math.max(box, Math.round(height * scale));
-  return { x: Math.round((box - w) / 2), y: Math.round((box - h) / 2), width: w, height: h };
+export function coverRect(width: number, height: number, boxWidth: number, boxHeight = boxWidth): Rect {
+  const scale = Math.max(boxWidth / width, boxHeight / height);
+  const w = Math.max(boxWidth, Math.round(width * scale));
+  const h = Math.max(boxHeight, Math.round(height * scale));
+  return { x: Math.round((boxWidth - w) / 2), y: Math.round((boxHeight - h) / 2), width: w, height: h };
 }
 
 interface Decoded {
@@ -113,10 +118,18 @@ function toBlob(canvas: HTMLCanvasElement, quality: number): Promise<Blob | null
   return new Promise((resolve) => canvas.toBlob(resolve, MEDIA_CONTENT_TYPE, quality));
 }
 
-export interface NormalizeOptions {
-  /** Side of the square output, in pixels. */
-  size: number;
-  /** "contain" fits the whole image with transparent padding; "cover" fills the square and crops. */
+/** Output dimensions: a `size` square, or an explicit `width` x `height` rectangle. */
+export type OutputDimensions = { size: number } | { width: number; height: number };
+
+/** Width and height in pixels of the output described by `dimensions`. */
+export function outputSize(dimensions: OutputDimensions): { width: number; height: number } {
+  return "size" in dimensions
+    ? { width: dimensions.size, height: dimensions.size }
+    : { width: dimensions.width, height: dimensions.height };
+}
+
+export type NormalizeOptions = OutputDimensions & {
+  /** "contain" fits the whole image with transparent padding; "cover" fills the output and crops. */
   fit: "contain" | "cover";
   /** Accepted source MIME types; anything else is an `ImageReadError`. */
   sourceTypes: readonly string[];
@@ -124,18 +137,20 @@ export interface NormalizeOptions {
   maxBytes: number;
   /** WebP qualities to try, highest first. */
   qualities: readonly number[];
-}
+};
 
 /**
- * Normalizes an accepted image to a square WebP of `size` pixels. The original file is never
- * uploaded. Throws `ImageReadError` or `ImageEncodeError`.
+ * Normalizes an accepted image to a WebP of the requested dimensions (a `size` square or a
+ * `width` x `height` rectangle). The original file is never uploaded. Throws `ImageReadError` or
+ * `ImageEncodeError`.
  */
 export async function normalizeImage(file: File, options: NormalizeOptions): Promise<Blob> {
   if (!options.sourceTypes.includes(file.type.toLowerCase())) throw new ImageReadError();
 
+  const { width, height } = outputSize(options);
   let decoded: Decoded;
   try {
-    decoded = await decode(file, options.size);
+    decoded = await decode(file, Math.max(width, height));
   } catch (error) {
     throw new ImageReadError({ cause: error });
   }
@@ -143,13 +158,13 @@ export async function normalizeImage(file: File, options: NormalizeOptions): Pro
   const canvas = document.createElement("canvas");
   try {
     if (!decoded.width || !decoded.height) throw new ImageReadError();
-    canvas.width = options.size;
-    canvas.height = options.size;
+    canvas.width = width;
+    canvas.height = height;
     const context = canvas.getContext("2d");
     if (!context) throw new ImageEncodeError();
     context.imageSmoothingQuality = "high";
     const place = options.fit === "cover" ? coverRect : containRect;
-    const rect = place(decoded.width, decoded.height, options.size);
+    const rect = place(decoded.width, decoded.height, width, height);
     context.drawImage(decoded.source, rect.x, rect.y, rect.width, rect.height);
   } finally {
     // Release the decoded source right after drawing: phone photos (12+ MP) are large.
@@ -195,6 +210,21 @@ export function normalizeProductPhoto(file: File): Promise<Blob> {
     fit: "cover",
     sourceTypes: PRODUCT_PHOTO_SOURCE_TYPES,
     maxBytes: PRODUCT_PHOTO_MAX_BYTES,
+    qualities: [0.82, 0.7, 0.6],
+  });
+}
+
+/**
+ * Normalizes a cover (PNG, JPG, WebP, GIF; no SVG) to a `COVER_WIDTH_PX` x `COVER_HEIGHT_PX`
+ * WebP, center-cropped with "cover". Throws `ImageReadError` or `ImageEncodeError`.
+ */
+export function normalizeCover(file: File): Promise<Blob> {
+  return normalizeImage(file, {
+    width: COVER_WIDTH_PX,
+    height: COVER_HEIGHT_PX,
+    fit: "cover",
+    sourceTypes: COVER_SOURCE_TYPES,
+    maxBytes: COVER_MAX_BYTES,
     qualities: [0.82, 0.7, 0.6],
   });
 }

@@ -1,10 +1,12 @@
 import { queryOptions, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
   ApiErrorBody,
+  CoverUploadResult,
   CreateRestaurantInput,
   LogoUploadResult,
   Restaurant,
   SlugAvailability,
+  UpdateAppearanceInput,
 } from "@menucito/shared";
 import { useSession } from "./session";
 
@@ -112,5 +114,39 @@ export function useRemoveLogo() {
   return useMutation({
     mutationFn: () => api<void>("/api/restaurants/me/logo", { method: "DELETE" }),
     onSuccess: invalidate,
+  });
+}
+
+/** Uploads an already normalized WebP cover (see `normalizeCover`). */
+export function useUploadCover() {
+  const invalidate = useInvalidateRestaurant();
+  return useMutation({
+    mutationFn: (webp: Blob) => {
+      const form = new FormData();
+      form.append("file", webp, "cover.webp");
+      return api<CoverUploadResult>("/api/restaurants/me/cover", { method: "PUT", body: form });
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveCover() {
+  const invalidate = useInvalidateRestaurant();
+  return useMutation({
+    mutationFn: () => api<void>("/api/restaurants/me/cover", { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+}
+
+/** Saves description and/or colors (only the changed keys). Colors are Pro: the API answers 403 `PLAN_FEATURE` otherwise. */
+export function useUpdateAppearance() {
+  const queryClient = useQueryClient();
+  const { data: session } = useSession();
+  return useMutation({
+    mutationFn: (input: UpdateAppearanceInput) =>
+      api<Restaurant>("/api/restaurants/me/appearance", { method: "PATCH", body: JSON.stringify(input) }),
+    onSuccess: (restaurant) => {
+      queryClient.setQueryData([...RESTAURANT_KEY, session?.user.id], restaurant);
+    },
   });
 }

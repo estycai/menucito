@@ -13,5 +13,6 @@ export function planFeatures(plan: PlanId): string[] {
   const features = [limits.maxProducts === null ? "Productos ilimitados" : `Hasta ${limits.maxProducts} productos`];
   if (limits.productPhotos) features.push("Una foto por producto");
   if (limits.customIngredients) features.push("Ingredientes personalizables");
+  if (limits.customColors) features.push("Colores personalizados");
   return features;
 }

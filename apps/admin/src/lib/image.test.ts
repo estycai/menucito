@@ -6,6 +6,7 @@ import {
   coverRect,
   isAcceptedLogoType,
   isAcceptedProductPhotoType,
+  outputSize,
 } from "./image";
 import { initials } from "./initials";
 
@@ -64,6 +65,55 @@ describe("coverRect", () => {
       expect(rect.x + rect.width).toBeGreaterThanOrEqual(800);
       expect(rect.y + rect.height).toBeGreaterThanOrEqual(800);
     }
+  });
+});
+
+describe("coverRect with a rectangular box (cover 1200 x 400)", () => {
+  it("crops the top and bottom of a square image evenly", () => {
+    expect(coverRect(800, 800, 1200, 400)).toEqual({ x: 0, y: -400, width: 1200, height: 1200 });
+  });
+
+  it("crops the sides of a very wide image evenly", () => {
+    expect(coverRect(3000, 500, 1200, 400)).toEqual({ x: -600, y: 0, width: 2400, height: 400 });
+  });
+
+  it("scales a tall phone photo to the width and crops the height", () => {
+    expect(coverRect(3024, 4032, 1200, 400)).toEqual({ x: 0, y: -600, width: 1200, height: 1600 });
+  });
+
+  it("scales a tiny image up to the whole box", () => {
+    expect(coverRect(30, 10, 1200, 400)).toEqual({ x: 0, y: 0, width: 1200, height: 400 });
+  });
+
+  it("always covers the box, even with rounding", () => {
+    for (const [w, h] of [
+      [333, 777],
+      [5000, 1],
+      [1, 5000],
+      [1201, 399],
+    ] as const) {
+      const rect = coverRect(w, h, 1200, 400);
+      expect(rect.x).toBeLessThanOrEqual(0);
+      expect(rect.y).toBeLessThanOrEqual(0);
+      expect(rect.x + rect.width).toBeGreaterThanOrEqual(1200);
+      expect(rect.y + rect.height).toBeGreaterThanOrEqual(400);
+    }
+  });
+});
+
+describe("containRect with a rectangular box", () => {
+  it("fits a square image to the box height and centers it horizontally", () => {
+    expect(containRect(100, 100, 1200, 400)).toEqual({ x: 400, y: 0, width: 400, height: 400 });
+  });
+});
+
+describe("outputSize", () => {
+  it("expands a square size", () => {
+    expect(outputSize({ size: 512 })).toEqual({ width: 512, height: 512 });
+  });
+
+  it("keeps an explicit width and height", () => {
+    expect(outputSize({ width: 1200, height: 400 })).toEqual({ width: 1200, height: 400 });
   });
 });
 
