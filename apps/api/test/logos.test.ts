@@ -212,6 +212,8 @@ describe("logo service (no database)", () => {
       findBySlug: async () => null,
       insert: async () => row,
       updateLogoUrl: vi.fn(async () => row),
+      updateCoverUrl: async () => row,
+      updateAppearance: async () => row,
       updatePlan: async () => row,
     } satisfies RestaurantsRepository;
     const storage: MediaStorage = {

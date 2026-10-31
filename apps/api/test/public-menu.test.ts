@@ -81,7 +81,17 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Cache-Control")).toBe("public, max-age=60");
     expect(await res.json()).toEqual({
-      restaurant: { name: "Lo de Marta", slug: restaurant.slug, logoUrl: null, delivery: true, takeaway: true },
+      restaurant: {
+        name: "Lo de Marta",
+        slug: restaurant.slug,
+        logoUrl: null,
+        delivery: true,
+        takeaway: true,
+        coverUrl: null,
+        description: "",
+        colors: { background: "#F7F5F2", primary: "#C2410C" },
+      },
+      featured: null,
       categories: [
         {
           name: "Bebidas",
@@ -124,9 +134,13 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     expect([...keys].sort()).toEqual(
       [
         "available",
+        "background",
         "categories",
+        "colors",
+        "coverUrl",
         "delivery",
         "description",
+        "featured",
         "extraPriceCents",
         "id",
         "imageUrl",
@@ -136,6 +150,7 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
         "maxQty",
         "minQty",
         "name",
+        "primary",
         "priceCents",
         "products",
         "restaurant",
@@ -227,7 +242,7 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
     const category = await createCategory(client, "Comidas");
     const product = await createProduct(client, category.id);
     await env.DB.batch([
-      env.DB.prepare("UPDATE restaurants SET logo_url = ? WHERE id = ?").bind("/api/media/logos/x.webp", restaurant.id),
+      env.DB.prepare("UPDATE restaurant_appearance SET logo_url = ? WHERE restaurant_id = ?").bind("/api/media/logos/x.webp", restaurant.id),
       env.DB.prepare("UPDATE products SET image_url = ? WHERE id = ?").bind("/api/media/products/y.webp", product.id),
     ]);
 

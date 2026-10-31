@@ -18,8 +18,11 @@ import { createIngredientsRepository, type IngredientsRepository } from "../repo
 import { createProductsRepository, type ProductChanges, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
 import { createMediaStorage, publicPathFor, type MediaStorage } from "../storage/media";
-import { DomainError, RestaurantNotFoundError, ValidationError } from "./errors";
+import { DomainError, PlanFeatureError, RestaurantNotFoundError, ValidationError } from "./errors";
 import { assertWebpUpload, deleteMediaQuietly, type ImageUpload } from "./uploads";
+
+// Moved to `errors.ts`; re-exported so existing imports keep working.
+export { PlanFeatureError };
 
 export class CategoryNotFoundError extends DomainError {
   readonly code = "CATEGORY_NOT_FOUND";
@@ -53,13 +56,8 @@ export class PlanLimitError extends DomainError {
   readonly code = "PLAN_LIMIT";
 }
 
-/** The restaurant's plan does not include the feature that was used. */
-export class PlanFeatureError extends DomainError {
-  readonly code = "PLAN_FEATURE";
-}
-
 function toCategory(row: CategoryRow): Category {
-  return { id: row.id, name: row.name, position: row.position };
+  return { id: row.id, name: row.name, position: row.position, featured: row.isFeatured };
 }
 
 function toIngredient(row: IngredientRow): Ingredient {
@@ -222,6 +220,18 @@ export function createCatalogService({
         if (error instanceof ForeignKeyViolationError) throw new CategoryNotEmptyError();
         throw error;
       }
+    },
+
+    /**
+     * Marks the category as the featured one (the previous one stops being featured, atomically) or,
+     * with `featured: false`, unmarks it. Unmarking a category that is not the featured one changes
+     * nothing. Not a plan feature.
+     */
+    async setCategoryFeatured(ownerId: string, id: string, featured: boolean): Promise<void> {
+      const restaurant = await restaurantOf(ownerId);
+      await categoryOf(restaurant.id, id);
+      if (featured) await categories.setFeatured(restaurant.id, id, new Date());
+      else await categories.clearFeatured(restaurant.id, id, new Date());
     },
 
     /** Rewrites the category order. `ids` must be exactly the restaurant's categories. */

@@ -1,7 +1,14 @@
 import { Hono } from "hono";
-import { LOGO_MAX_BYTES, changePlanSchema, createRestaurantSchema } from "@menucito/shared";
+import {
+  COVER_MAX_BYTES,
+  LOGO_MAX_BYTES,
+  changePlanSchema,
+  createRestaurantSchema,
+  updateAppearanceSchema,
+} from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
+import { coverServiceFor } from "../services/covers";
 import { logoServiceFor } from "../services/logos";
 import { restaurantsServiceFor } from "../services/restaurants";
 import { domainErrorHandler, parseJsonBody, readUploadedFile, uploadBodyLimit } from "./http";
@@ -35,6 +42,12 @@ export const restaurantsRoutes = new Hono<AppEnv>()
     return c.json(restaurant);
   })
 
+  .patch("/me/appearance", async (c) => {
+    const body = await parseJsonBody(c, updateAppearanceSchema);
+    if ("response" in body) return body.response;
+    return c.json(await restaurantsServiceFor(c.env.DB).updateAppearance(c.get("userId"), body.data));
+  })
+
   .put("/me/logo", uploadBodyLimit("logo", LOGO_MAX_BYTES), async (c) => {
     const upload = await readUploadedFile(c, "logo");
     if ("response" in upload) return upload.response;
@@ -48,6 +61,22 @@ export const restaurantsRoutes = new Hono<AppEnv>()
 
   .delete("/me/logo", async (c) => {
     await logoServiceFor(c.env.DB, c.env.MEDIA).removeLogo(c.get("userId"));
+    return c.body(null, 204);
+  })
+
+  .put("/me/cover", uploadBodyLimit("cover", COVER_MAX_BYTES), async (c) => {
+    const upload = await readUploadedFile(c, "cover");
+    if ("response" in upload) return upload.response;
+
+    const result = await coverServiceFor(c.env.DB, c.env.MEDIA).uploadCover(c.get("userId"), {
+      bytes: await upload.file.arrayBuffer(),
+      contentType: upload.file.type,
+    });
+    return c.json(result);
+  })
+
+  .delete("/me/cover", async (c) => {
+    await coverServiceFor(c.env.DB, c.env.MEDIA).removeCover(c.get("userId"));
     return c.body(null, 204);
   })
 

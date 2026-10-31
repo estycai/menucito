@@ -1,13 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { PLAN_LIMITS } from "./plans";
 import {
+  RESTAURANT_DESCRIPTION_MAX_LENGTH,
   RESTAURANT_MESSAGES,
   changePlanSchema,
   checkSlug,
   createRestaurantSchema,
   normalizeArWhatsapp,
+  restaurantDescriptionSchema,
   slugSchema,
   slugify,
+  updateAppearanceSchema,
 } from "./restaurant";
 
 describe("slugify", () => {
@@ -147,5 +150,40 @@ describe("createRestaurantSchema", () => {
     const result = createRestaurantSchema.safeParse({ ...valid, ...override });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.path).toEqual([field]);
+  });
+});
+
+describe("restaurantDescriptionSchema", () => {
+  it("collapses whitespace and line breaks and trims the edges", () => {
+    expect(restaurantDescriptionSchema.parse("  Pizza   y\n\nempanadas \t caseras ")).toBe("Pizza y empanadas caseras");
+  });
+
+  it("accepts an empty description and the maximum length, and rejects one more", () => {
+    expect(restaurantDescriptionSchema.parse("   ")).toBe("");
+    expect(restaurantDescriptionSchema.safeParse("a".repeat(RESTAURANT_DESCRIPTION_MAX_LENGTH)).success).toBe(true);
+    expect(restaurantDescriptionSchema.safeParse("a".repeat(RESTAURANT_DESCRIPTION_MAX_LENGTH + 1)).success).toBe(false);
+  });
+
+  it("measures the length after normalizing", () => {
+    expect(restaurantDescriptionSchema.safeParse(`${"a ".repeat(60)}   `).success).toBe(true);
+  });
+});
+
+describe("updateAppearanceSchema", () => {
+  it("normalizes colors and accepts null to reset them", () => {
+    expect(updateAppearanceSchema.parse({ bgColor: "abc", primaryColor: null })).toEqual({
+      bgColor: "#AABBCC",
+      primaryColor: null,
+    });
+  });
+
+  it.each([{}, { unknown: 1 }, { description: undefined }])("requires at least one key: %o", (body) => {
+    expect(updateAppearanceSchema.safeParse(body).success).toBe(false);
+  });
+
+  it("rejects invalid colors with the format message", () => {
+    const result = updateAppearanceSchema.safeParse({ bgColor: "nope" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toBe(RESTAURANT_MESSAGES.colorInvalid);
   });
 });

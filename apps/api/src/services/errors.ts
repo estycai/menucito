@@ -10,6 +10,11 @@ export class RestaurantNotFoundError extends DomainError {
   }
 }
 
+/** The restaurant's plan does not include the feature that was used. */
+export class PlanFeatureError extends DomainError {
+  readonly code = "PLAN_FEATURE";
+}
+
 /** Invalid input detected by a service (beyond the route's schema validation). */
 export class ValidationError extends DomainError {
   readonly code = "VALIDATION_ERROR";

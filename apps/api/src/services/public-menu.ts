@@ -1,4 +1,5 @@
 import {
+  DEFAULT_COLORS,
   checkSlug,
   planLimitsFor,
   type PublicMenu,
@@ -81,11 +82,20 @@ export function createPublicMenuService({ restaurants, categories, products, ing
         byCategory.set(row.categoryId, list);
       }
 
+      // The featured category is published apart (and only when it has products), never in `categories`.
+      let featured: PublicMenuCategory | null = null;
       const menuCategories: PublicMenuCategory[] = [];
       for (const category of categoryRows) {
         const list = byCategory.get(category.id);
-        if (list?.length) menuCategories.push({ name: category.name, products: list });
+        if (category.isFeatured) {
+          if (list?.length) featured = { name: category.name, products: list };
+        } else if (list?.length) {
+          menuCategories.push({ name: category.name, products: list });
+        }
       }
+
+      // Saved colors stay dormant (not deleted) on a plan without custom colors.
+      const customColors = planLimitsFor(restaurant.plan).customColors;
 
       return {
         restaurant: {
@@ -94,7 +104,14 @@ export function createPublicMenuService({ restaurants, categories, products, ing
           logoUrl: restaurant.logoUrl,
           delivery: restaurant.delivery,
           takeaway: restaurant.takeaway,
+          coverUrl: restaurant.coverUrl,
+          description: restaurant.description,
+          colors: {
+            background: (customColors && restaurant.bgColor) || DEFAULT_COLORS.background,
+            primary: (customColors && restaurant.primaryColor) || DEFAULT_COLORS.primary,
+          },
         },
+        featured,
         categories: menuCategories,
       };
     },

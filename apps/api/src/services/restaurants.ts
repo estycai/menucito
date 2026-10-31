@@ -1,10 +1,13 @@
 import {
   checkSlug,
   normalizeArWhatsapp,
+  planLimitsFor,
   type CreateRestaurantInput,
   type PlanId,
+  type PlanLimits,
   type Restaurant,
   type SlugAvailability,
+  type UpdateAppearanceInput,
 } from "@menucito/shared";
 import type { RestaurantRow } from "../db/schema";
 import {
@@ -12,7 +15,7 @@ import {
   createRestaurantsRepository,
   type RestaurantsRepository,
 } from "../repositories/restaurants";
-import { DomainError, RestaurantNotFoundError, ValidationError } from "./errors";
+import { DomainError, PlanFeatureError, RestaurantNotFoundError, ValidationError } from "./errors";
 
 export class SlugTakenError extends DomainError {
   readonly code = "SLUG_TAKEN";
@@ -46,6 +49,10 @@ function toRestaurant(row: RestaurantRow): Restaurant {
     delivery: row.delivery,
     takeaway: row.takeaway,
     logoUrl: row.logoUrl,
+    coverUrl: row.coverUrl,
+    description: row.description,
+    bgColor: row.bgColor,
+    primaryColor: row.primaryColor,
     plan: row.plan,
     status: row.status,
     createdAt: row.createdAt.toISOString(),
@@ -53,13 +60,33 @@ function toRestaurant(row: RestaurantRow): Restaurant {
   };
 }
 
-export function createRestaurantsService(repository: RestaurantsRepository) {
+export function createRestaurantsService(
+  repository: RestaurantsRepository,
+  /** Plan limits lookup; injectable so tests can simulate other plans. */
+  limitsFor: (plan: string) => PlanLimits = planLimitsFor,
+) {
   return {
     /** The restaurant owned by `ownerId`. Throws `RestaurantNotFoundError` when there is none. */
     async getMine(ownerId: string): Promise<Restaurant> {
       const row = await repository.findByOwner(ownerId);
       if (!row) throw new RestaurantNotFoundError();
       return toRestaurant(row);
+    },
+
+    /** Colors need the `customColors` plan feature (403 even for `null`). */
+    async updateAppearance(ownerId: string, input: UpdateAppearanceInput): Promise<Restaurant> {
+      const current = await repository.findByOwner(ownerId);
+      if (!current) throw new RestaurantNotFoundError();
+
+      if (input.bgColor !== undefined || input.primaryColor !== undefined) {
+        if (!limitsFor(current.plan).customColors) {
+          throw new PlanFeatureError("Custom colors are not included in your plan");
+        }
+      }
+
+      const updated = await repository.updateAppearance(current.id, input, new Date());
+      if (!updated) throw new RestaurantNotFoundError();
+      return toRestaurant(updated);
     },
 
     async checkSlugAvailability(slug: string): Promise<SlugAvailability> {

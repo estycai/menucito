@@ -317,6 +317,8 @@ describe("restaurants service (no database)", () => {
         return { plan: "basic", status: "trial", ...row } as Awaited<ReturnType<RestaurantsRepository["insert"]>>;
       },
       updateLogoUrl: async () => null,
+      updateCoverUrl: async () => null,
+      updateAppearance: async () => null,
       updatePlan: async () => null,
     };
   }

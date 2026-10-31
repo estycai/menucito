@@ -10,10 +10,11 @@ export class MediaNotFoundError extends DomainError {
 }
 
 /**
- * Only keys written by the logo and catalog services are public:
- * `logos/<restaurantId>/<random>.webp` and `products/<restaurantId>/<random>.webp`.
+ * Only keys written by the logo, cover and catalog services are public:
+ * `logos/<restaurantId>/<random>.webp`, `covers/<restaurantId>/<random>.webp` and
+ * `products/<restaurantId>/<random>.webp`.
  */
-const PUBLIC_KEY_PATTERN = /^(logos|products)\/[A-Za-z0-9-]+\/[A-Za-z0-9-]+\.webp$/;
+const PUBLIC_KEY_PATTERN = /^(logos|covers|products)\/[A-Za-z0-9-]+\/[A-Za-z0-9-]+\.webp$/;
 
 export function createMediaService(storage: MediaStorage) {
   return {

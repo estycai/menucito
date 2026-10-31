@@ -66,8 +66,7 @@ export const verification = sqliteTable(
 );
 
 // One restaurant per user for now (`owner_id` UNIQUE). `plan`/`status` values are provisional.
-// `logo_url` holds the public path of the logo (the R2 key is derived from it).
-// `colors` and `hours_json` come in later changes.
+// `hours_json` comes in a later change.
 export const restaurants = sqliteTable("restaurants", {
   id: text("id").primaryKey(),
   ownerId: text("owner_id")
@@ -79,19 +78,40 @@ export const restaurants = sqliteTable("restaurants", {
   whatsapp: text("whatsapp").notNull(),
   delivery: integer("delivery", { mode: "boolean" }).notNull(),
   takeaway: integer("takeaway", { mode: "boolean" }).notNull(),
-  logoUrl: text("logo_url"),
   plan: text("plan").notNull().default("basic"),
   status: text("status").notNull().default("trial"),
   createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
-export type RestaurantRow = typeof restaurants.$inferSelect;
+// How the restaurant looks (1:1 with `restaurants`, created in the same batch as the restaurant).
+// `logo_url` and `cover_url` hold the public path of the image (the R2 key is derived from it).
+// `bg_color` and `primary_color` are `#RRGGBB` (uppercase); `NULL` means "use the default color".
+export const restaurantAppearance = sqliteTable("restaurant_appearance", {
+  restaurantId: text("restaurant_id")
+    .primaryKey()
+    .references(() => restaurants.id, { onDelete: "cascade" }),
+  logoUrl: text("logo_url"),
+  coverUrl: text("cover_url"),
+  description: text("description").notNull().default(""),
+  bgColor: text("bg_color"),
+  primaryColor: text("primary_color"),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type AppearanceRow = typeof restaurantAppearance.$inferSelect;
+
+/** A restaurant as the services see it: its own row merged with its appearance fields. */
+export type RestaurantRow = typeof restaurants.$inferSelect &
+  Pick<AppearanceRow, "logoUrl" | "coverUrl" | "description" | "bgColor" | "primaryColor">;
+/** Input of `RestaurantsRepository.insert`: the appearance row is created with its defaults. */
 export type NewRestaurantRow = typeof restaurants.$inferInsert;
 
 // Menu categories. `position` is 0-based per restaurant; lists sort by position, then created_at.
 // Names are unique per restaurant ignoring case. SQLite `lower()` only folds ASCII, so names that
 // differ only in the case of an accented letter (e.g. "Ñoquis" / "ñoquis") are both accepted.
+// `is_featured` marks the one category shown first in the public menu; a partial unique index
+// keeps it to at most one per restaurant.
 export const categories = sqliteTable(
   "categories",
   {
@@ -101,12 +121,16 @@ export const categories = sqliteTable(
       .references(() => restaurants.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     position: integer("position").notNull(),
+    isFeatured: integer("is_featured", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [
     index("categories_restaurant_position_idx").on(t.restaurantId, t.position),
     uniqueIndex("categories_restaurant_name_unique").on(t.restaurantId, sql`lower(${t.name})`),
+    uniqueIndex("categories_one_featured_per_restaurant")
+      .on(t.restaurantId)
+      .where(sql`${t.isFeatured} = 1`),
   ],
 );
 

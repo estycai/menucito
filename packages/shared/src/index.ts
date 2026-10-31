@@ -6,3 +6,4 @@ export * from "./order";
 export * from "./plans";
 export * from "./public-menu";
 export * from "./restaurant";
+export * from "./theme";

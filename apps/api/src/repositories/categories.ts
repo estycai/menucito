@@ -22,6 +22,13 @@ export interface CategoriesRepository {
   rename(restaurantId: string, id: string, name: string, updatedAt: Date): Promise<CategoryRow | null>;
   /** Returns whether a row was deleted. Throws `ForeignKeyViolationError` when it still has products. */
   delete(restaurantId: string, id: string): Promise<boolean>;
+  /**
+   * Makes `id` the restaurant's only featured category: unmarks the current one, then marks `id`, in
+   * one D1 batch (atomic). The order avoids the partial unique index on featured categories.
+   */
+  setFeatured(restaurantId: string, id: string, updatedAt: Date): Promise<void>;
+  /** Unmarks `id` only if it is the featured category. */
+  clearFeatured(restaurantId: string, id: string, updatedAt: Date): Promise<void>;
   /** Sets `position = index` for every id, atomically (one D1 batch). */
   reorder(restaurantId: string, ids: readonly string[], updatedAt: Date): Promise<void>;
 }
@@ -71,6 +78,23 @@ export function createCategoriesRepository(d1: D1Database): CategoriesRepository
         db.delete(categories).where(scoped(restaurantId, id)).returning({ id: categories.id }).get(),
       );
       return Boolean(row);
+    },
+
+    async setFeatured(restaurantId, id, updatedAt) {
+      await db.batch([
+        db
+          .update(categories)
+          .set({ isFeatured: false, updatedAt })
+          .where(and(eq(categories.restaurantId, restaurantId), eq(categories.isFeatured, true))),
+        db.update(categories).set({ isFeatured: true, updatedAt }).where(scoped(restaurantId, id)),
+      ]);
+    },
+
+    async clearFeatured(restaurantId, id, updatedAt) {
+      await db
+        .update(categories)
+        .set({ isFeatured: false, updatedAt })
+        .where(and(scoped(restaurantId, id), eq(categories.isFeatured, true)));
     },
 
     async reorder(restaurantId, ids, updatedAt) {

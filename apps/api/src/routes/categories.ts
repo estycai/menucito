@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { categoryInputSchema, reorderSchema } from "@menucito/shared";
+import { categoryInputSchema, featuredCategorySchema, reorderSchema } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { catalogServiceFor } from "../services/catalog";
@@ -40,6 +40,13 @@ export const categoriesRoutes = new Hono<AppEnv>()
 
   .delete("/:id", async (c) => {
     await catalogServiceFor(c.env.DB, c.env.MEDIA).deleteCategory(c.get("userId"), c.req.param("id"));
+    return c.body(null, 204);
+  })
+
+  .put("/:id/featured", async (c) => {
+    const body = await parseJsonBody(c, featuredCategorySchema);
+    if ("response" in body) return body.response;
+    await catalogServiceFor(c.env.DB, c.env.MEDIA).setCategoryFeatured(c.get("userId"), c.req.param("id"), body.data.featured);
     return c.body(null, 204);
   })
 

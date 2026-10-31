@@ -9,13 +9,15 @@ export interface PlanLimits {
   productPhotos: boolean;
   /** Whether products can have customizable ingredients (included quantity, min, max, extra price). */
   customIngredients: boolean;
+  /** Whether the menu can use custom background and primary colors (otherwise the Menucito defaults apply). */
+  customColors: boolean;
 }
 
 export type PlanId = "basic" | "pro";
 
 export const PLAN_LIMITS: Readonly<Record<PlanId, PlanLimits>> = {
-  basic: { maxProducts: 40, productPhotos: true, customIngredients: false },
-  pro: { maxProducts: null, productPhotos: true, customIngredients: true },
+  basic: { maxProducts: 40, productPhotos: true, customIngredients: false, customColors: false },
+  pro: { maxProducts: null, productPhotos: true, customIngredients: true, customColors: true },
 };
 
 /** Every plan id, derived from `PLAN_LIMITS` (a `Record<PlanId, ...>`, so it cannot miss one). */

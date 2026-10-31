@@ -1,9 +1,11 @@
 import { z } from "zod";
 import { PLAN_IDS } from "./plans";
+import { normalizeHexColor } from "./theme";
 
 export const SLUG_MIN_LENGTH = 3;
 export const SLUG_MAX_LENGTH = 40;
 export const RESTAURANT_NAME_MAX_LENGTH = 60;
+export const RESTAURANT_DESCRIPTION_MAX_LENGTH = 120;
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 
@@ -39,6 +41,10 @@ export const RESTAURANT_MESSAGES = {
   whatsappRequired: "Ingresá tu WhatsApp",
   whatsappInvalid: "Número inválido. Incluí el código de área, por ejemplo 11 1234-5678.",
   deliveryRequired: "Elegí al menos una forma de entrega.",
+  descriptionTooLong: `La descripción puede tener hasta ${RESTAURANT_DESCRIPTION_MAX_LENGTH} caracteres`,
+  colorInvalid: "Ingresá un color en formato #RRGGBB",
+  colorContrast: "Ese color principal casi no se distingue del fondo. Probá con uno más claro u oscuro.",
+  appearanceEmpty: "Enviá al menos un cambio",
 } as const;
 
 export const slugSchema = z
@@ -131,6 +137,37 @@ export const changePlanSchema = z.object({ plan: z.enum(PLAN_IDS) });
 
 export type ChangePlanInput = z.infer<typeof changePlanSchema>;
 
+/**
+ * Short description of the restaurant: whitespace runs (spaces and line breaks) collapse to one
+ * space and the edges are trimmed before the length check. Empty is valid.
+ */
+export const restaurantDescriptionSchema = z
+  .string()
+  .transform((value) => value.replace(/\s+/g, " ").trim())
+  .pipe(z.string().max(RESTAURANT_DESCRIPTION_MAX_LENGTH, RESTAURANT_MESSAGES.descriptionTooLong));
+
+/** A hex color (`#RGB` or `#RRGGBB`, `#` optional), normalized to `#RRGGBB` in uppercase. */
+export const hexColorSchema = z
+  .string(RESTAURANT_MESSAGES.colorInvalid)
+  .refine((value) => normalizeHexColor(value) !== null, RESTAURANT_MESSAGES.colorInvalid)
+  .transform((value) => normalizeHexColor(value) ?? value);
+
+/**
+ * Body of `PATCH /api/restaurants/me/appearance`: any subset of the keys, at least one. A color set
+ * to `null` goes back to the Menucito default. Colors are a plan feature (checked by the service).
+ */
+export const updateAppearanceSchema = z
+  .object({
+    description: restaurantDescriptionSchema.optional(),
+    bgColor: hexColorSchema.nullable().optional(),
+    primaryColor: hexColorSchema.nullable().optional(),
+  })
+  .refine((value) => Object.values(value).some((field) => field !== undefined), {
+    message: RESTAURANT_MESSAGES.appearanceEmpty,
+  });
+
+export type UpdateAppearanceInput = z.infer<typeof updateAppearanceSchema>;
+
 /** Restaurant as returned by the API (dates as ISO strings). */
 export interface Restaurant {
   id: string;
@@ -142,6 +179,14 @@ export interface Restaurant {
   takeaway: boolean;
   /** Public path of the logo (served by `GET /api/media/*`), or `null` when there is none. */
   logoUrl: string | null;
+  /** Public path of the cover (served by `GET /api/media/*`), or `null` when there is none. */
+  coverUrl: string | null;
+  /** Short description; empty string when there is none. */
+  description: string;
+  /** Saved background color (`#RRGGBB`), or `null` for the default. Only published on plans with custom colors. */
+  bgColor: string | null;
+  /** Saved primary color (`#RRGGBB`), or `null` for the default. Only published on plans with custom colors. */
+  primaryColor: string | null;
   plan: string;
   status: string;
   createdAt: string;

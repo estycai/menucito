@@ -40,6 +40,18 @@ export interface PublicMenu {
     delivery: boolean;
     /** Whether orders can be picked up at the restaurant. */
     takeaway: boolean;
+    /** Public path of the cover (served by `GET /api/media/*`), or `null`. */
+    coverUrl: string | null;
+    /** Short description; empty string when there is none. */
+    description: string;
+    /**
+     * Colors to render with, always `#RRGGBB`: the saved ones on plans with `customColors`, the
+     * Menucito defaults otherwise (or where nothing was saved).
+     */
+    colors: { background: string; primary: string };
   };
+  /** The featured category, shown first. `null` when none is set or it has no products. */
+  featured: PublicMenuCategory | null;
+  /** Every other category with products; never includes the featured one. */
   categories: PublicMenuCategory[];
 }

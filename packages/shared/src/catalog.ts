@@ -43,6 +43,11 @@ export const categoryInputSchema = z.object({ name: categoryNameSchema });
 
 export type CategoryInput = z.infer<typeof categoryInputSchema>;
 
+/** Body of `PUT /api/categories/:id/featured`. */
+export const featuredCategorySchema = z.object({ featured: z.boolean() });
+
+export type FeaturedCategoryInput = z.infer<typeof featuredCategorySchema>;
+
 const productFields = {
   categoryId: z.string().min(1, CATALOG_MESSAGES.categoryRequired),
   name: z
@@ -190,6 +195,8 @@ export interface Category {
   id: string;
   name: string;
   position: number;
+  /** Whether this is the restaurant's featured category (at most one). */
+  featured: boolean;
 }
 
 export interface CategoryWithProducts extends Category {
