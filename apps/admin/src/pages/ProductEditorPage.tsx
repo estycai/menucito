@@ -9,7 +9,10 @@ import {
   PRODUCT_NAME_MAX_LENGTH,
   formatArs,
   parseArsPrice,
+  planLimitsFor,
   type CategoryWithProducts,
+  type CreateProductInput,
+  type Ingredient,
   type Product,
 } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
@@ -23,9 +26,13 @@ import {
   useCreateProduct,
   useDeleteProduct,
   useProduct,
+  useReplaceIngredients,
   useUpdateProduct,
   useUploadProductPhoto,
 } from "@/lib/catalog";
+import { attempt } from "@/lib/attempt";
+import { PRODUCT_GONE_STATE, PRODUCT_SAVED_STATE, createdProductState, type CreatedProductState } from "@/lib/menu-notice";
+import { ingredientsToSave, withKey, type DraftIngredient } from "@/lib/ingredient-form";
 import { planName } from "@/lib/plans";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
 import { useDocumentTitle } from "@/lib/use-document-title";
@@ -50,9 +57,16 @@ const productFormSchema = z.object({
 
 type ProductFormValues = z.infer<typeof productFormSchema>;
 
-/** Set when a new product was created but its photo could not be uploaded. */
-interface EditorLocationState {
-  photoError?: boolean;
+const ingredientsFailureMessage = (cause: unknown) =>
+  cause instanceof ApiError && cause.code === "PLAN_FEATURE"
+    ? "Tu plan actual no incluye ingredientes personalizables."
+    : "No pudimos guardar los ingredientes. Probá de nuevo.";
+
+/** Message of a new product that exists but is missing its photo and/or its ingredients. */
+function createdWithGapsMessage({ photo, ingredients }: { photo: boolean; ingredients: boolean }) {
+  if (photo && ingredients) return "Guardamos el producto, pero no pudimos subir la foto ni guardar los ingredientes. Probá de nuevo.";
+  if (ingredients) return "Guardamos el producto, pero no pudimos guardar los ingredientes. Probá de nuevo.";
+  return "Guardamos el producto, pero no pudimos subir la foto. Probá de nuevo.";
 }
 
 const textareaClass =
@@ -130,13 +144,25 @@ function ProductForm({
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
+  const replaceIngredients = useReplaceIngredients();
   const uploadPhoto = useUploadProductPhoto();
   const [pendingPhoto, setPendingPhoto] = useState<Blob | null>(null);
-  const [error, setError] = useState<string | null>(
-    (location.state as EditorLocationState | null)?.photoError
-      ? "Guardamos el producto, pero no pudimos subir la foto. Probá de nuevo."
+  // Ingredients typed before a new product existed come back through the location state when
+  // saving them failed; they are then sent again by the next "Guardar". Read once, then cleared.
+  const [carried] = useState(() => createdProductState(location.state));
+  const [ingredients, setIngredients] = useState<DraftIngredient[]>(() => (carried.ingredients ?? product?.ingredients ?? []).map(withKey));
+  // What the server has: the baseline the draft is compared with.
+  const [savedIngredients, setSavedIngredients] = useState<Ingredient[]>(product?.ingredients ?? []);
+  const [error, setError] = useState<string | null>(() =>
+    carried.photoError || carried.ingredients
+      ? createdWithGapsMessage({ photo: carried.photoError, ingredients: carried.ingredients !== null })
       : null,
   );
+
+  // Drop the state from the history entry so a refresh or back/forward does not restore it.
+  useEffect(() => {
+    if (location.state) navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.search, navigate]);
   const descriptionId = useId();
   const categoryFieldId = useId();
   const formId = useId();
@@ -162,7 +188,14 @@ function ProductForm({
 
   const isNew = !product;
   const backToMenu = (categoryId: string) => `/menu?category=${encodeURIComponent(categoryId)}`;
+  // After a full save the menu confirms it; cancel and delete leave without a message.
+  const backToMenuSaved = (categoryId: string) => navigate(backToMenu(categoryId), { state: PRODUCT_SAVED_STATE });
   const limitMessage = `Llegaste al límite de productos del plan ${planName(restaurant?.plan ?? "basic")}.`;
+  const canCustomize = restaurant ? planLimitsFor(restaurant.plan).customIngredients : false;
+
+  const isGone = (cause: unknown) => cause instanceof ApiError && cause.status === 404;
+  // The product was deleted from another tab or device: there is nothing left to edit.
+  const leaveGone = () => navigate("/menu", { replace: true, state: PRODUCT_GONE_STATE });
 
   async function onValid(values: ProductFormValues) {
     setError(null);
@@ -173,17 +206,37 @@ function ProductForm({
       priceCents: parseArsPrice(values.price) as number,
       available: values.available,
     };
+    if (product) await saveExisting(product, input);
+    else await createWithExtras(input);
+  }
 
-    if (product) {
-      try {
-        await updateProduct.mutateAsync({ id: product.id, ...input });
-        navigate(backToMenu(input.categoryId));
-      } catch {
-        setError("No pudimos guardar los cambios. Probá de nuevo.");
-      }
+  // One "Guardar" saves the product and then its ingredients, as two sequential requests. If the
+  // second fails the product stays saved, the page stays open and the draft is kept, so the next
+  // "Guardar" resends both (the product update is idempotent).
+  async function saveExisting(existing: Product, input: CreateProductInput) {
+    try {
+      await updateProduct.mutateAsync({ id: existing.id, ...input });
+    } catch (cause) {
+      if (isGone(cause)) return leaveGone();
+      setError("No pudimos guardar los cambios. Probá de nuevo.");
       return;
     }
+    const toSave = ingredientsToSave(ingredients, savedIngredients, canCustomize);
+    if (toSave) {
+      try {
+        const result = await replaceIngredients.mutateAsync({ id: existing.id, ingredients: toSave });
+        setSavedIngredients(result.ingredients);
+      } catch (cause) {
+        if (isGone(cause)) return leaveGone();
+        setError(`Guardamos los cambios del producto, pero no pudimos guardar los ingredientes. ${ingredientsFailureMessage(cause)}`);
+        return;
+      }
+    }
+    backToMenuSaved(input.categoryId);
+  }
 
+  // Creates the product, then its ingredients and photo; a failure of either one does not skip the other.
+  async function createWithExtras(input: CreateProductInput) {
     let created: Product;
     try {
       created = await createProduct.mutateAsync(input);
@@ -195,16 +248,18 @@ function ProductForm({
       );
       return;
     }
-    if (pendingPhoto) {
-      try {
-        await uploadPhoto.mutateAsync({ id: created.id, webp: pendingPhoto });
-      } catch {
-        const state: EditorLocationState = { photoError: true };
-        navigate(`/menu/products/${created.id}`, { replace: true, state });
-        return;
-      }
+    const toSave = ingredientsToSave(ingredients, [], canCustomize);
+    const ingredientsFailed = toSave !== null && !(await attempt(() => replaceIngredients.mutateAsync({ id: created.id, ingredients: toSave })));
+    const photoFailed = pendingPhoto !== null && !(await attempt(() => uploadPhoto.mutateAsync({ id: created.id, webp: pendingPhoto })));
+    if (ingredientsFailed || photoFailed) {
+      const state: CreatedProductState = {
+        ...(photoFailed && { photoError: true }),
+        ...(ingredientsFailed && { ingredients: toSave }),
+      };
+      navigate(`/menu/products/${created.id}`, { replace: true, state });
+      return;
     }
-    navigate(backToMenu(input.categoryId));
+    backToMenuSaved(input.categoryId);
   }
 
   async function onDelete() {
@@ -218,7 +273,7 @@ function ProductForm({
     }
   }
 
-  const busy = isSubmitting || deleteProduct.isPending;
+  const busy = isSubmitting || deleteProduct.isPending || replaceIngredients.isPending;
 
   return (
     <EditorShell title={product?.name ?? "Nuevo producto"}>
@@ -291,7 +346,7 @@ function ProductForm({
         </section>
       </form>
 
-      {restaurant && <ProductProSections product={product} plan={restaurant.plan} />}
+      {restaurant && <ProductProSections product={product} plan={restaurant.plan} ingredients={ingredients} onIngredientsChange={setIngredients} />}
 
       {error && <Notice tone="error">{error}</Notice>}
 

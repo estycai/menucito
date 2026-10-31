@@ -9,61 +9,37 @@ import {
   ingredientSchema,
   type Ingredient,
 } from "@menucito/shared";
-import { Notice } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
 import { ReorderButtons } from "@/components/ReorderButtons";
 import { Button } from "@/components/ui/button";
-import { useReplaceIngredients } from "@/lib/catalog";
 import {
   NEW_INGREDIENT_VALUES,
   formValuesOf,
   ingredientFormSchema,
-  sameIngredients,
   toIngredient,
+  withKey,
+  withoutKey,
+  type DraftIngredient,
   type IngredientFormValues,
 } from "@/lib/ingredient-form";
 import { moveId } from "@/lib/order";
-import { ApiError } from "@/lib/restaurant";
-
-/** A draft row; `key` is only for React, it is not sent to the API. */
-interface DraftIngredient extends Ingredient {
-  key: string;
-}
-
-const withKey = (ingredient: Ingredient): DraftIngredient => ({ ...ingredient, key: crypto.randomUUID() });
-const withoutKey = (item: DraftIngredient): Ingredient => ({
-  name: item.name,
-  includedQty: item.includedQty,
-  minQty: item.minQty,
-  maxQty: item.maxQty,
-  extraPriceCents: item.extraPriceCents,
-});
 
 /** `null` when the form is closed, `"new"` when adding, otherwise the `key` of the row being edited. */
 type FormTarget = string | null;
 
 /**
- * "Ingredientes" of a saved product on a plan with customizable ingredients. The list is edited
- * locally (add, edit, remove, reorder) and saved as a whole with "Guardar ingredientes", which
- * replaces the product's list in one request.
+ * "Ingredientes" of the product editor on a plan with customizable ingredients. The list is edited
+ * locally (add, edit, remove, reorder) and lives in the editor page, which saves it together with
+ * the product when the owner clicks "Guardar".
  */
-export function IngredientsEditor({ productId, saved }: { productId: string; saved: Ingredient[] }) {
-  const replace = useReplaceIngredients();
-  const [draft, setDraft] = useState<DraftIngredient[]>(() => saved.map(withKey));
-  const [baseline, setBaseline] = useState<Ingredient[]>(saved);
+export function IngredientsEditor({ draft, onChange }: { draft: DraftIngredient[]; onChange: (next: DraftIngredient[]) => void }) {
   const [formTarget, setFormTarget] = useState<FormTarget>(null);
-  const [status, setStatus] = useState<"saved" | "error" | null>(null);
-  const [errorMessage, setErrorMessage] = useState("");
   const headingId = useId();
 
-  const dirty = !sameIngredients(draft.map(withoutKey), baseline);
   const atCapacity = draft.length >= INGREDIENTS_MAX_PER_PRODUCT;
   const editing = formTarget && formTarget !== "new" ? draft.find((item) => item.key === formTarget) : undefined;
 
-  function change(next: DraftIngredient[]) {
-    setStatus(null);
-    setDraft(next);
-  }
+  const change = onChange;
 
   function onSubmitForm(ingredient: Ingredient) {
     if (formTarget === "new") change([...draft, withKey(ingredient)]);
@@ -86,23 +62,6 @@ export function IngredientsEditor({ productId, saved }: { productId: string; sav
     change(order.map((key) => draft.find((item) => item.key === key) as DraftIngredient));
   }
 
-  async function onSave() {
-    setStatus(null);
-    const ingredients = draft.map(withoutKey);
-    try {
-      const result = await replace.mutateAsync({ id: productId, ingredients });
-      setBaseline(result.ingredients);
-      setStatus("saved");
-    } catch (cause) {
-      setErrorMessage(
-        cause instanceof ApiError && cause.code === "PLAN_FEATURE"
-          ? "Tu plan actual no incluye ingredientes personalizables."
-          : "No pudimos guardar los ingredientes. Probá de nuevo.",
-      );
-      setStatus("error");
-    }
-  }
-
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 sm:p-6">
       <div className="flex flex-col gap-1">
@@ -110,7 +69,7 @@ export function IngredientsEditor({ productId, saved }: { productId: string; sav
           Ingredientes
         </h2>
         <p className="m-0 text-[15px] text-muted">
-          Definí cuántas unidades trae el producto y cuánto cuesta cada unidad extra. Los cambios se aplican al tocar «Guardar ingredientes».
+          Definí cuántas unidades trae el producto y cuánto cuesta cada unidad extra. Se guardan junto con el producto al tocar «Guardar».
         </p>
       </div>
 
@@ -161,16 +120,6 @@ export function IngredientsEditor({ productId, saved }: { productId: string; sav
           {atCapacity && <p className="m-0 text-[13px] text-muted">{CATALOG_MESSAGES.ingredientsTooMany}</p>}
         </div>
       )}
-
-      {status === "error" && <Notice tone="error">{errorMessage}</Notice>}
-      <div className="flex flex-col gap-2 border-t border-line pt-4 sm:flex-row sm:items-center sm:justify-between">
-        <p role="status" className="m-0 text-sm text-muted">
-          {status === "saved" && !dirty ? "Ingredientes guardados." : dirty ? "Tenés cambios sin guardar." : ""}
-        </p>
-        <Button type="button" className="min-h-12 w-full rounded-xl px-[26px] text-[15px] sm:w-auto" disabled={!dirty || replace.isPending} onClick={onSave}>
-          Guardar ingredientes
-        </Button>
-      </div>
     </section>
   );
 }

@@ -1,6 +1,7 @@
 import { describeIngredient, planLimitsFor, type Product } from "@menucito/shared";
 import { IngredientsEditor } from "@/components/IngredientsEditor";
 import { ProLock } from "@/components/ProLock";
+import type { DraftIngredient } from "@/lib/ingredient-form";
 
 /** Real-looking example shown (not editable) on plans without customizable ingredients. */
 const EXAMPLE_INGREDIENT = { name: "Bacon", includedQty: 1, minQty: 0, maxQty: 3, extraPriceCents: 150_000 };
@@ -8,22 +9,24 @@ const EXAMPLE_INGREDIENT = { name: "Bacon", includedQty: 1, minQty: 0, maxQty: 3
 /**
  * The Pro sections of the product editor: "Ingredientes" (editable on Pro, locked otherwise) and
  * "Extras y variantes" (a locked placeholder on every plan). Reads the flag from the plan limits.
+ * The ingredient draft belongs to the editor page, which saves it together with the product.
  */
-export function ProductProSections({ product, plan }: { product: Product | null; plan: string }) {
+export function ProductProSections({
+  product,
+  plan,
+  ingredients,
+  onIngredientsChange,
+}: {
+  product: Product | null;
+  plan: string;
+  ingredients: DraftIngredient[];
+  onIngredientsChange: (next: DraftIngredient[]) => void;
+}) {
   const canCustomize = planLimitsFor(plan).customIngredients;
   return (
     <>
       {canCustomize ? (
-        product ? (
-          <IngredientsEditor key={product.id} productId={product.id} saved={product.ingredients} />
-        ) : (
-          <section aria-labelledby="ingredients-new-heading" className="flex min-w-0 flex-col gap-2 rounded-2xl border border-line bg-white p-4 sm:p-6">
-            <h2 id="ingredients-new-heading" className="m-0 font-display text-xl font-extrabold">
-              Ingredientes
-            </h2>
-            <p className="m-0 text-[15px] text-muted">Guardá el producto para agregar ingredientes.</p>
-          </section>
-        )
+        <IngredientsEditor draft={ingredients} onChange={onIngredientsChange} />
       ) : (
         <ProLock
           title="Ingredientes"

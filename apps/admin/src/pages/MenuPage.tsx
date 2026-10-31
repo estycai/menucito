@@ -1,8 +1,9 @@
-import { useState } from "react";
-import { Link, useNavigate, useSearchParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { CATALOG_MESSAGES, formatArs, type CatalogUsage, type CategoryWithProducts, type Product } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { CategoryNameForm } from "@/components/CategoryNameForm";
+import { FeaturedToggle } from "@/components/FeaturedToggle";
 import { ReorderButtons } from "@/components/ReorderButtons";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +15,7 @@ import {
   useReorderProducts,
   useToggleAvailability,
 } from "@/lib/catalog";
+import { menuNotice } from "@/lib/menu-notice";
 import { moveId } from "@/lib/order";
 import { planName } from "@/lib/plans";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
@@ -21,6 +23,9 @@ import { cn } from "@/lib/utils";
 
 /** `?category=all` shows every category's products instead of one. */
 const ALL_CATEGORIES = "all";
+
+/** How long the notice sent by the product editor stays on screen. */
+const NOTICE_MS = 5000;
 
 const confirmDelete =(name: string) => window.confirm(`¿Eliminar «${name}»? No se puede deshacer.`);
 
@@ -42,6 +47,21 @@ export function MenuPage() {
   const setSelectedId = (id: string) => setParams({ category: id }, { replace: true });
   const [creating, setCreating] = useState(false);
   const createCategory = useCreateCategory();
+
+  // The editor sends us here with `state.notice` after a save or a 404 (a fresh mount). Keep it in local state, then drop it
+  // from the history entry (replace, same URL) so a refresh or a later visit does not repeat it.
+  const location = useLocation();
+  const [notice, setNotice] = useState(() => menuNotice(location.state));
+  useEffect(() => {
+    if (menuNotice(location.state)) {
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+    }
+  }, [location.state, location.pathname, location.search, navigate]);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), NOTICE_MS);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
 
   if (!restaurant) return null;
 
@@ -72,6 +92,9 @@ export function MenuPage() {
         </div>
         {newProductButton("hidden md:inline-flex")}
       </div>
+
+      {notice === "saved" && <Notice tone="success">Producto guardado.</Notice>}
+      {notice === "gone" && <Notice tone="error">Este producto ya no existe.</Notice>}
 
       {atLimit && <Notice tone="error">Llegaste al límite de productos del plan {planName(restaurant.plan)}.</Notice>}
 
@@ -116,7 +139,15 @@ export function MenuPage() {
                           active ? "border-[#FDBA74] bg-[#FFEDD5] font-bold text-link" : "border-line bg-white text-ink md:hover:bg-bg",
                         )}
                       >
-                        <span className="max-w-[200px] truncate md:max-w-none">{category.name}</span>
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          {category.featured && (
+                            <span aria-hidden="true" className="shrink-0">
+                              ★
+                            </span>
+                          )}
+                          <span className="max-w-[200px] truncate md:max-w-none">{category.name}</span>
+                          {category.featured && <span className="sr-only">(destacada)</span>}
+                        </span>
                         <span className={cn("text-[13px]", !active && "text-muted")}>{category.products.length}</span>
                       </button>
                     </li>
@@ -231,6 +262,7 @@ function CategorySection({
           <>
             <h2 className="m-0 min-w-0 flex-[1_1_100%] font-display text-xl font-extrabold break-words sm:flex-1">{category.name}</h2>
             <div className="-ml-2 flex flex-wrap items-center sm:ml-0">
+              <FeaturedToggle categoryId={category.id} categoryName={category.name} featured={category.featured} onError={onActionError} />
               <Button type="button" variant="ghost" className="min-h-11 px-3 text-sm" onClick={() => setRenaming(true)}>
                 Renombrar
               </Button>

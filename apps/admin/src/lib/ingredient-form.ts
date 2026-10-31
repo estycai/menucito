@@ -101,3 +101,32 @@ export function sameIngredients(a: readonly Ingredient[], b: readonly Ingredient
     })
   );
 }
+
+/** A draft row of the product editor; `key` is only for React, it is not sent to the API. */
+export interface DraftIngredient extends Ingredient {
+  key: string;
+}
+
+export const withKey = (ingredient: Ingredient): DraftIngredient => ({ ...ingredient, key: crypto.randomUUID() });
+
+export const withoutKey = (item: DraftIngredient): Ingredient => ({
+  name: item.name,
+  includedQty: item.includedQty,
+  minQty: item.minQty,
+  maxQty: item.maxQty,
+  extraPriceCents: item.extraPriceCents,
+});
+
+/**
+ * Ingredient list to send together with the product, or `null` when nothing has to be sent: the plan
+ * has no customizable ingredients, or the list equals what is saved (a new product has none saved).
+ */
+export function ingredientsToSave(
+  draft: readonly DraftIngredient[],
+  saved: readonly Ingredient[],
+  customizable: boolean,
+): Ingredient[] | null {
+  if (!customizable) return null;
+  const next = draft.map(withoutKey);
+  return sameIngredients(next, saved) ? null : next;
+}

@@ -4,9 +4,11 @@ import {
   NEW_INGREDIENT_VALUES,
   formValuesOf,
   ingredientFormSchema,
+  ingredientsToSave,
   sameIngredients,
   toIngredient,
   type IngredientFormValues,
+  withKey,
 } from "./ingredient-form";
 
 const bacon: IngredientFormValues = { name: "Bacon", includedQty: "1", minQty: "0", maxQty: "3", extraPrice: "1.500" };
@@ -78,5 +80,31 @@ describe("sameIngredients", () => {
     expect(sameIngredients([a], [{ ...a, maxQty: 4 }])).toBe(false);
     expect(sameIngredients([a], [])).toBe(false);
     expect(sameIngredients([], [])).toBe(true);
+  });
+});
+
+describe("ingredientsToSave", () => {
+  const bacon = { name: "Bacon", includedQty: 1, minQty: 0, maxQty: 3, extraPriceCents: 150_000 };
+  const cheese = { name: "Queso", includedQty: 1, minQty: 0, maxQty: 2, extraPriceCents: 0 };
+
+  it("sends nothing on a plan without customizable ingredients", () => {
+    expect(ingredientsToSave([withKey(bacon)], [], false)).toBeNull();
+  });
+
+  it("sends nothing when the list equals what is saved, keys aside", () => {
+    expect(ingredientsToSave([withKey(bacon)], [bacon], true)).toBeNull();
+    expect(ingredientsToSave([], [], true)).toBeNull();
+  });
+
+  it("sends the whole list, without keys, for a new product with ingredients", () => {
+    expect(ingredientsToSave([withKey(bacon), withKey(cheese)], [], true)).toEqual([bacon, cheese]);
+  });
+
+  it("sends the empty list when the last ingredient was removed", () => {
+    expect(ingredientsToSave([], [bacon], true)).toEqual([]);
+  });
+
+  it("sends the list when only the order changed", () => {
+    expect(ingredientsToSave([withKey(cheese), withKey(bacon)], [bacon, cheese], true)).toEqual([cheese, bacon]);
   });
 });
