@@ -89,7 +89,7 @@ opening_hours (P, F2)           PK id · restaurant_id FK → restaurants.id · 
 
 Notas:
 
-- `restaurants` hoy en el código todavía tiene `logo_url`, `cover_url`, `description`, `bg_color`, `primary_color`, `plan` y `status`. El modelo objetivo los mueve: la apariencia a `restaurant_appearance` y el plan a `subscriptions`. El cambio 10 (apariencia) está sin commitear: mover ahora es más barato que después de salir a producción.
+- La apariencia ya vive en `restaurant_appearance` en el código (migración `0005_appearance`, sin commitear): crea la tabla, copia el logo de cada local existente y quita `logo_url` de `restaurants`. El local y su fila de apariencia se crean en el mismo batch de D1. `restaurants` todavía tiene `plan` y `status`; el plan pasará a `subscriptions` en una migración aparte.
 - `delivery` y `takeaway` se quedan en `restaurants` para no tocar código que ya funciona. Se pueden pasar a `restaurant_settings` más adelante.
 - `restaurant_appearance`: `logo_url` y `cover_url` guardan la ruta pública (la clave de R2 se deriva de ella). Los colores son `#RRGGBB` en mayúsculas; `NULL` significa "color por defecto". El logo está disponible en todos los planes; solo el color es Pro.
 - `restaurant_settings`: una fila por restaurante, creada junto con el restaurante. `accepting_orders` pausa la tienda (por defecto activo). `min_order_cents` `NULL` es "sin mínimo". `shipping_cents` `0` es gratis y solo se suma en delivery. Los valores por defecto no deben cambiar el comportamiento de los locales existentes.
