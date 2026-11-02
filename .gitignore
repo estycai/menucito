@@ -12,3 +12,6 @@ dist
 
 # Local secrets (never commit)
 data_sensible/
+
+# PDF exports inside the Obsidian vault (binaries; keep them on disk only)
+Menucito/*.pdf
