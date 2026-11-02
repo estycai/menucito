@@ -30,6 +30,10 @@ SaaS para restaurantes argentinos: cargan su menú, el cliente arma el pedido y 
 - [Personalización de ingredientes](03-arquitectura/Personalizacion-de-ingredientes.md): cantidad incluida, mínimo, máximo y costo por unidad extra (ej: bacon x2).
 - [Infraestructura y costos](03-arquitectura/Infraestructura-y-costos.md): límites del plan gratis de Cloudflare y costos fijos.
 
+## Roadmap
+
+- [Roadmap](05-roadmap/Roadmap.md): orden propuesto por fases y próximos 3 pasos. Además: [Backlog](05-roadmap/Backlog.md) con todos los ítems y [Decisiones abiertas](05-roadmap/Decisiones-abiertas.md).
+
 ## Referencias
 
 - [Fuentes](04-referencias/Fuentes.md): todos los links consultados.
