@@ -173,7 +173,7 @@ Cómo leerla:
 
 | ID | Item | Fase | Tamaño | Estado | Depende de | Bloqueado por |
 | --- | --- | --- | --- | --- | --- | --- |
-| B-111 | Corrida manual del cambio 10 en el navegador (tarea 8, escenarios 15 a 33) | 0 | sin estimar | Pendiente | - | - |
+| B-111 | Corrida manual del cambio 10 en el navegador (tarea 8, escenarios 15 a 33) | 0 | sin estimar | Hecho | - | - |
 | B-112 | Decidir qué hacer con archivos sin commitear ajenos (.design-canvas, .claude/launch.json, PDF de análisis) | 0 | S | Pendiente | - | - |
 | B-113 | Pruebas del guardado del editor de producto (el admin no tiene pruebas de componentes) | 0 | sin estimar | Pendiente | - | - |
 | B-114 | Carrera en categories.setFeatured: si se borra el destino entre la verificación y el batch, queda sin destacada | 0 | sin estimar | Pendiente | - | - |
@@ -186,11 +186,11 @@ Cómo leerla:
 
 | ID | Item | Fase | Tamaño | Estado | Depende de | Bloqueado por |
 | --- | --- | --- | --- | --- | --- | --- |
-| B-119 | Corregir docs/changes/02 y 03: dicen que logo_url está en restaurants | 0 | S | Pendiente | - | - |
+| B-119 | Corregir docs/changes/02 y 03: dicen que logo_url está en restaurants | 0 | S | Hecho | - | - |
 | B-120 | Actualizar el estado de los cambios 02, 03, 04, 08 y 10 (siguen aprobados o en borrador) | 0 | S | Pendiente | B-111 | - |
 | B-121 | Alinear Planes-y-precios con los dos planes (Basic gratis, Pro pago) | 0 | S | Pendiente | - | - |
 | B-122 | Alinear Pagos-y-suscripciones con la suscripción por usuario y sin tabla payments | 5 | S | Pendiente | B-83 | - |
-| B-123 | Actualizar Modelo-de-datos: la migración 0005 ya está commiteada | 0 | S | Pendiente | - | - |
+| B-123 | Actualizar Modelo-de-datos: la migración 0005 ya está commiteada | 0 | S | Hecho | - | - |
 
 ## Hecho
 
@@ -209,6 +209,6 @@ Lo construido hasta hoy (cambios 01 a 10). Los ítems con estado Hecho de las ta
 | 09 Carrito y detalle de pedido | Carrito y formulario del pedido, sin envío todavía | 53c1390 | `docs/changes/09-cart-order-detail.md` |
 | 10 Apariencia del local y menú público | Tabla restaurant_appearance, portada, colores, categoría destacada y guardado de ingredientes con confirmaciones | 06f377f, 369b2ff, 7669581, eeb430e, ee4dce8 | `docs/changes/10-apariencia-del-local-y-menu-publico.md` |
 
-Los estados dentro de `docs/changes/` no siempre reflejan esto: ver B-120.
+Los estados dentro de `docs/changes/` ya reflejan esto, salvo el 04 y el 08: les falta una verificación manual en el navegador (B-120 sigue pendiente). El cambio 11 (pedidos) está escrito en `docs/changes/11-pedidos-de-punta-a-punta.md` y cubre la Fase 1 del Roadmap salvo B-09.
 
 Related: [Roadmap](Roadmap.md) · [Decisiones abiertas](Decisiones-abiertas.md) · [Modelo de datos](../03-arquitectura/Modelo-de-datos.md) · [Próximos pasos](../02-negocio/Proximos-pasos.md)

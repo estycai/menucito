@@ -1,7 +1,8 @@
 # 02 · Create my restaurant (onboarding step 1) + first layered REST endpoints
 
-Status: approved
+Status: done
 Date: 2026-10-28
+Note (change 10): `logo_url` and the other appearance fields now live in `restaurant_appearance` (migration `0005_appearance`), not in `restaurants`.
 
 ## Intent
 After login, a user without a restaurant must create one (name, public slug, WhatsApp, delivery options). This also introduces the `restaurants` table and the first own REST endpoints, fixing the layered architecture the rest of the API will follow.

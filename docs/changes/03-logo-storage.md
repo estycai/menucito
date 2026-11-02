@@ -1,7 +1,8 @@
 # 03 · Restaurant logo upload (R2 storage)
 
-Status: approved
+Status: done
 Date: 2026-10-28
+Note (change 10): `logo_url` no longer lives on `restaurants`. Migration `0005_appearance` moved it to `restaurant_appearance`; read the `logo_url` mentions below with that in mind.
 Depends on: `docs/changes/02-restaurant-onboarding.md` (must be done first)
 
 ## Intent

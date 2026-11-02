@@ -10,9 +10,9 @@ tags: [menucito, roadmap]
 
 ## Próximos 3 pasos
 
-1. Cerrar los cabos sueltos de la Fase 0: corrida manual del cambio 10 en el navegador (B-111) y decidir qué hacer con los archivos sueltos del árbol de trabajo (B-112).
-2. Escribir el cambio 11 (pedidos), ahora que D-01, D-02 y D-11 están decididas.
-3. Arrancar con la migración de `orders` y `order_items` (B-02), junto con las tablas `customers` y `promo_codes` vacía (B-125, B-126).
+1. Decidir qué hacer con los archivos sueltos del árbol de trabajo (B-112) y confirmar o corregir las "Decisiones de diseño por confirmar" de la spec del cambio 11 (`docs/changes/11-pedidos-de-punta-a-punta.md`).
+2. Implementar la tarea 1 del cambio 11: `packages/shared` con la zona horaria, los estados, los esquemas y el mensaje de WhatsApp (B-128 y la base de B-07 y B-06).
+3. Implementar la tarea 2: la migración `0006_orders` con `orders`, `order_items`, `customers`, `promo_codes` vacía y las tablas de configuración (B-02, B-125, B-126, B-39, B-43).
 
 ## Lógica del orden
 
@@ -32,12 +32,14 @@ Tamaño por fase según el plan: Fase 0 chico, Fase 1 grande, fases 2 a 5 median
 
 **Criterio de hecho**
 
-- [ ] El cambio 10 pasó la corrida manual a 375 px y 1280 px y quedó marcado como hecho.
+- [x] El cambio 10 pasó la corrida manual a 375 px y 1280 px y quedó marcado como hecho.
 - [ ] Los archivos sueltos del árbol de trabajo están commiteados, ignorados o movidos.
 - [ ] Los estados de `docs/changes/` y las notas del vault reflejan lo que ya está en el código.
 - [ ] Las pruebas del editor de producto y los tres arreglos chicos de la revisión (B-114, B-115, B-116) están hechos o descartados a propósito.
 
-**Próxima acción:** B-111, la corrida manual del cambio 10.
+**Próxima acción:** B-112, decidir qué hacer con los archivos sueltos (el dueño todavía no decidió). Quedan además B-121 y los cabos chicos B-113 a B-116; ninguno bloquea la Fase 1.
+
+Ya están hechos B-111 (corrida manual del cambio 10), B-119 y B-123. B-120 sigue pendiente: los cambios 04 y 08 necesitan una verificación manual.
 
 ## Fase 1: Pedidos de punta a punta
 
@@ -59,7 +61,7 @@ Tamaño por fase según el plan: Fase 0 chico, Fase 1 grande, fases 2 a 5 median
 - [ ] El historial se filtra y se exporta a CSV.
 - [ ] Los locales que ya existían siguen funcionando igual después de las migraciones.
 
-**Próxima acción:** escribir el cambio 11 y arrancar por B-02.
+**Próxima acción:** la spec del cambio 11 está escrita en [docs/changes/11-pedidos-de-punta-a-punta.md](../../docs/changes/11-pedidos-de-punta-a-punta.md) (cubre todos los ítems de esta fase salvo B-09, alta manual de pedidos, que queda para una spec propia). Falta confirmar sus decisiones de diseño por confirmar; la acción siguiente es implementar la tarea 1 (`packages/shared`), y después la tarea 2 (migración `0006_orders`).
 
 ## Fase 2: Catálogo completo y tienda
 
