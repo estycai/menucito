@@ -1,6 +1,6 @@
 # 11 · Pedidos de punta a punta (pedido guardado, configuración de la tienda, panel del dueño y mensaje de WhatsApp)
 
-Estado: borrador
+Estado: approved
 Fecha: 2026-11-02
 Depende de: `docs/changes/10-apariencia-del-local-y-menu-publico.md` (hecha), `docs/changes/09-cart-order-detail.md` (hecha, carrito y `/pedido`), `docs/changes/07-pro-features-ingredients.md` (hecha, ingredientes y reglas de precio) y `docs/changes/04-menu-catalog.md` (hecha, catálogo).
 Fuente visual: `.design-canvas/project/Pedido.dc.html` (formulario) y `Whatsapp.dc.html` (formato del mensaje). **No hay tablero** para el panel de pedidos ni para la configuración de la tienda: se arman con los componentes del admin (ver Decisiones por confirmar). El canvas manda en lo visual donde existe; esta spec manda en el comportamiento y los datos.
@@ -75,8 +75,8 @@ Hoy el carrito termina en un botón deshabilitado y nada llega a nadie. Esta spe
 - **Dos columnas fuera del modelo, registradas en `Modelo-de-datos.md`**: `orders.client_token` (idempotencia) y `order_items.position` (el orden de las líneas, que sin una columna no se conserva). Y una regla más estricta que la nota del modelo: la nota pide solo `alias` para transferencia; esta spec pide también `holder_name`, como se acordó para esta fase.
 - **Restricción de la zona horaria**: Argentina no usa horario de verano; igual `packages/shared/src/time.ts` resuelve días con `Intl.DateTimeFormat` y `timeZone: APP_TIME_ZONE`, no con un desfase fijo escrito a mano, para que la constante sea el único lugar a tocar si cambia.
 
-## Decisiones de diseño por confirmar
-Cada una tiene un valor por defecto propuesto; si no se objeta, se implementa así.
+## Decisiones de diseño
+Aceptadas el 2026-11-02 con el valor por defecto de cada una. La alternativa queda anotada por si hay que revisarla.
 1. **Relleno de `transfer` en los locales existentes.** Por defecto: habilitado y sin datos (conserva el comportamiento actual). Alternativa: deshabilitado hasta que el dueño cargue alias y titular (más seguro para el comensal, pero cambia lo que ve hoy un local existente).
 2. **Sin marcha atrás de estados.** Por defecto: `delivered` y `cancelled` son finales y no se retrocede. Alternativa: permitir volver un paso atrás o "Reabrir" un cancelado (cubre un clic equivocado, a costa de un historial menos confiable para los reportes).
 3. **Freno por teléfono: 3 pedidos cada 10 minutos.** Por defecto esos valores. Alternativa: más permisivo (por ejemplo 5) si un local recibe pedidos repetidos de una misma persona.
