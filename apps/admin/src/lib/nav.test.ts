@@ -5,6 +5,7 @@ describe("NAV_ITEMS", () => {
   it("keeps the canvas order", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Resumen",
+      "Pedidos",
       "Mi menú",
       "Mi local",
       "Link y QR",
@@ -21,6 +22,7 @@ describe("NAV_ITEMS", () => {
 describe("activeNavItem", () => {
   it.each([
     ["/", "Resumen"],
+    ["/pedidos", "Pedidos"],
     ["/menu", "Mi menú"],
     ["/menu/products/new", "Mi menú"],
     ["/menu/products/abc123", "Mi menú"],

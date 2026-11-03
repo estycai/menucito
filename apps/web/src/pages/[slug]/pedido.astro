@@ -44,6 +44,11 @@ const menu = result.status === "ok" ? result.menu : null;
           delivery={menu.restaurant.delivery}
           takeaway={menu.restaurant.takeaway}
           products={toCatalog(menu)}
+          acceptingOrders={menu.restaurant.acceptingOrders}
+          minOrderCents={menu.restaurant.minOrderCents}
+          shippingCents={menu.restaurant.shippingCents}
+          paymentMethods={menu.restaurant.paymentMethods}
+          apiUrl={apiUrl}
         />
       </main>
     </Layout>

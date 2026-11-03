@@ -3,6 +3,7 @@ import type { StorageLike } from "./cart-store";
 import {
   EMPTY_ORDER_FORM,
   offeredFulfillments,
+  offeredPaymentMethods,
   orderFormStorageKey,
   readOrderForm,
   writeOrderForm,
@@ -16,13 +17,16 @@ function fakeStorage(initial: Record<string, string> = {}): StorageLike & { data
     setItem: (key, value) => {
       data[key] = value;
     },
+    removeItem: (key) => {
+      delete data[key];
+    },
   };
 }
 
 describe("order form storage (scenario 11)", () => {
-  it("remembers the values per restaurant", () => {
+  it("remembers the values per restaurant including phone", () => {
     const storage = fakeStorage();
-    const values = { name: "Juan", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
+    const values = { name: "Juan", phone: "11 5555 1234", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
     writeOrderForm(storage, "a", values);
     expect(Object.keys(storage.data)).toEqual(["menucito:order-form:a"]);
     expect(readOrderForm(storage, "a")).toEqual(values);
@@ -31,8 +35,14 @@ describe("order form storage (scenario 11)", () => {
 
   it("drops a fulfillment the restaurant no longer offers", () => {
     const storage = fakeStorage();
-    writeOrderForm(storage, "a", { name: "Juan", fulfillment: "delivery", address: "Calle 1", payment: "cash" });
+    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "cash" });
     expect(readOrderForm(storage, "a", ["takeaway"]).fulfillment).toBe("");
+  });
+
+  it("drops a payment method the restaurant no longer offers", () => {
+    const storage = fakeStorage();
+    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "transfer" });
+    expect(readOrderForm(storage, "a", ["delivery"], ["cash"]).payment).toBe("");
   });
 
   it("is tolerant of corrupt, foreign or oversized data", () => {
@@ -46,8 +56,15 @@ describe("order form storage (scenario 11)", () => {
       }),
       "a",
     );
-    expect(loaded).toEqual({ name: "n".repeat(60), fulfillment: "", address: "", payment: "" });
+    expect(loaded).toEqual({ name: "n".repeat(60), phone: "", fulfillment: "", address: "", payment: "" });
     expect(readOrderForm(null, "a")).toEqual(EMPTY_ORDER_FORM);
+  });
+});
+
+describe("offeredPaymentMethods", () => {
+  it("extracts methods in order", () => {
+    expect(offeredPaymentMethods({ paymentMethods: [{ method: "cash" }, { method: "transfer" }] })).toEqual(["cash", "transfer"]);
+    expect(offeredPaymentMethods({ paymentMethods: [{ method: "cash" }] })).toEqual(["cash"]);
   });
 });
 

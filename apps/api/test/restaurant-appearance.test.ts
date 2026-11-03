@@ -144,6 +144,40 @@ describe("restaurant_appearance storage", () => {
     expect(await repository.updatePlan("missing", "pro", new Date())).toBeNull();
   });
 
+  it("creates the store settings and default payment methods in the same batch (scenario 9)", async () => {
+    const { restaurant } = await owner();
+    const settings = await env.DB.prepare("SELECT * FROM restaurant_settings WHERE restaurant_id = ?")
+      .bind(restaurant.id)
+      .first<{
+        restaurant_id: string;
+        accepting_orders: number;
+        min_order_cents: number | null;
+        shipping_cents: number;
+      }>();
+    expect(settings).toMatchObject({
+      restaurant_id: restaurant.id,
+      accepting_orders: 1,
+      min_order_cents: null,
+      shipping_cents: 0,
+    });
+
+    const methods = (
+      await env.DB.prepare("SELECT * FROM restaurant_payment_methods WHERE restaurant_id = ? ORDER BY method")
+        .bind(restaurant.id)
+        .all<{
+          restaurant_id: string;
+          method: string;
+          enabled: number;
+          alias: string | null;
+          holder_name: string | null;
+        }>()
+    ).results;
+    expect(methods).toEqual([
+      { restaurant_id: restaurant.id, method: "cash", enabled: 1, alias: null, holder_name: null },
+      { restaurant_id: restaurant.id, method: "transfer", enabled: 0, alias: null, holder_name: null },
+    ]);
+  });
+
   it("deletes the appearance row with the restaurant", async () => {
     const { restaurant } = await owner();
     await env.DB.prepare("DELETE FROM restaurants WHERE id = ?").bind(restaurant.id).run();

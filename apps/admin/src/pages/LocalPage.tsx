@@ -2,6 +2,7 @@ import { useState } from "react";
 import { DEFAULT_COLORS } from "@menucito/shared";
 import { AppearanceForm } from "@/components/AppearanceForm";
 import { MenuPreview } from "@/components/MenuPreview";
+import { StoreSettingsForm } from "@/components/StoreSettingsForm";
 import type { AppearanceDraft } from "@/lib/appearance";
 import { useMyRestaurant } from "@/lib/restaurant";
 
@@ -25,6 +26,7 @@ export function LocalPage() {
       <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
         <div className="flex min-w-0 flex-col gap-5 lg:flex-1">
           <AppearanceForm restaurant={restaurant} onDraftChange={setDraft} />
+          <StoreSettingsForm />
         </div>
         <aside
           aria-labelledby="preview-title"

@@ -10,6 +10,7 @@ import { LocalPage } from "@/pages/LocalPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MenuPage } from "@/pages/MenuPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
+import { OrdersPage } from "@/pages/OrdersPage";
 import { PlanPage } from "@/pages/PlanPage";
 import { ProductEditorPage } from "@/pages/ProductEditorPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
@@ -30,6 +31,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
             <Route element={<RequireRestaurant />}>
               <Route element={<AdminShell />}>
                 <Route path="/" element={<SummaryPage />} />
+                <Route path="/pedidos" element={<OrdersPage />} />
                 <Route path="/menu" element={<MenuPage />} />
                 <Route path="/menu/products/new" element={<ProductEditorPage />} />
                 <Route path="/menu/products/:id" element={<ProductEditorPage />} />

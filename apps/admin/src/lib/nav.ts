@@ -11,6 +11,7 @@ export interface NavItem {
 /** Panel sections in the order of the design canvas. */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: "summary", label: "Resumen", to: "/", title: "Resumen" },
+  { id: "orders", label: "Pedidos", to: "/pedidos", title: "Pedidos" },
   { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú" },
   { id: "local", label: "Mi local", to: "/local", title: "Mi local" },
   { id: "qr", label: "Link y QR", to: "/qr", title: "Link y QR" },

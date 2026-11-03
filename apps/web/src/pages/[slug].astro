@@ -44,6 +44,11 @@ const featuredRowProps = featured?.products.some((product) => product.available)
         document.documentElement.classList.add("js");
       </script>
       <main>
+        {!menu.restaurant.acceptingOrders && (
+          <aside class="column pause-banner" role="status">
+            <p>Este local no está recibiendo pedidos por ahora. Podés ver el menú.</p>
+          </aside>
+        )}
         <header>
           <div class="cover">
             {cover && (

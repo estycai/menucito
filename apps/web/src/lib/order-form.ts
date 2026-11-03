@@ -11,12 +11,13 @@ import type { StorageLike } from "./cart-store";
 /** What the diner typed; the choices are empty strings until picked. */
 export interface OrderFormValues {
   name: string;
+  phone: string;
   fulfillment: Fulfillment | "";
   address: string;
   payment: PaymentMethod | "";
 }
 
-export const EMPTY_ORDER_FORM: OrderFormValues = { name: "", fulfillment: "", address: "", payment: "" };
+export const EMPTY_ORDER_FORM: OrderFormValues = { name: "", phone: "", fulfillment: "", address: "", payment: "" };
 
 export const ORDER_FORM_STORAGE_VERSION = 1;
 
@@ -34,6 +35,7 @@ export function readOrderForm(
   storage: StorageLike | null,
   slug: string,
   offered: readonly Fulfillment[] = FULFILLMENTS,
+  offeredMethods: readonly PaymentMethod[] = PAYMENT_METHODS,
 ): OrderFormValues {
   try {
     const raw = storage?.getItem(orderFormStorageKey(slug));
@@ -41,11 +43,13 @@ export function readOrderForm(
     const data = JSON.parse(raw) as Record<string, unknown> | null;
     if (!data || typeof data !== "object" || data.v !== ORDER_FORM_STORAGE_VERSION) return EMPTY_ORDER_FORM;
     const fulfillment = oneOf(offered, data.fulfillment);
+    const payment = oneOf(offeredMethods, data.payment);
     return {
       name: typeof data.name === "string" ? data.name.slice(0, ORDER_NAME_MAX_LENGTH) : "",
+      phone: typeof data.phone === "string" ? data.phone.slice(0, 30) : "",
       fulfillment,
       address: typeof data.address === "string" ? data.address.slice(0, ORDER_ADDRESS_MAX_LENGTH) : "",
-      payment: oneOf(PAYMENT_METHODS, data.payment),
+      payment,
     };
   } catch {
     return EMPTY_ORDER_FORM;
@@ -63,4 +67,9 @@ export function writeOrderForm(storage: StorageLike | null, slug: string, values
 /** The fulfillment options a restaurant offers, in display order. */
 export function offeredFulfillments(restaurant: { takeaway: boolean; delivery: boolean }): Fulfillment[] {
   return FULFILLMENTS.filter((fulfillment) => restaurant[fulfillment]);
+}
+
+/** The payment methods a restaurant offers, in display order. */
+export function offeredPaymentMethods(restaurant: { paymentMethods: Array<{ method: PaymentMethod }> }): PaymentMethod[] {
+  return restaurant.paymentMethods.map((p) => p.method);
 }

@@ -21,6 +21,9 @@ function fakeStorage(initial: Record<string, string> = {}): StorageLike & { data
     setItem: (key, value) => {
       data[key] = value;
     },
+    removeItem: (key) => {
+      delete data[key];
+    },
   };
 }
 
@@ -55,6 +58,9 @@ describe("readLines and writeLines (scenario 7)", () => {
       },
       setItem: () => {
         throw new Error("full");
+      },
+      removeItem: () => {
+        throw new Error("denied");
       },
     };
     expect(readLines(null, "a")).toEqual([]);
@@ -179,5 +185,15 @@ describe("reconcile (scenario 7)", () => {
     });
     store.sync();
     expect(store.getState().lines).toEqual([]);
+  });
+
+  it("clears the cart in memory and storage", () => {
+    const storage = seeded();
+    const store = createCartStore("a", storage);
+    store.load();
+    expect(store.getState().lines).toHaveLength(2);
+    store.clear();
+    expect(store.getState().lines).toEqual([]);
+    expect(readLines(storage, "a")).toEqual([]);
   });
 });

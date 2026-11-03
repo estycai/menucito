@@ -5,12 +5,14 @@ import {
   changePlanSchema,
   createRestaurantSchema,
   updateAppearanceSchema,
+  updateSettingsSchema,
 } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { coverServiceFor } from "../services/covers";
 import { logoServiceFor } from "../services/logos";
 import { restaurantsServiceFor } from "../services/restaurants";
+import { settingsServiceFor } from "../services/settings";
 import { domainErrorHandler, parseJsonBody, readUploadedFile, uploadBodyLimit } from "./http";
 
 export const restaurantsRoutes = new Hono<AppEnv>()
@@ -46,6 +48,16 @@ export const restaurantsRoutes = new Hono<AppEnv>()
     const body = await parseJsonBody(c, updateAppearanceSchema);
     if ("response" in body) return body.response;
     return c.json(await restaurantsServiceFor(c.env.DB).updateAppearance(c.get("userId"), body.data));
+  })
+
+  .get("/me/settings", async (c) => {
+    return c.json(await settingsServiceFor(c.env.DB).getSettings(c.get("userId")));
+  })
+
+  .patch("/me/settings", async (c) => {
+    const body = await parseJsonBody(c, updateSettingsSchema);
+    if ("response" in body) return body.response;
+    return c.json(await settingsServiceFor(c.env.DB).updateSettings(c.get("userId"), body.data));
   })
 
   .put("/me/logo", uploadBodyLimit("logo", LOGO_MAX_BYTES), async (c) => {

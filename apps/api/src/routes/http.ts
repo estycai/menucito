@@ -21,13 +21,24 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   RESTAURANT_NOT_FOUND: 404,
   CATEGORY_NOT_FOUND: 404,
   PRODUCT_NOT_FOUND: 404,
+  ORDER_NOT_FOUND: 404,
   SLUG_TAKEN: 409,
   ALREADY_HAS_RESTAURANT: 409,
   CATEGORY_NAME_TAKEN: 409,
   CATEGORY_NOT_EMPTY: 409,
+  STORE_PAUSED: 409,
+  BELOW_MINIMUM: 409,
+  PAYMENT_METHOD_NOT_ACCEPTED: 409,
+  FULFILLMENT_NOT_OFFERED: 409,
+  PRODUCT_UNAVAILABLE: 409,
+  PRICE_CHANGED: 409,
+  INVALID_TRANSITION: 409,
   FILE_TOO_LARGE: 413,
+  BODY_TOO_LARGE: 413,
   UNSUPPORTED_MEDIA_TYPE: 415,
   VALIDATION_ERROR: 422,
+  EXPORT_TOO_LARGE: 422,
+  TOO_MANY_ORDERS: 429,
 };
 
 export function statusFor(error: DomainError): ContentfulStatusCode {
@@ -70,6 +81,16 @@ export function uploadBodyLimit(subject: string, maxBytes: number) {
     onError: (c) => {
       const error = new FileTooLargeError(subject, maxBytes);
       return errorResponse(c as Context<AppEnv>, 413, error.code, error.message);
+    },
+  });
+}
+
+/** Rejects JSON request bodies exceeding `maxBytes` (413 `BODY_TOO_LARGE`). */
+export function orderBodyLimit(maxBytes: number) {
+  return bodyLimit({
+    maxSize: maxBytes,
+    onError: (c) => {
+      return errorResponse(c as Context<AppEnv>, 413, "BODY_TOO_LARGE", "El cuerpo del pedido supera el límite permitido");
     },
   });
 }

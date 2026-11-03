@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, sqliteTable, text, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Tables follow the Better Auth core schema (user, session, account, verification).
 
@@ -107,6 +107,38 @@ export type RestaurantRow = typeof restaurants.$inferSelect &
 /** Input of `RestaurantsRepository.insert`: the appearance row is created with its defaults. */
 export type NewRestaurantRow = typeof restaurants.$inferInsert;
 
+// Store settings (1:1 with `restaurants`, created in the same batch as the restaurant).
+export const restaurantSettings = sqliteTable("restaurant_settings", {
+  restaurantId: text("restaurant_id")
+    .primaryKey()
+    .references(() => restaurants.id, { onDelete: "cascade" }),
+  acceptingOrders: integer("accepting_orders", { mode: "boolean" }).notNull().default(true),
+  minOrderCents: integer("min_order_cents"),
+  shippingCents: integer("shipping_cents").notNull().default(0),
+  updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+});
+
+export type StoreSettingsRow = typeof restaurantSettings.$inferSelect;
+export type NewStoreSettingsRow = typeof restaurantSettings.$inferInsert;
+
+// Store payment methods (N:1 with `restaurants`, composite PK `(restaurant_id, method)`).
+export const restaurantPaymentMethods = sqliteTable(
+  "restaurant_payment_methods",
+  {
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    method: text("method").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull(),
+    alias: text("alias"),
+    holderName: text("holder_name"),
+  },
+  (t) => [primaryKey({ columns: [t.restaurantId, t.method] })],
+);
+
+export type PaymentMethodRow = typeof restaurantPaymentMethods.$inferSelect;
+export type NewPaymentMethodRow = typeof restaurantPaymentMethods.$inferInsert;
+
 // Menu categories. `position` is 0-based per restaurant; lists sort by position, then created_at.
 // Names are unique per restaurant ignoring case. SQLite `lower()` only folds ASCII, so names that
 // differ only in the case of an accented letter (e.g. "Ñoquis" / "ñoquis") are both accepted.
@@ -181,9 +213,112 @@ export const ingredients = sqliteTable(
   (t) => [index("ingredients_product_position_idx").on(t.productId, t.position)],
 );
 
+// Customers table (find or create on first order by restaurant_id + phone).
+export const customers = sqliteTable(
+  "customers",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    phone: text("phone").notNull(),
+    address: text("address"),
+    notes: text("notes"),
+    firstOrderAt: integer("first_order_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("customers_restaurant_phone_unique").on(t.restaurantId, t.phone)],
+);
+
+// Promo codes table (placeholder created empty for foreign key integrity in orders).
+export const promoCodes = sqliteTable(
+  "promo_codes",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    code: text("code").notNull(),
+    kind: text("kind").notNull(),
+    value: integer("value").notNull(),
+    minOrderCents: integer("min_order_cents"),
+    maxUses: integer("max_uses"),
+    usedCount: integer("used_count").notNull().default(0),
+    startsAt: integer("starts_at", { mode: "timestamp_ms" }),
+    endsAt: integer("ends_at", { mode: "timestamp_ms" }),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("promo_codes_restaurant_code_unique").on(t.restaurantId, sql`lower(${t.code})`)],
+);
+
+// Orders table. Correlative number per restaurant, idempotent client_token.
+export const orders = sqliteTable(
+  "orders",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    customerId: text("customer_id").references(() => customers.id, { onDelete: "set null" }),
+    number: integer("number").notNull(),
+    clientToken: text("client_token").notNull(),
+    status: text("status").notNull().default("new"),
+    paymentStatus: text("payment_status").notNull().default("pending"),
+    fulfillment: text("fulfillment").notNull(),
+    paymentMethod: text("payment_method").notNull(),
+    customerName: text("customer_name").notNull(),
+    customerPhone: text("customer_phone").notNull(),
+    deliveryAddress: text("delivery_address"),
+    notes: text("notes"),
+    subtotalCents: integer("subtotal_cents").notNull(),
+    shippingCents: integer("shipping_cents").notNull(),
+    discountCents: integer("discount_cents").notNull().default(0),
+    totalCents: integer("total_cents").notNull(),
+    promoCodeId: text("promo_code_id").references(() => promoCodes.id, { onDelete: "set null" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("orders_restaurant_number_unique").on(t.restaurantId, t.number),
+    uniqueIndex("orders_restaurant_token_unique").on(t.restaurantId, t.clientToken),
+    index("orders_restaurant_status_number_idx").on(t.restaurantId, t.status, t.number),
+    index("orders_restaurant_created_idx").on(t.restaurantId, t.createdAt),
+    index("orders_customer_idx").on(t.customerId),
+  ],
+);
+
+// Order line items snapshot.
+export const orderItems = sqliteTable(
+  "order_items",
+  {
+    id: text("id").primaryKey(),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    productId: text("product_id").references(() => products.id, { onDelete: "set null" }),
+    position: integer("position").notNull(),
+    name: text("name").notNull(),
+    unitPriceCents: integer("unit_price_cents").notNull(),
+    quantity: integer("quantity").notNull(),
+    optionsJson: text("options_json"),
+    notes: text("notes"),
+  },
+  (t) => [index("order_items_order_idx").on(t.orderId)],
+);
+
 export type CategoryRow = typeof categories.$inferSelect;
 export type NewCategoryRow = typeof categories.$inferInsert;
 export type ProductRow = typeof products.$inferSelect;
 export type NewProductRow = typeof products.$inferInsert;
 export type IngredientRow = typeof ingredients.$inferSelect;
 export type NewIngredientRow = typeof ingredients.$inferInsert;
+export type CustomerRow = typeof customers.$inferSelect;
+export type NewCustomerRow = typeof customers.$inferInsert;
+export type PromoCodeRow = typeof promoCodes.$inferSelect;
+export type OrderDbRow = typeof orders.$inferSelect;
+export type NewOrderDbRow = typeof orders.$inferInsert;
+export type OrderItemDbRow = typeof orderItems.$inferSelect;
+export type NewOrderItemDbRow = typeof orderItems.$inferInsert;

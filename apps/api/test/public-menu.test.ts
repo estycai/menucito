@@ -90,6 +90,10 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
         coverUrl: null,
         description: "",
         colors: { background: "#F7F5F2", primary: "#C2410C" },
+        acceptingOrders: true,
+        minOrderCents: null,
+        shippingCents: 0,
+        paymentMethods: [{ method: "cash", alias: null, holderName: null }],
       },
       featured: null,
       categories: [
@@ -133,6 +137,8 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
 
     expect([...keys].sort()).toEqual(
       [
+        "acceptingOrders",
+        "alias",
         "available",
         "background",
         "categories",
@@ -147,13 +153,18 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
         "includedQty",
         "ingredients",
         "logoUrl",
+        "holderName",
         "maxQty",
+        "method",
+        "minOrderCents",
         "minQty",
         "name",
+        "paymentMethods",
         "primary",
         "priceCents",
         "products",
         "restaurant",
+        "shippingCents",
         "slug",
         "takeaway",
       ].sort(),

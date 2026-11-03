@@ -13,6 +13,8 @@ export interface Env {
    * Never set in `wrangler.jsonc`: it is off in every deployed environment unless added on purpose.
    */
   ALLOW_PLAN_SWITCH?: string;
+  /** Comma-separated list of allowed origins for public CORS. */
+  WEB_ORIGINS?: string;
 }
 
 /** Hono environment shared by the app and its routers. */

@@ -1,4 +1,5 @@
 import type { Ingredient } from "./catalog";
+import type { PaymentMethod } from "./order";
 
 /**
  * Public, read-only menu of a restaurant, as returned by `GET /api/public/menus/:slug`.
@@ -30,26 +31,42 @@ export interface PublicMenuCategory {
   products: PublicMenuProduct[];
 }
 
+export interface PublicMenuPaymentMethod {
+  method: PaymentMethod;
+  alias: string | null;
+  holderName: string | null;
+}
+
+export interface PublicMenuRestaurant {
+  name: string;
+  slug: string;
+  /** Public path of the logo (served by `GET /api/media/*`), or `null`. */
+  logoUrl: string | null;
+  /** Whether the restaurant delivers orders. */
+  delivery: boolean;
+  /** Whether orders can be picked up at the restaurant. */
+  takeaway: boolean;
+  /** Public path of the cover (served by `GET /api/media/*`), or `null`. */
+  coverUrl: string | null;
+  /** Short description; empty string when there is none. */
+  description: string;
+  /**
+   * Colors to render with, always `#RRGGBB`: the saved ones on plans with `customColors`, the
+   * Menucito defaults otherwise (or where nothing was saved).
+   */
+  colors: { background: string; primary: string };
+  /** Whether the store is currently accepting orders. */
+  acceptingOrders: boolean;
+  /** Minimum order in ARS cents, or `null` if none. */
+  minOrderCents: number | null;
+  /** Shipping cost in ARS cents. */
+  shippingCents: number;
+  /** Enabled payment methods. */
+  paymentMethods: PublicMenuPaymentMethod[];
+}
+
 export interface PublicMenu {
-  restaurant: {
-    name: string;
-    slug: string;
-    /** Public path of the logo (served by `GET /api/media/*`), or `null`. */
-    logoUrl: string | null;
-    /** Whether the restaurant delivers orders. */
-    delivery: boolean;
-    /** Whether orders can be picked up at the restaurant. */
-    takeaway: boolean;
-    /** Public path of the cover (served by `GET /api/media/*`), or `null`. */
-    coverUrl: string | null;
-    /** Short description; empty string when there is none. */
-    description: string;
-    /**
-     * Colors to render with, always `#RRGGBB`: the saved ones on plans with `customColors`, the
-     * Menucito defaults otherwise (or where nothing was saved).
-     */
-    colors: { background: string; primary: string };
-  };
+  restaurant: PublicMenuRestaurant;
   /** The featured category, shown first. `null` when none is set or it has no products. */
   featured: PublicMenuCategory | null;
   /** Every other category with products; never includes the featured one. */

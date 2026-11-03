@@ -3,6 +3,8 @@ import { drizzle } from "drizzle-orm/d1";
 import type { PlanId } from "@menucito/shared";
 import {
   restaurantAppearance,
+  restaurantPaymentMethods,
+  restaurantSettings,
   restaurants,
   type AppearanceRow,
   type NewRestaurantRow,
@@ -27,8 +29,8 @@ export interface RestaurantsRepository {
   findByOwner(ownerId: string): Promise<RestaurantRow | null>;
   findBySlug(slug: string): Promise<RestaurantRow | null>;
   /**
-   * Inserts a restaurant and its appearance row (defaults) in one D1 batch, so neither exists without
-   * the other. Throws `UniqueViolationError` on duplicated `slug` or `owner_id`.
+   * Inserts a restaurant, its appearance row, its settings row, and default payment methods in one
+   * D1 batch, so neither exists without the others. Throws `UniqueViolationError` on duplicated `slug` or `owner_id`.
    */
   insert(row: NewRestaurantRow): Promise<RestaurantRow>;
   /** Sets (or clears, with `null`) the logo of the restaurant `id`. Returns the updated row, or `null` if missing. */
@@ -101,6 +103,21 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
         db.batch([
           db.insert(restaurants).values(row),
           db.insert(restaurantAppearance).values({ restaurantId: row.id, updatedAt: row.updatedAt }),
+          db.insert(restaurantSettings).values({ restaurantId: row.id, updatedAt: row.updatedAt }),
+          db.insert(restaurantPaymentMethods).values({
+            restaurantId: row.id,
+            method: "cash",
+            enabled: true,
+            alias: null,
+            holderName: null,
+          }),
+          db.insert(restaurantPaymentMethods).values({
+            restaurantId: row.id,
+            method: "transfer",
+            enabled: false,
+            alias: null,
+            holderName: null,
+          }),
         ]),
       );
       const inserted = await findById(row.id);

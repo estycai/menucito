@@ -21,6 +21,7 @@ export const cartStorageKey = (slug: string) => `menucito:cart:${slug}`;
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
+  removeItem(key: string): void;
 }
 
 /** `localStorage`, or `null` when the browser blocks it (private mode, disabled storage) or there is no window. */
@@ -137,6 +138,10 @@ export function createCartStore(slug: string, storage: StorageLike | null) {
 
     remove(key: string) {
       commit(removeLine(state.lines, key));
+    },
+
+    clear() {
+      commit([]);
     },
 
     dismissNotice() {

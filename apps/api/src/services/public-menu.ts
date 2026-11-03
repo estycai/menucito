@@ -1,9 +1,11 @@
 import {
   DEFAULT_COLORS,
+  DEFAULT_SETTINGS,
   checkSlug,
   planLimitsFor,
   type PublicMenu,
   type PublicMenuCategory,
+  type PublicMenuPaymentMethod,
   type PublicMenuProduct,
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow } from "../db/schema";
@@ -11,6 +13,7 @@ import { createCategoriesRepository, type CategoriesRepository } from "../reposi
 import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import { createProductsRepository, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
+import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
 import { DomainError } from "./errors";
 
 /** No restaurant is published under that slug. Same code as the owner-side 404, public wording. */
@@ -26,6 +29,7 @@ export interface PublicMenuDependencies {
   categories: CategoriesRepository;
   products: ProductsRepository;
   ingredients: IngredientsRepository;
+  settings: SettingsRepository;
 }
 
 function toPublicProduct(row: ProductRow, ingredients: readonly IngredientRow[]): PublicMenuProduct {
@@ -51,7 +55,13 @@ function toPublicProduct(row: ProductRow, ingredients: readonly IngredientRow[])
  * the restaurant status; only the plan decides whether ingredients are published. Only whitelisted
  * fields are mapped, so a new column of the database never leaks into the public shape by accident.
  */
-export function createPublicMenuService({ restaurants, categories, products, ingredients }: PublicMenuDependencies) {
+export function createPublicMenuService({
+  restaurants,
+  categories,
+  products,
+  ingredients,
+  settings,
+}: PublicMenuDependencies) {
   return {
     /** Throws `MenuNotFoundError` for a malformed, reserved or unknown slug. */
     async getBySlug(slug: string): Promise<PublicMenu> {
@@ -63,11 +73,18 @@ export function createPublicMenuService({ restaurants, categories, products, ing
       // Ingredients saved before a downgrade stay in the database but are never published on a plan
       // without customizable ingredients, so skip the query altogether.
       const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
-      const [categoryRows, productRows, ingredientRows] = await Promise.all([
+      const [categoryRows, productRows, ingredientRows, storeSettingsRaw] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
         withIngredients ? ingredients.listByRestaurant(restaurant.id) : Promise.resolve([]),
+        settings.findSettings(restaurant.id),
       ]);
+
+      if (!storeSettingsRaw) {
+        console.warn(`[public-menu] restaurant ${restaurant.id} missing settings row, using safe defaults`);
+      }
+      const storeSettings = storeSettingsRaw ?? DEFAULT_SETTINGS;
+
       const ingredientsByProduct = new Map<string, IngredientRow[]>();
       for (const row of ingredientRows) {
         const list = ingredientsByProduct.get(row.productId) ?? [];
@@ -97,6 +114,14 @@ export function createPublicMenuService({ restaurants, categories, products, ing
       // Saved colors stay dormant (not deleted) on a plan without custom colors.
       const customColors = planLimitsFor(restaurant.plan).customColors;
 
+      const enabledPaymentMethods: PublicMenuPaymentMethod[] = storeSettings.paymentMethods
+        .filter((pm) => pm.enabled)
+        .map((pm) => ({
+          method: pm.method,
+          alias: pm.method === "transfer" ? pm.alias : null,
+          holderName: pm.method === "transfer" ? pm.holderName : null,
+        }));
+
       return {
         restaurant: {
           name: restaurant.name,
@@ -110,6 +135,10 @@ export function createPublicMenuService({ restaurants, categories, products, ing
             background: (customColors && restaurant.bgColor) || DEFAULT_COLORS.background,
             primary: (customColors && restaurant.primaryColor) || DEFAULT_COLORS.primary,
           },
+          acceptingOrders: storeSettings.acceptingOrders,
+          minOrderCents: storeSettings.minOrderCents,
+          shippingCents: storeSettings.shippingCents,
+          paymentMethods: enabledPaymentMethods,
         },
         featured,
         categories: menuCategories,
@@ -127,5 +156,6 @@ export function publicMenuServiceFor(db: D1Database): PublicMenuService {
     categories: createCategoriesRepository(db),
     products: createProductsRepository(db),
     ingredients: createIngredientsRepository(db),
+    settings: createSettingsRepository(db),
   });
 }
