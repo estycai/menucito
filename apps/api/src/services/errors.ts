@@ -89,3 +89,11 @@ export class ExportTooLargeError extends DomainError {
     super(message);
   }
 }
+
+/** The order number kept colliding with concurrent orders; the diner can safely send it again. */
+export class OrderNumberConflictError extends DomainError {
+  readonly code = "ORDER_NUMBER_CONFLICT";
+  constructor(message = "No pudimos registrar tu pedido. Probá de nuevo en unos segundos.") {
+    super(message);
+  }
+}

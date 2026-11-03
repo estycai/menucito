@@ -48,6 +48,7 @@ export function createSettingsService(
       if (changes.paymentMethods) {
         for (const updatePm of changes.paymentMethods) {
           const idx = resultingMethods.findIndex((pm) => pm.method === updatePm.method);
+          // `null` clears the transfer details, so only `undefined` keeps the current ones.
           const alias = updatePm.alias !== undefined ? updatePm.alias : (idx >= 0 ? resultingMethods[idx]!.alias : null);
           const holderName = updatePm.holderName !== undefined ? updatePm.holderName : (idx >= 0 ? resultingMethods[idx]!.holderName : null);
           const mergedItem: PaymentMethodSetting = {
@@ -65,9 +66,10 @@ export function createSettingsService(
       }
 
       const resulting: StoreSettings = {
-        acceptingOrders: changes.acceptingOrders !== undefined ? changes.acceptingOrders : current.acceptingOrders,
+        acceptingOrders: changes.acceptingOrders ?? current.acceptingOrders,
+        // `null` clears the minimum, so only `undefined` keeps the current one.
         minOrderCents: changes.minOrderCents !== undefined ? changes.minOrderCents : current.minOrderCents,
-        shippingCents: changes.shippingCents !== undefined ? changes.shippingCents : current.shippingCents,
+        shippingCents: changes.shippingCents ?? current.shippingCents,
         paymentMethods: resultingMethods,
       };
 

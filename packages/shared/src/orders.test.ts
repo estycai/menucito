@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { ORDER_ADDRESS_MAX_LENGTH, ORDER_NAME_MAX_LENGTH } from "./order";
 import {
-  ORDER_CUSTOMER_ADDRESS_MAX_LENGTH,
-  ORDER_CUSTOMER_NAME_MAX_LENGTH,
   ORDER_LINE_QUANTITY_MAX,
   ORDER_MAX_LINES,
   ORDER_STATUSES,
@@ -10,6 +9,7 @@ import {
   createOrderRequestSchema,
   describeOrderOptions,
   nextStatus,
+  orderFiltersQuerySchema,
   orderTotals,
   type OrderStatus,
 } from "./orders";
@@ -21,7 +21,7 @@ import {
   updateSettingsSchema,
   type StoreSettings,
 } from "./settings";
-import { localDateKey, localDayRange } from "./time";
+import { isCalendarDateKey, localDateKey, localDayRange } from "./time";
 
 describe("Scenario 1: orderTotals", () => {
   it("calculates total = subtotal + shipping only for delivery, 0 shipping for takeaway", () => {
@@ -170,7 +170,7 @@ describe("Scenario 3: createOrderRequestSchema", () => {
     expect(
       createOrderRequestSchema.safeParse({
         ...validOrder,
-        customer: { ...validOrder.customer, name: "a".repeat(ORDER_CUSTOMER_NAME_MAX_LENGTH + 1) },
+        customer: { ...validOrder.customer, name: "a".repeat(ORDER_NAME_MAX_LENGTH + 1) },
       }).success
     ).toBe(false);
 
@@ -184,7 +184,7 @@ describe("Scenario 3: createOrderRequestSchema", () => {
     expect(
       createOrderRequestSchema.safeParse({
         ...validOrder,
-        customer: { ...validOrder.customer, address: "a".repeat(ORDER_CUSTOMER_ADDRESS_MAX_LENGTH + 1) },
+        customer: { ...validOrder.customer, address: "a".repeat(ORDER_ADDRESS_MAX_LENGTH + 1) },
       }).success
     ).toBe(false);
 
@@ -439,5 +439,44 @@ describe("Scenario 7: describeOrderOptions", () => {
     ];
 
     expect(describeOrderOptions(options)).toEqual(["Bacon x2 (+$1.500)", "Sin cebolla"]);
+  });
+});
+
+describe("orderFiltersQuerySchema", () => {
+  it("treats empty parameters as absent and coerces the numeric ones", () => {
+    const parsed = orderFiltersQuerySchema.parse({ status: "", fulfillment: "delivery", limit: "20", before: "7", extra: "x" });
+    expect(parsed).toEqual({ fulfillment: "delivery", limit: 20, before: 7 });
+  });
+
+  it("accepts the active status and an inclusive date range", () => {
+    expect(orderFiltersQuerySchema.parse({ status: "active", from: "2026-11-02", to: "2026-11-02" })).toEqual({
+      status: "active",
+      from: "2026-11-02",
+      to: "2026-11-02",
+    });
+  });
+
+  it.each([
+    { status: "flying" },
+    { fulfillment: "drone" },
+    { paymentMethod: "bitcoin" },
+    { paymentStatus: "maybe" },
+    { from: "2026-02-31" },
+    { to: "2026-13-01" },
+    { from: "not-a-date" },
+    { from: "2026-11-03", to: "2026-11-02" },
+    { limit: "0" },
+    { limit: "abc" },
+    { before: "1.5" },
+  ])("rejects %o", (query) => {
+    expect(orderFiltersQuerySchema.safeParse(query).success).toBe(false);
+  });
+});
+
+describe("isCalendarDateKey", () => {
+  it("accepts real days and rejects impossible or malformed ones", () => {
+    expect(isCalendarDateKey("2028-02-29")).toBe(true);
+    expect(isCalendarDateKey("2026-02-29")).toBe(false);
+    expect(isCalendarDateKey("2026-1-01")).toBe(false);
   });
 });

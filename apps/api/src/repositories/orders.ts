@@ -1,15 +1,16 @@
 import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import type {
-  ActiveOrderStatus,
-  Fulfillment,
-  OrderDetail,
-  OrderItem,
-  OrderItemOption,
-  OrderStatus,
-  OrderSummary,
-  PaymentMethod,
-  PaymentStatus,
+import {
+  ACTIVE_ORDER_STATUSES,
+  type Fulfillment,
+  type OrderDetail,
+  type OrderItem,
+  type OrderItemOption,
+  type OrderStatus,
+  type OrderStatusFilter,
+  type OrderSummary,
+  type PaymentMethod,
+  type PaymentStatus,
 } from "@menucito/shared";
 import {
   customers,
@@ -18,6 +19,7 @@ import {
   type OrderDbRow,
   type OrderItemDbRow,
 } from "../db/schema";
+import { translatingUniqueViolations } from "./errors";
 
 /** D1 caps bound parameters per statement at 100; keep `IN (...)` lists below it. */
 const ITEMS_QUERY_CHUNK = 90;
@@ -50,7 +52,7 @@ export interface InsertOrderData {
 export interface ListOrdersFilter {
   limit?: number;
   before?: number; // order number cursor
-  status?: OrderStatus | "active";
+  status?: OrderStatusFilter;
   fulfillment?: Fulfillment;
   paymentMethod?: PaymentMethod;
   paymentStatus?: PaymentStatus;
@@ -59,12 +61,18 @@ export interface ListOrdersFilter {
 }
 
 export interface OrdersRepository {
+  /**
+   * Inserts the customer (deduplicated by phone), the order and its items in one batch. Throws
+   * `UniqueViolationError` whose `columns` include `client_token` (token already used) or `number`
+   * (a concurrent order took the number).
+   */
   insertOrder(data: InsertOrderData): Promise<OrderDetail>;
   findByToken(restaurantId: string, clientToken: string): Promise<OrderDetail | null>;
   findDetail(restaurantId: string, orderId: string): Promise<OrderDetail | null>;
   countRecentByPhone(restaurantId: string, phone: string, since: Date): Promise<number>;
   list(restaurantId: string, filter: ListOrdersFilter): Promise<{ orders: OrderSummary[]; nextBefore: number | null }>;
-  listForExport(restaurantId: string, filter: ListOrdersFilter): Promise<OrderDetail[]>;
+  /** Newest first, at most `limit` orders with their items. */
+  listForExport(restaurantId: string, filter: ListOrdersFilter, limit: number): Promise<OrderDetail[]>;
   updateStatusIf(
     restaurantId: string,
     orderId: string,
@@ -137,6 +145,16 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     return toOrderDetail(orderRow, itemRows);
   }
 
+  async function findDetail(restaurantId: string, orderId: string): Promise<OrderDetail | null> {
+    const row = await db
+      .select()
+      .from(orders)
+      .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
+      .get();
+
+    return row ? getOrderDetail(row) : null;
+  }
+
   /** Items of many orders in a few queries, chunked to stay under D1's bound-parameter limit. */
   async function itemsByOrderId(orderIds: string[]): Promise<Map<string, OrderItemDbRow[]>> {
     const byOrder = new Map<string, OrderItemDbRow[]>();
@@ -166,7 +184,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
 
     if (filter.status !== undefined) {
       if (filter.status === "active") {
-        conditions.push(inArray(orders.status, ["new", "preparing", "ready"] as ActiveOrderStatus[]));
+        conditions.push(inArray(orders.status, [...ACTIVE_ORDER_STATUSES]));
       } else {
         conditions.push(eq(orders.status, filter.status));
       }
@@ -249,16 +267,13 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         );
       }
 
-      await db.batch(batchStatements as [BatchStatement, ...BatchStatement[]]);
+      await translatingUniqueViolations(() =>
+        db.batch(batchStatements as [BatchStatement, ...BatchStatement[]]),
+      );
 
-      const created = await db
-        .select()
-        .from(orders)
-        .where(eq(orders.id, data.orderId))
-        .get();
-
+      const created = await findDetail(data.restaurantId, data.orderId);
       if (!created) throw new Error("Order disappeared right after insert");
-      return getOrderDetail(created);
+      return created;
     },
 
     async findByToken(restaurantId, clientToken) {
@@ -272,16 +287,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       return getOrderDetail(row);
     },
 
-    async findDetail(restaurantId, orderId) {
-      const row = await db
-        .select()
-        .from(orders)
-        .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
-        .get();
-
-      if (!row) return null;
-      return getOrderDetail(row);
-    },
+    findDetail,
 
     async countRecentByPhone(restaurantId, phone, since) {
       const res = await db
@@ -337,14 +343,14 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       return { orders: orderSummaries, nextBefore };
     },
 
-    async listForExport(restaurantId, filter) {
+    async listForExport(restaurantId, filter, limit) {
       const whereCondition = buildFilterConditions(restaurantId, filter);
       const rows = await db
         .select()
         .from(orders)
         .where(whereCondition)
         .orderBy(desc(orders.number))
-        .limit(5001)
+        .limit(limit)
         .all();
 
       const items = await itemsByOrderId(rows.map((row) => row.id));
@@ -359,15 +365,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .returning({ id: orders.id })
         .get();
 
-      if (!updated) return null;
-
-      const orderRow = await db
-        .select()
-        .from(orders)
-        .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
-        .get();
-
-      return orderRow ? getOrderDetail(orderRow) : null;
+      return updated ? findDetail(restaurantId, orderId) : null;
     },
 
     async updatePaymentStatus(restaurantId, orderId, paymentStatus, updatedAt) {
@@ -378,15 +376,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .returning({ id: orders.id })
         .get();
 
-      if (!updated) return null;
-
-      const orderRow = await db
-        .select()
-        .from(orders)
-        .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
-        .get();
-
-      return orderRow ? getOrderDetail(orderRow) : null;
+      return updated ? findDetail(restaurantId, orderId) : null;
     },
   };
 }

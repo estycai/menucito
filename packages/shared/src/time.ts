@@ -29,6 +29,17 @@ function getTimeZoneOffsetMs(date: Date, timeZone: string): number {
   return asUtc - date.getTime();
 }
 
+const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** True when `value` is a YYYY-MM-DD key naming a real calendar day (2026-02-31 is not). */
+export function isCalendarDateKey(value: string): boolean {
+  const match = DATE_KEY.exec(value);
+  if (!match) return false;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
 /** Returns [startMs, endMs) range in UTC for the given YYYY-MM-DD day in America/Argentina/Buenos_Aires. */
 export function localDayRange(dateKey: string): [number, number] {
   const parts = dateKey.split("-").map(Number);

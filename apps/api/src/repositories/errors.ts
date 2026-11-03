@@ -1,21 +1,25 @@
 /**
- * Raised when a write hits a UNIQUE constraint. `column` names the violated column or, for
- * expression indexes (e.g. `lower(name)`), the index; `table` is `null` when SQLite only reports
- * the index name.
+ * Raised when a write hits a UNIQUE constraint. `column` names the violated column (the first one of
+ * a composite index) or, for expression indexes (e.g. `lower(name)`), the index; `columns` lists
+ * every column of the violated constraint; `table` is `null` when SQLite only reports the index name.
  */
 export class UniqueViolationError extends Error {
+  readonly columns: readonly string[];
+
   constructor(
     readonly column: string,
     readonly table: string | null = null,
+    columns: readonly string[] = [column],
   ) {
-    super(table ? `Unique constraint failed: ${table}.${column}` : `Unique constraint failed: index ${column}`);
+    super(table ? `Unique constraint failed: ${table}.${columns.join(", ")}` : `Unique constraint failed: index ${column}`);
     this.name = "UniqueViolationError";
+    this.columns = columns;
   }
 }
 
-// SQLite reports `UNIQUE constraint failed: <table>.<column>[, ...]` for column constraints and
-// `UNIQUE constraint failed: index '<name>'` for expression indexes.
-const UNIQUE_FAILURE = /UNIQUE constraint failed: (?:index '([^']+)'|(\w+)\.(\w+))/;
+// SQLite reports `UNIQUE constraint failed: <table>.<column>[, <table>.<column>...]` for column
+// constraints and `UNIQUE constraint failed: index '<name>'` for expression indexes.
+const UNIQUE_FAILURE = /UNIQUE constraint failed: (?:index '([^']+)'|(\w+\.\w+(?:, \w+\.\w+)*))/;
 
 /**
  * Walks the error cause chain (Drizzle wraps the D1 error) looking for a SQLite UNIQUE failure.
@@ -25,7 +29,12 @@ export function asUniqueViolation(error: unknown): UniqueViolationError | null {
   for (let current = error; current instanceof Error; current = current.cause) {
     const match = UNIQUE_FAILURE.exec(current.message);
     if (match?.[1]) return new UniqueViolationError(match[1]);
-    if (match?.[2] && match[3]) return new UniqueViolationError(match[3], match[2]);
+    if (match?.[2]) {
+      const qualified = match[2].split(", ").map((part) => part.split("."));
+      const table = qualified[0]![0]!;
+      const columns = qualified.map(([, column]) => column!);
+      return new UniqueViolationError(columns[0]!, table, columns);
+    }
   }
   return null;
 }

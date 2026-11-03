@@ -589,6 +589,13 @@ describe("asUniqueViolation", () => {
     expect(error).toMatchObject({ table: "restaurants", column: "slug" });
   });
 
+  it("reads every column of a composite constraint", () => {
+    const error = asUniqueViolation(
+      new Error("x", { cause: new Error("UNIQUE constraint failed: orders.restaurant_id, orders.client_token") }),
+    );
+    expect(error).toMatchObject({ table: "orders", column: "restaurant_id", columns: ["restaurant_id", "client_token"] });
+  });
+
   it("reads an expression index", () => {
     const error = asUniqueViolation(new Error("D1_ERROR: UNIQUE constraint failed: index 'categories_restaurant_name_unique'"));
     expect(error).toMatchObject({ table: null, column: "categories_restaurant_name_unique" });

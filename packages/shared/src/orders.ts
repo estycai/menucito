@@ -1,7 +1,16 @@
 import { z } from "zod";
 import { formatArs } from "./catalog";
-import { FULFILLMENTS, PAYMENT_METHODS, type Fulfillment, type PaymentMethod } from "./order";
+import {
+  FULFILLMENTS,
+  ORDER_ADDRESS_MAX_LENGTH,
+  ORDER_MESSAGES,
+  ORDER_NAME_MAX_LENGTH,
+  PAYMENT_METHODS,
+  type Fulfillment,
+  type PaymentMethod,
+} from "./order";
 import { normalizeArWhatsapp } from "./restaurant";
+import { isCalendarDateKey } from "./time";
 
 export const ORDER_STATUSES = ["new", "preparing", "ready", "delivered", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
@@ -75,8 +84,6 @@ export function orderTotals(input: OrderTotalsInput): OrderTotals {
 export const ORDER_THROTTLE = { maxOrders: 3, windowMs: 600000 } as const;
 export const ORDER_BODY_MAX_BYTES = 16384;
 
-export const ORDER_CUSTOMER_NAME_MAX_LENGTH = 60;
-export const ORDER_CUSTOMER_ADDRESS_MAX_LENGTH = 120;
 export const ORDER_MAX_LINES = 30;
 export const ORDER_LINE_QUANTITY_MIN = 1;
 export const ORDER_LINE_QUANTITY_MAX = 20;
@@ -87,12 +94,12 @@ export const ORDERS_MESSAGES = {
   itemsTooMany: `El pedido puede tener hasta ${ORDER_MAX_LINES} productos distintos`,
   quantityInvalid: `Las unidades deben ser un número entero entre ${ORDER_LINE_QUANTITY_MIN} y ${ORDER_LINE_QUANTITY_MAX}`,
   choicesTooMany: `Hasta ${ORDER_ITEM_CHOICES_MAX} ingredientes por producto`,
-  nameRequired: "Ingresá tu nombre",
-  nameTooLong: `El nombre puede tener hasta ${ORDER_CUSTOMER_NAME_MAX_LENGTH} caracteres`,
+  nameRequired: ORDER_MESSAGES.nameRequired,
+  nameTooLong: ORDER_MESSAGES.nameTooLong,
   phoneRequired: "Ingresá tu teléfono",
   phoneInvalid: "Número inválido. Incluí el código de área, por ejemplo 11 1234-5678.",
-  addressRequired: "Ingresá la dirección de entrega",
-  addressTooLong: `La dirección puede tener hasta ${ORDER_CUSTOMER_ADDRESS_MAX_LENGTH} caracteres`,
+  addressRequired: ORDER_MESSAGES.addressRequired,
+  addressTooLong: ORDER_MESSAGES.addressTooLong,
   fulfillmentInvalid: "Modalidad de entrega inválida",
   paymentMethodInvalid: "Forma de pago inválida",
   clientOrderIdInvalid: "El identificador del pedido debe ser un UUID válido",
@@ -122,7 +129,7 @@ export const createOrderCustomerSchema = z.object({
     .string()
     .trim()
     .min(1, ORDERS_MESSAGES.nameRequired)
-    .max(ORDER_CUSTOMER_NAME_MAX_LENGTH, ORDERS_MESSAGES.nameTooLong),
+    .max(ORDER_NAME_MAX_LENGTH, ORDERS_MESSAGES.nameTooLong),
   phone: z
     .string()
     .trim()
@@ -141,7 +148,7 @@ export const createOrderCustomerSchema = z.object({
   address: z
     .string()
     .trim()
-    .max(ORDER_CUSTOMER_ADDRESS_MAX_LENGTH, ORDERS_MESSAGES.addressTooLong)
+    .max(ORDER_ADDRESS_MAX_LENGTH, ORDERS_MESSAGES.addressTooLong)
     .nullable()
     .optional(),
 });
@@ -195,6 +202,56 @@ export const createOrderRequestSchema = z
   });
 
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
+
+/** Most orders one CSV export may contain; a larger result asks the owner to narrow the dates. */
+export const ORDER_EXPORT_MAX = 5000;
+
+/** Status filter of the owner's order list: a single status, or `active` (new, preparing or ready). */
+export const ORDER_STATUS_FILTERS = [...ORDER_STATUSES, "active"] as const;
+export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
+
+export const ORDER_FILTER_MESSAGES = {
+  statusInvalid: "Estado inválido",
+  fulfillmentInvalid: "Modalidad inválida",
+  paymentMethodInvalid: "Forma de pago inválida",
+  paymentStatusInvalid: "Estado de pago inválido",
+  fromInvalid: "Fecha desde inválida",
+  toInvalid: "Fecha hasta inválida",
+  rangeInvalid: "Rango de fechas inválido",
+  limitInvalid: "Límite inválido",
+  beforeInvalid: "Cursor inválido",
+} as const;
+
+/** Query parameters arrive as strings and an empty one means "no filter". */
+function optionalParam<T extends z.ZodType>(schema: T) {
+  return z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+}
+
+const dateKeyParam = (message: string) => optionalParam(z.string().refine(isCalendarDateKey, message));
+const positiveIntParam = (message: string) => optionalParam(z.coerce.number(message).int(message).positive(message));
+
+/**
+ * Query of the owner's order list and CSV export. `from` and `to` are local calendar days
+ * (YYYY-MM-DD, both inclusive); `before` is the order number cursor of the next page.
+ */
+export const orderFiltersQuerySchema = z
+  .object({
+    status: optionalParam(z.enum(ORDER_STATUS_FILTERS, ORDER_FILTER_MESSAGES.statusInvalid)),
+    fulfillment: optionalParam(z.enum(FULFILLMENTS, ORDER_FILTER_MESSAGES.fulfillmentInvalid)),
+    paymentMethod: optionalParam(z.enum(PAYMENT_METHODS, ORDER_FILTER_MESSAGES.paymentMethodInvalid)),
+    paymentStatus: optionalParam(z.enum(PAYMENT_STATUSES, ORDER_FILTER_MESSAGES.paymentStatusInvalid)),
+    from: dateKeyParam(ORDER_FILTER_MESSAGES.fromInvalid),
+    to: dateKeyParam(ORDER_FILTER_MESSAGES.toInvalid),
+    limit: positiveIntParam(ORDER_FILTER_MESSAGES.limitInvalid),
+    before: positiveIntParam(ORDER_FILTER_MESSAGES.beforeInvalid),
+  })
+  // YYYY-MM-DD keys compare chronologically as strings.
+  .refine((query) => !query.from || !query.to || query.from <= query.to, {
+    message: ORDER_FILTER_MESSAGES.rangeInvalid,
+    path: ["to"],
+  });
+
+export type OrderFiltersQuery = z.infer<typeof orderFiltersQuerySchema>;
 
 export interface OrderItemOption {
   name: string;
