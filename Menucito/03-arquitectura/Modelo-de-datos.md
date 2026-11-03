@@ -75,10 +75,10 @@ restaurants (E)                 PK id · owner_id FK → user.id · slug (único
 restaurant_appearance (P, F0)   PK/FK restaurant_id → restaurants.id · logo_url? · cover_url?
                                 · description · bg_color? · primary_color? · updated_at
 
-restaurant_settings (P, F1)     PK/FK restaurant_id → restaurants.id · accepting_orders
+restaurant_settings (E)     PK/FK restaurant_id → restaurants.id · accepting_orders
                                 · min_order_cents? · shipping_cents · updated_at
 
-restaurant_payment_methods (P, F1)
+restaurant_payment_methods (E)
                                 PK (restaurant_id FK → restaurants.id, method) · enabled
                                 · alias? · holder_name?
 
@@ -93,7 +93,8 @@ Notas:
 - `delivery` y `takeaway` se quedan en `restaurants` para no tocar código que ya funciona. Se pueden pasar a `restaurant_settings` más adelante.
 - `restaurant_appearance`: `logo_url` y `cover_url` guardan la ruta pública (la clave de R2 se deriva de ella). Los colores son `#RRGGBB` en mayúsculas; `NULL` significa "color por defecto". El logo está disponible en todos los planes; solo el color es Pro.
 - `restaurant_settings`: una fila por restaurante, creada junto con el restaurante. `accepting_orders` pausa la tienda (por defecto activo). `min_order_cents` `NULL` es "sin mínimo". `shipping_cents` `0` es gratis y solo se suma en delivery. Los valores por defecto no deben cambiar el comportamiento de los locales existentes.
-- `restaurant_payment_methods`: `method` es `cash` o `transfer` (más adelante, otros). `alias` y `holder_name` son columnas tipadas y quedan en `NULL` para métodos que no los necesitan (efectivo). El cliente los ve al pagar. **Regla de servicio:** si `method = transfer` y `enabled`, el `alias` es obligatorio. Un método nuevo con datos distintos requiere una columna nueva (migración); se acepta a cambio de validar.
+- `restaurant_payment_methods`: `method` es `cash` o `transfer`. `alias` y `holder_name` son columnas tipadas y quedan en `NULL` para efectivo. **Regla de servicio:** si `method = transfer` y `enabled`, tanto `alias` como `holder_name` son obligatorios.
+- **Estrategia de backfill (migración 0006_orders):** Se crearon `restaurant_settings`, `restaurant_payment_methods`, `customers`, `orders`, `order_items`, `order_status_history` y `promo_codes`. Cada local preexistente recibió su fila en `restaurant_settings` (`accepting_orders = 1`, `shipping_cents = 0`, `min_order_cents = NULL`) y dos filas en `restaurant_payment_methods` (`cash` habilitado, `transfer` deshabilitado). Todo alta nueva de restaurante genera estas filas en la misma transacción / batch de D1.
 - `restaurant_social_links`: `network` es un código corto (`instagram`, `facebook`, `tiktok`). Una red nueva no requiere migración.
 - `opening_hours`: varias franjas por día. Una franja que cierra pasada la medianoche se guarda con `closes_at` menor que `opens_at`. El QR no necesita columna: se deriva del `slug`.
 
@@ -130,16 +131,18 @@ Notas:
 - **Ingredientes y opciones se complementan.** Los ingredientes llevan la cantidad mínima, máxima e incluida por ingrediente (`min_qty` y `max_qty` ya cubren que una hamburguesa no se pueda vender con 0 medallones). Los grupos de opciones usan `min_select` y `max_select` para elecciones discretas (salsa, extras).
 - `product_variants`: tamaños o presentaciones (Simple / Doble). **Decidido:** cuando un producto tiene variantes, `products.price_cents` deja de cargarse a mano y pasa a ser el precio "desde", el de la variante disponible más barata. Un producto sin variantes sigue usando `price_cents` como hoy.
 
-## Pedidos · P, F1
+## Pedidos · E
 
 ```
-orders        PK id · restaurant_id FK → restaurants.id · customer_id? FK → customers.id · number
-              · status · payment_status · fulfillment · payment_method · customer_name · customer_phone
-              · delivery_address? · notes? · subtotal_cents · shipping_cents · discount_cents · total_cents
-              · promo_code_id? FK → promo_codes.id · created_at · updated_at
+orders (E)    PK id · restaurant_id FK → restaurants.id · customer_id? FK → customers.id · number
+              · client_token (único) · status · payment_status · fulfillment · payment_method
+              · customer_name · customer_phone · delivery_address? · notes? · subtotal_cents
+              · shipping_cents · discount_cents · total_cents · promo_code_id? FK → promo_codes.id
+              · created_at · updated_at
 
-order_items   PK id · order_id FK → orders.id · product_id? FK → products.id · name · unit_price_cents
-              · quantity · options_json? · notes?
+order_items (E)
+              PK id · order_id FK → orders.id · product_id? FK → products.id · name · unit_price_cents
+              · quantity · options_json? · notes? · position
 ```
 
 Notas:
@@ -153,10 +156,10 @@ Notas:
 ## Clientes y descuentos · P, F1 (tablas) y F3 (pantallas)
 
 ```
-customers     PK id · restaurant_id FK → restaurants.id · name · phone · address? · notes?
+customers (E) PK id · restaurant_id FK → restaurants.id · name · phone · address? · notes?
               · first_order_at? · created_at · updated_at        (único: restaurant_id + phone)
 
-promo_codes   PK id · restaurant_id FK → restaurants.id · code · kind · value · min_order_cents?
+promo_codes (E, vacía) PK id · restaurant_id FK → restaurants.id · code · kind · value · min_order_cents?
               · max_uses? · used_count · starts_at? · ends_at? · active · created_at
                                                                   (único: restaurant_id + lower(code))
 ```
@@ -179,9 +182,7 @@ subscriptions PK id · user_id FK → user.id (único) · plan · status · mp_p
 
 | Fase | Tablas |
 | --- | --- |
-| Existen | `user`, `session`, `account`, `verification`, `restaurants`, `categories`, `products`, `ingredients` |
-| F0 (cerrar lo abierto) | `restaurant_appearance` (ya implementada: los campos del cambio 10 viven ahí) |
-| F1 (pedidos) | `orders`, `order_items`, `customers`, `promo_codes` (vacía), `restaurant_settings`, `restaurant_payment_methods` |
+| Existen | `user`, `session`, `account`, `verification`, `restaurants`, `restaurant_appearance`, `categories`, `products`, `ingredients`, `orders`, `order_items`, `customers`, `promo_codes` (vacía), `restaurant_settings`, `restaurant_payment_methods` |
 | F2 (catálogo y tienda) | `product_variants`, `option_groups`, `options`, `product_option_groups`, `opening_hours`, `restaurant_social_links` |
 | F3 (clientes y descuentos) | sin tablas nuevas: pantallas de clientes y función de códigos sobre `customers` y `promo_codes` |
 | F5 (cobro de planes) | `subscriptions` |

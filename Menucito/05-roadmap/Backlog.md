@@ -19,17 +19,17 @@ Cómo leerla:
 | ID | Item | Fase | Tamaño | Estado | Depende de | Bloqueado por |
 | --- | --- | --- | --- | --- | --- | --- |
 | B-01 | Carrito y detalle de pedido (cambio 09) | 0 | sin estimar | Hecho | - | - |
-| B-02 | Tablas orders y order_items con migración (incluye shipping_cents, payment_method y payment_status) | 1 | sin estimar | Pendiente | B-111, B-125, B-126 | - |
-| B-03 | Servicio de pedidos (totales en servidor, número correlativo) | 1 | sin estimar | Pendiente | B-02 | - |
-| B-04 | Rutas de pedidos (crear público; listar, ver y cambiar estado en admin) | 1 | sin estimar | Pendiente | B-03 | - |
-| B-05 | Teléfono normalizado en el formulario del carrito | 1 | sin estimar | Pendiente | B-01 | - |
-| B-06 | Envío del pedido por WhatsApp con el mensaje armado | 1 | sin estimar | Pendiente | B-04, B-05 | - |
-| B-07 | Estado del pedido y estado de pago como ejes independientes (el dueño marca el pago a mano) | 1 | S | Pendiente | B-02 | - |
-| B-08 | Panel del dueño con tres columnas (Nuevo, En preparación, Listo) | 1 | M | Pendiente | B-04 | - |
+| B-02 | Tablas orders y order_items con migración (incluye shipping_cents, payment_method y payment_status) | 1 | sin estimar | Hecho | B-111, B-125, B-126 | - |
+| B-03 | Servicio de pedidos (totales en servidor, número correlativo) | 1 | sin estimar | Hecho | B-02 | - |
+| B-04 | Rutas de pedidos (crear público; listar, ver y cambiar estado en admin) | 1 | sin estimar | Hecho | B-03 | - |
+| B-05 | Teléfono normalizado en el formulario del carrito | 1 | sin estimar | Hecho | B-01 | - |
+| B-06 | Envío del pedido por WhatsApp con el mensaje armado | 1 | sin estimar | Hecho | B-04, B-05 | - |
+| B-07 | Estado del pedido y estado de pago como ejes independientes (el dueño marca el pago a mano) | 1 | S | Hecho | B-02 | - |
+| B-08 | Panel del dueño con tres columnas (Nuevo, En preparación, Listo) | 1 | M | Hecho | B-04 | - |
 | B-09 | Alta manual de pedidos en el panel | 1 | sin estimar | Pendiente | B-08 | - |
-| B-10 | Historial de pedidos con filtros | 1 | M | Pendiente | B-04 | - |
-| B-11 | Exportación del historial a CSV | 1 | sin estimar | Pendiente | B-10 | - |
-| B-12 | Pruebas del servicio y rutas de pedidos (totales, aislamiento entre locales) | 1 | sin estimar | Pendiente | B-04 | - |
+| B-10 | Historial de pedidos con filtros | 1 | M | Hecho | B-04 | - |
+| B-11 | Exportación del historial a CSV | 1 | sin estimar | Hecho | B-10 | - |
+| B-12 | Pruebas del servicio y rutas de pedidos (totales, aislamiento entre locales) | 1 | sin estimar | Hecho | B-04 | - |
 | B-13 | Panel de pedidos en tiempo real | Después | sin estimar | Pendiente | B-08 | - |
 | B-14 | Aviso sonoro de pedido nuevo en el panel | Después | sin estimar | Pendiente | B-08 | - |
 | B-15 | Pedidos programados fuera de horario (en el MVP se rechaza: ver B-45) | Después | sin estimar | Pendiente | B-45 | - |
@@ -66,12 +66,12 @@ Cómo leerla:
 | B-36 | Landing placeholder y menú público (cambio 08) | 0 | sin estimar | Hecho | - | - |
 | B-37 | Apariencia del local y menú público: portada, colores, descripción (cambio 10) | 0 | sin estimar | Hecho | - | - |
 | B-38 | Interruptores de delivery y retiro (columnas en restaurants) | 0 | sin estimar | Hecho | - | - |
-| B-39 | Tabla restaurant_settings con migración y valores por defecto neutros | 1 | sin estimar | Pendiente | B-111 | - |
-| B-40 | Pausa de la tienda con cartel para el cliente | 1 | sin estimar | Pendiente | B-39, B-03 | - |
-| B-41 | Monto mínimo de compra | 1 | sin estimar | Pendiente | B-39, B-03 | - |
-| B-42 | Costo de envío fijo, solo en delivery | 1 | sin estimar | Pendiente | B-39, B-03 | - |
-| B-43 | Métodos de pago por local con alias de transferencia (restaurant_payment_methods) | 1 | sin estimar | Pendiente | B-39 | - |
-| B-44 | Pantalla de configuración en LocalPage (Recepción de pedidos, Pagos y envío) | 1 | sin estimar | Pendiente | B-40, B-41, B-42, B-43 | - |
+| B-39 | Tabla restaurant_settings con migración y valores por defecto neutros | 1 | sin estimar | Hecho | B-111 | - |
+| B-40 | Pausa de la tienda con cartel para el cliente | 1 | sin estimar | Hecho | B-39, B-03 | - |
+| B-41 | Monto mínimo de compra | 1 | sin estimar | Hecho | B-39, B-03 | - |
+| B-42 | Costo de envío fijo, solo en delivery | 1 | sin estimar | Hecho | B-39, B-03 | - |
+| B-43 | Métodos de pago por local con alias de transferencia (restaurant_payment_methods) | 1 | sin estimar | Hecho | B-39 | - |
+| B-44 | Pantalla de configuración en LocalPage (Recepción de pedidos, Pagos y envío) | 1 | sin estimar | Hecho | B-40, B-41, B-42, B-43 | - |
 | B-45 | Horarios del local (opening_hours): fuera de horario el pedido se rechaza; el botón Mandar por WhatsApp del carrito queda gris y muestra cuándo abre (por ejemplo, Abre hoy a las 19:00) | 2 | sin estimar | Pendiente | B-03, B-128 | - |
 | B-46 | QR descargable (reemplaza el placeholder de /qr) | 2 | sin estimar | Pendiente | - | - |
 | B-47 | Redes sociales en el menú público (restaurant_social_links) | 2 | sin estimar | Pendiente | - | - |
@@ -91,8 +91,8 @@ Cómo leerla:
 | ID | Item | Fase | Tamaño | Estado | Depende de | Bloqueado por |
 | --- | --- | --- | --- | --- | --- | --- |
 | B-58 | Listado de clientes con cantidad de pedidos, gasto total y último pedido (sobre la tabla customers) | 3 | S | Pendiente | B-04, B-127 | - |
-| B-125 | Tabla customers con migración (orders.customer_id apunta a ella) | 1 | sin estimar | Pendiente | B-111 | - |
-| B-127 | Buscar o crear el cliente por restaurante y teléfono al crear el pedido | 1 | sin estimar | Pendiente | B-03, B-125, B-05 | - |
+| B-125 | Tabla customers con migración (orders.customer_id apunta a ella) | 1 | sin estimar | Hecho | B-111 | - |
+| B-127 | Buscar o crear el cliente por restaurante y teléfono al crear el pedido | 1 | sin estimar | Hecho | B-03, B-125, B-05 | - |
 | B-59 | Búsqueda, orden y paginado de clientes | 3 | sin estimar | Pendiente | B-58 | - |
 | B-60 | Exportación de clientes a CSV | 3 | sin estimar | Pendiente | B-58 | - |
 | B-61 | Página Clientes en el admin con enlace directo a WhatsApp | 3 | sin estimar | Pendiente | B-58 | - |
@@ -105,7 +105,7 @@ Cómo leerla:
 
 | ID | Item | Fase | Tamaño | Estado | Depende de | Bloqueado por |
 | --- | --- | --- | --- | --- | --- | --- |
-| B-126 | Tabla promo_codes vacía, creada junto con orders | 1 | sin estimar | Pendiente | B-111 | - |
+| B-126 | Tabla promo_codes vacía, creada junto con orders | 1 | sin estimar | Hecho | B-111 | - |
 | B-66 | Ajustes de promo_codes y descuento aplicado en orders (la tabla llega vacía en la Fase 1) | 3 | sin estimar | Pendiente | B-126, B-02 | D-19 |
 | B-67 | Servicio de códigos con uso atómico y descuento calculado en servidor | 3 | sin estimar | Pendiente | B-66, B-03 | - |
 | B-68 | Rutas de códigos (validar desde el carrito; crear, editar y desactivar en admin) | 3 | sin estimar | Pendiente | B-67 | - |

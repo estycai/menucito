@@ -10,9 +10,9 @@ tags: [menucito, roadmap]
 
 ## Próximos 3 pasos
 
-1. Decidir qué hacer con los archivos sueltos del árbol de trabajo (B-112) y confirmar o corregir las "Decisiones de diseño por confirmar" de la spec del cambio 11 (`docs/changes/11-pedidos-de-punta-a-punta.md`).
-2. Implementar la tarea 1 del cambio 11: `packages/shared` con la zona horaria, los estados, los esquemas y el mensaje de WhatsApp (B-128 y la base de B-07 y B-06).
-3. Implementar la tarea 2: la migración `0006_orders` con `orders`, `order_items`, `customers`, `promo_codes` vacía y las tablas de configuración (B-02, B-125, B-126, B-39, B-43).
+1. Realizar la verificación manual en navegador de los escenarios 39 a 64 a 375 px y 1280 px (Fase 1 completada en código y tests).
+2. Comenzar la Fase 2: Catálogo completo y tienda (B-25 variantes de producto con `product_variants`, B-26 grupos de adicionales con `option_groups`/`options`).
+3. Definir la spec e implementación de horarios del local (B-45 `opening_hours`).
 
 ## Lógica del orden
 
@@ -53,15 +53,15 @@ Ya están hechos B-111 (corrida manual del cambio 10), B-119 y B-123. B-120 sigu
 
 **Criterio de hecho**
 
-- [ ] Un cliente envía un pedido desde el carrito y queda guardado con sus ítems, su método de pago y el envío; el total lo calcula el servidor.
-- [ ] Cada pedido queda asociado a un cliente (buscado o creado por local y teléfono).
-- [ ] El dueño ve el pedido en el panel y lo mueve hasta Entregado; marca el pago aparte, a mano.
-- [ ] Un local no puede ver ni modificar pedidos de otro.
-- [ ] La pausa, el mínimo, el envío y los métodos de pago habilitados se respetan en el carrito y en el servicio.
-- [ ] El historial se filtra y se exporta a CSV.
-- [ ] Los locales que ya existían siguen funcionando igual después de las migraciones.
+- [x] Un cliente envía un pedido desde el carrito y queda guardado con sus ítems, su método de pago y el envío; el total lo calcula el servidor.
+- [x] Cada pedido queda asociado a un cliente (buscado o creado por local y teléfono).
+- [x] El dueño ve el pedido en el panel y lo mueve hasta Entregado; marca el pago aparte, a mano.
+- [x] Un local no puede ver ni modificar pedidos de otro.
+- [x] La pausa, el mínimo, el envío y los métodos de pago habilitados se respetan en el carrito y en el servicio.
+- [x] El historial se filtra y se exporta a CSV.
+- [x] Los locales que ya existían siguen funcionando igual después de las migraciones.
 
-**Próxima acción:** la spec del cambio 11 está escrita en [docs/changes/11-pedidos-de-punta-a-punta.md](../../docs/changes/11-pedidos-de-punta-a-punta.md) (cubre todos los ítems de esta fase salvo B-09, alta manual de pedidos, que queda para una spec propia). Falta confirmar sus decisiones de diseño por confirmar; la acción siguiente es implementar la tarea 1 (`packages/shared`), y después la tarea 2 (migración `0006_orders`).
+**Próxima acción:** La implementación de la spec 11 está completa en código, schemas, migraciones, endpoints y componentes frontend. La acción siguiente es la corrida manual en navegador (escenarios 39 a 64) a 375 px y 1280 px, y luego iniciar la Fase 2 (catálogo y adicionales).
 
 ## Fase 2: Catálogo completo y tienda
 

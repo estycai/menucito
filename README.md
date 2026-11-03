@@ -85,6 +85,14 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
 | `DELETE /api/restaurants/me/logo` | 204 (also when there is no logo) |
 | `PATCH /api/restaurants/me/appearance` | body with at least one of `{description?, bgColor?, primaryColor?}` (colors are `#RGB`/`#RRGGBB`, with or without `#`, stored as `#RRGGBB` uppercase; `null` goes back to the default). `description` is whitespace-normalized, max 120 characters, empty is valid. 200 restaurant, 403 `PLAN_FEATURE` if the body has any color key (even `null`) and the plan lacks `customColors`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR` (bad format, empty body, or the resulting pair gives the primary color less than 3:1 contrast against the background) |
+| `GET /api/restaurants/me/settings` | 200 store settings: `{acceptingOrders, minOrderCents, shippingCents, cashEnabled, transferEnabled, transferAlias, transferHolderName, updatedAt}` |
+| `PATCH /api/restaurants/me/settings` | body with subset of store settings; 200 settings, 404, 422 `VALIDATION_ERROR` (if `transferEnabled: true`, `transferHolderName` is required) |
+| `POST /api/public/menus/:slug/orders` | Public, CORS enabled for `WEB_ORIGINS`. Body `{clientOrderId, customer: {name, phone, address?}, fulfillment, paymentMethod, expectedTotalCents, items: [{productId, quantity, choices?}]}`. Recalculates total from DB, creates or deduplicates customer by `phone`, throttles customer to 3 active orders, sequential `#number`, idempotent via `clientOrderId`. 201 `{order, whatsappUrl, payment: null}`, 409 `STORE_PAUSED` / `TOTAL_MISMATCH` / `PRODUCT_UNAVAILABLE`, 429 `ORDER_THROTTLED`. Rate limit 10/min per IP |
+| `GET /api/orders` | Owner orders listing. Query params: `status`, `fulfillment`, `paymentMethod`, `paymentStatus`, `from`, `to`, `limit`, `before`. Dates in `America/Argentina/Buenos_Aires`. 200 `{orders: OrderSummary[], nextBefore: string | null}` |
+| `GET /api/orders/:id` | Owner order detail with items snapshot, ingredient choices and customer information; 200 `OrderDetail`, 404 `ORDER_NOT_FOUND` |
+| `PATCH /api/orders/:id/status` | Transitions order status (`new` -> `preparing` -> `ready` -> `delivered`, or `cancelled`). Body `{status, expectedStatus}` (optimistic lock); 200 `OrderDetail`, 409 `CONCURRENT_MODIFICATION`, 422 |
+| `PATCH /api/orders/:id/payment` | Updates payment status (`pending` \| `paid`). Body `{paymentStatus}`; 200 `OrderDetail`, 422 |
+| `GET /api/orders/export.csv` | Exports orders matching filters as CSV. Includes UTF-8 BOM, semicolon delimiter, comma decimal separator, and Excel formula injection protection; 200 `text/csv` |
 | `PUT /api/restaurants/me/cover` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{coverUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND`. No plan check |
 | `DELETE /api/restaurants/me/cover` | 204 (also when there is no cover) |
 | `PUT /api/restaurants/me/plan` | body `{plan: "basic" \| "pro"}`; 200 restaurant (the current plan is a no-op), 403 `PLAN_SWITCH_DISABLED` unless `ALLOW_PLAN_SWITCH=true`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR`. Free test switch, see "Plan switch" |
@@ -126,6 +134,16 @@ Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLim
 
 Plan flags (`PlanLimits`): `maxProducts` (Basic 40, Pro unlimited), `productPhotos` (both plans), `customIngredients` and `customColors` (both `false` on Basic, `true` on Pro). `customColors` gates the menu's background and primary colors (see "Menu theme"); cover, description and the featured category have no plan limit. Customizable ingredients are a Pro feature: writing them without the flag answers 403 `PLAN_FEATURE` and changes nothing, while reading is open to every plan. A downgrade never deletes them: the admin shows the saved list read-only inside the locked "Ingredientes" section until the account is Pro again. The admin and the API read the flag from `planLimitsFor(plan)`, never from `plan === "pro"`. In the product editor, Basic accounts see "Ingredientes" and "Extras y variantes" greyed out with the PRO badge and a "Ver plan Pro" link (`ProLock`); "Extras y variantes" is a "Próximamente" placeholder on every plan (no data, no API).
 
+
+### Order flow and lifecycle
+
+1. **Ordering & Validation**: The diner builds their cart in `apps/web`. In `/<slug>/pedido`, the phone number is validated with Argentine format (`normalizeArWhatsapp`). If the store has paused orders (`acceptingOrders: false`), an informative status banner is shown and submission is disabled. If subtotal is below `minOrderCents`, an alert informs the user and disables submission.
+2. **Idempotency & Submission**: On form submission, a client UUID `clientOrderId` is retrieved from or generated in `localStorage` (`getOrCreateToken`) and posted to `POST /api/public/menus/:slug/orders`.
+3. **Server Integrity**: The API recalculates all line prices and options against D1. If prices or availability changed in the interim, it responds 409 (`TOTAL_MISMATCH` or `PRODUCT_UNAVAILABLE`).
+4. **Customer Linking & Rate Limiting**: Customers are deduplicated by `restaurant_id + phone`. If a phone has 3 or more active orders (`new`, `preparing`, `ready`), it is throttled with 429 `ORDER_THROTTLED`. IP submissions are limited to 10 requests per minute.
+5. **WhatsApp Handoff**: The order is stored with a sequential `#number` per restaurant. The API returns `{ order, whatsappUrl }`. The frontend clears the cart, removes the idempotency token, displays a confirmation screen with `#number`, and triggers handoff to WhatsApp with the pre-filled message.
+6. **Owner Operations**: The owner manages orders in `/pedidos` (real-time polling every 30s): advance status with optimistic concurrency control (`PATCH /api/orders/:id/status`), toggle payment (`PATCH /api/orders/:id/payment`), and export history as CSV (`GET /api/orders/export.csv`).
+
 ### Plan switch (testing aid)
 
 Until Mercado Pago exists there is no way to pay, so `/plan` ("Plan y pagos") can switch the restaurant between Basic and Pro for free. This lets the plan limits and Pro behavior be tested end to end; it is not a product feature and the future checkout and webhook will replace it. It is guarded by two flags, both off by default:
@@ -144,6 +162,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | Route | Section |
 | --- | --- |
 | `/` | Resumen (public link, WhatsApp, product and category counts) |
+| `/pedidos` | Pedidos (tablero con columnas activas, historial con filtros de fecha/estado/pago, detalle, acciones y exportación CSV) |
 | `/menu`, `/menu/products/new`, `/menu/products/:id` | Mi menú |
 | `/local` | Mi local |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
@@ -163,7 +182,7 @@ Login, sign-up, forgot/reset password, verify email and onboarding render outsid
 | Route | Behavior |
 | --- | --- |
 | `/` | Prerendered placeholder landing ("FUTURA LANDING"); works without the API and without client JavaScript |
-| `/<slug>/pedido` | Order detail: cart lines with quantity steppers, total and the form (name, pickup or delivery, address, payment method). Same fetch, 404, 503 and redirect behavior as the menu (shared code in `src/lib/menu.ts`). The "Enviar pedido" button is disabled: the WhatsApp message and `wa.me` are the next spec |
+| `/<slug>/pedido` | Order detail: cart lines with steppers, shipping breakdown, total, store pause banner, minimum order check, and form (name, phone, fulfillment, address, payment method with transfer bank details). Submitting persists the order to the database via `POST /api/public/menus/:slug/orders`, clears the cart, shows confirmation card, and redirects to WhatsApp with the formatted order message |
 | `/<slug>` | Server-rendered menu. Reads `GET /api/public/menus/:slug` from the server (no CORS involved). 200 with `Cache-Control: public, max-age=60`; 404 "No encontramos este menú" for an unknown, invalid or reserved slug (the API is not called for the last two); 503 when the API is down or answers 5xx (`no-store`); 301 to the lowercase URL for an uppercase slug |
 
 The menu header shows the cover (or a soft tone of the primary color), the overlapping logo, the name and the description (no Delivery/Retiro selector, which only exists in `/<slug>/pedido`, and no opening-hours label yet). The featured category comes first as a horizontal row; the category nav is sticky and highlights the section in view (with JavaScript off the chips still work as anchors). `<meta name="description">` is the restaurant description, or "Menú de <name>" without one.
@@ -193,6 +212,7 @@ Until the "Publicar cambios" flow and the KV copy exist, the menu is read live f
 | `RESEND_API_KEY` | Resend API key. Empty = log emails to the console |
 | `EMAIL_FROM` | Sender address. Local/no domain: `onboarding@resend.dev` |
 | `ALLOW_PLAN_SWITCH` | `true` enables the free plan switch endpoint. Local testing only; never set it in a deployed environment |
+| `WEB_ORIGINS` | Comma-separated allowed origins for public order creation and CORS preflight. Default `http://localhost:4321,http://127.0.0.1:4321` |
 
 After editing `.dev.vars`, restart the API dev server.
 

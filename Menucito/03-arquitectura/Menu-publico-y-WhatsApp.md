@@ -25,12 +25,14 @@ El mensaje se arma en el navegador y se codifica con `encodeURIComponent`.
 2. La página lee el JSON publicado en KV.
 3. Agrega productos al carrito, con opciones, extras y ajuste de ingredientes (ver [Personalización de ingredientes](Personalizacion-de-ingredientes.md)).
 4. Completa nombre, retiro o envío, dirección y forma de pago.
-5. Toca "Enviar pedido": se abre WhatsApp con el pedido escrito.
-6. Se registra un evento anónimo en `order_events` para las estadísticas (Pro).
+5. Toca "Enviar pedido": se envía `POST /api/public/menus/:slug/orders` con `clientOrderId` para idempotencia. El backend recalcula el total, persiste el pedido en `orders`, vincula o crea el cliente en `customers`, asigna un número secuencial (#1, #2...) y genera el link de WhatsApp.
+6. La web vacía el carrito, muestra pantalla de confirmación con el número de pedido y abre WhatsApp con el mensaje formateado que incluye el número de pedido al inicio (*Pedido #12 - Lo de Marta*).
 
 ## Ejemplo de mensaje
 
 ```
+*Pedido #12 - Lo de Marta*
+
 Hola! Quiero hacer un pedido:
 
 2x Hamburguesa completa ($25.000)
@@ -84,3 +86,11 @@ El comensal ya puede armar su pedido, pero todavía no se envía.
 - **Tema derivado.** El dueño elige solo dos colores (fondo y principal, Pro). El resto (tinta, superficie, texto secundario, texto sobre el principal, acento, error) lo deriva `themeFromColors` en `packages/shared` con garantía de contraste 4.5:1; el relleno principal nunca se corrige; un principal con menos de 3:1 contra el fondo solo dispara una advertencia en el admin y se guarda igual (la API no lo rechaza). Se aplica como variables CSS en el `<body>` de `/{slug}` y `/{slug}/pedido`. La vista previa del admin usa la misma función, en un mini-render con las variables acotadas al marco del teléfono.
 
 Related: [Arquitectura general](Arquitectura-general.md) · [Modelo de datos](Modelo-de-datos.md) · [Personalización de ingredientes](Personalizacion-de-ingredientes.md)
+
+## Estado actual: pedidos de punta a punta y WhatsApp (spec 11)
+
+El circuito de pedidos está completamente integrado de extremo a extremo:
+- **Persistencia en backend**: Antes de abrir WhatsApp, el pedido se valida y almacena en D1. El servidor recalcula todos los precios desde la base de datos (evitando adulteraciones de precio desde el cliente), deduplica al cliente por teléfono, verifica que el local no haya pausado la recepción y que no se superen 3 pedidos activos por cliente.
+- **Idempotencia**: El comensal genera un `clientOrderId` (UUID) en el navegador. Si la conexión se interrumpe y se reintenta el envío, el backend reconoce la solicitud y devuelve el mismo pedido y URL de WhatsApp sin duplicar registros.
+- **Formato del mensaje**: Se genera un texto con el número secuencial de pedido (*Pedido #12 - Lo de Marta*), desglose de ítems con sus ingredientes modificados, subtotal, costo de envío, total, datos del comensal y método de pago (incluyendo alias y titular si es transferencia).
+- **Gestión por el dueño**: El panel administrativo `/pedidos` permite ver los pedidos entrantes agrupados por estado (`Nuevos`, `En preparación`, `Listos`), avanzar su estado con bloqueo concurrente optimista, registrar el cobro y exportar reportes en CSV.
