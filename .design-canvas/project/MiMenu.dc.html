@@ -44,14 +44,18 @@ a{color:inherit;text-decoration:none}
     <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
       <aside style="flex:1 1 220px;max-width:280px;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:4px">
         <span style="font-size:12px;font-weight:700;color:#57534E;padding:8px 10px;letter-spacing:.05em">CATEGORÍAS</span>
-        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px"><span>Hamburguesas</span><span style="font-size:13px">8</span></div>
+        <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 12px;border-radius:10px;background:#FFEDD5;color:#9A3412;font-weight:700;font-size:15px"><span style="display:flex;align-items:center;gap:6px"><span aria-hidden="true" style="font-size:15px;line-height:1">★</span>Hamburguesas</span><span style="font-size:13px">8</span></div>
         <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Milanesas</span><span style="font-size:13px;color:#57534E">6</span></div>
         <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Bebidas</span><span style="font-size:13px;color:#57534E">7</span></div>
         <div style="min-height:44px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-radius:10px;font-size:15px"><span>Postres</span><span style="font-size:13px;color:#57534E">3</span></div>
         <button type="button" style="margin-top:6px;min-height:44px;border:1px dashed #A8A29E;border-radius:10px;background:transparent;font:700 14px 'DM Sans',sans-serif;color:#44403C">+ Nueva categoría</button>
       </aside>
       <section style="flex:3 1 420px;min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;display:flex;flex-direction:column">
-        <div style="padding:16px 20px;border-bottom:1px solid #E7E2DC;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Hamburguesas</div>
+        <div style="display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 8px 20px;border-bottom:1px solid #E7E2DC">
+          <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Hamburguesas</span>
+          <!-- Star toggle: only one category can be featured; its products open the public menu -->
+          <button type="button" aria-pressed="true" style="min-height:44px;display:flex;align-items:center;gap:6px;padding:0 14px;border:1px solid #FDBA74;border-radius:10px;background:#FFEDD5;font:700 14px 'DM Sans',sans-serif;color:#9A3412"><span aria-hidden="true" style="font-size:16px;line-height:1">★</span>Destacada</button>
+        </div>
         <a href="ProductoEditor.dc.html" style="display:flex;align-items:center;gap:16px;padding:14px 20px;border-bottom:1px solid #F0ECE6">
           <span style="flex:none;width:56px;height:56px;border-radius:12px;background:#EBD9C6"></span>
           <span style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><b style="font-size:15px">Hamburguesa completa</b><span style="font-size:13px;color:#57534E">3 ingredientes · 2 grupos de opciones</span></span>

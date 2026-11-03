@@ -32,7 +32,7 @@ a{color:inherit;text-decoration:none}
   <main style="flex:999 1 560px;min-width:0;box-sizing:border-box;padding:32px;display:flex;flex-direction:column;gap:20px">
     <h1 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:32px">Mi local</h1>
     <div style="display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start">
-      <div style="flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:20px">
+      <div style="flex:1 1 440px;min-width:0;display:flex;flex-direction:column;gap:20px">
         <section style="background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:16px">
           <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Datos del local</h2>
           <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Nombre
@@ -51,23 +51,99 @@ a{color:inherit;text-decoration:none}
         </section>
         <section style="background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:14px">
           <div style="display:flex;align-items:center;gap:10px"><h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Apariencia</h2></div>
-          <div style="display:flex;align-items:center;gap:16px"><span style="width:64px;height:64px;border-radius:16px;background:#C2410C;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px">LM</span><button type="button" style="min-height:44px;padding:0 18px;border:1px solid #D6D3D1;border-radius:10px;background:#fff;font:700 14px 'DM Sans',sans-serif;color:#1C1917">Cambiar logo</button></div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:13px;font-weight:700">Color principal</span><span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span>
-            <span style="width:44px;height:44px;border-radius:99px;background:#C2410C;border:3px solid #1C1917;box-sizing:border-box"></span>
-            <span style="width:44px;height:44px;border-radius:99px;background:#15803D"></span>
-            <span style="width:44px;height:44px;border-radius:99px;background:#1D4ED8"></span>
-            <span style="width:44px;height:44px;border-radius:99px;background:#7E22CE"></span>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:13px;font-weight:700">Foto de portada</span>
+            <div style="height:120px;border-radius:14px;border:1px solid #E7E2DC;background:radial-gradient(circle at 78% 62%,#F6D9B4 0 18px,transparent 19px),radial-gradient(circle at 78% 62%,#D9A066 0 36px,transparent 37px),radial-gradient(circle at 30% 40%,#F2C896 0 14px,transparent 15px),radial-gradient(circle at 30% 40%,#C98B52 0 30px,transparent 31px),linear-gradient(135deg,#E9B98A 0%,#B45B2B 100%)"></div>
+            <div style="display:flex;align-items:center;flex-wrap:wrap;gap:12px">
+              <button type="button" style="min-height:44px;padding:0 18px;border:1px solid #D6D3D1;border-radius:10px;background:#fff;font:700 14px 'DM Sans',sans-serif;color:#1C1917">Cambiar portada</button>
+              <span style="flex:1 1 200px;font-size:12px;color:#57534E;line-height:1.4">Recomendado: 1200 × 400 px, JPG o PNG. Se recorta al centro y se comprime sola.</span>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:13px;font-weight:700">Logo</span>
+            <div style="display:flex;align-items:center;gap:16px"><span style="width:64px;height:64px;border-radius:16px;background:#C2410C;color:#fff;display:flex;align-items:center;justify-content:center;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:22px">LM</span><button type="button" style="min-height:44px;padding:0 18px;border:1px solid #D6D3D1;border-radius:10px;background:#fff;font:700 14px 'DM Sans',sans-serif;color:#1C1917">Cambiar logo</button></div>
+          </div>
+          <label style="display:flex;flex-direction:column;gap:6px;font-size:13px;font-weight:700">Descripción breve
+            <textarea rows="3" maxlength="120" style="box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:12px 14px;font:400 16px/1.4 'DM Sans',sans-serif;color:#1C1917;background:#fff;resize:none">Hamburguesas, milanesas y minutas caseras. Hechas al momento, todos los días en Palermo.</textarea>
+            <span style="align-self:flex-end;font-size:12px;font-weight:400;color:#57534E">88/120</span>
+          </label>
+          <div style="display:flex;flex-direction:column;gap:10px;padding-top:4px;border-top:1px solid #F0ECE6">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:12px"><span style="font-size:13px;font-weight:700">Colores de tu menú</span><span style="font-size:11px;font-weight:700;background:#1C1917;color:#fff;padding:3px 8px;border-radius:99px">PRO</span></div>
+            <span style="font-size:12px;color:#57534E;line-height:1.4">En el Plan Básico se usan los colores por defecto de Menucito.</span>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-size:13px;font-weight:700">Color de fondo</span>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="width:44px;height:44px;border-radius:99px;background:#F7F5F2;border:3px solid #1C1917;box-sizing:border-box"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#FFFFFF;border:1px solid #D6D3D1;box-sizing:border-box"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#FEF3C7;border:1px solid #D6D3D1;box-sizing:border-box"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#1C1917"></span>
+                <input type="text" value="#F7F5F2" aria-label="Color de fondo en hexadecimal" style="width:110px;height:44px;box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:0 12px;font:400 15px 'DM Sans',sans-serif;color:#1C1917;background:#fff">
+              </div>
+            </div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <span style="font-size:13px;font-weight:700">Color principal</span>
+              <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+                <span style="width:44px;height:44px;border-radius:99px;background:#C2410C;border:3px solid #1C1917;box-sizing:border-box"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#15803D"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#1D4ED8"></span>
+                <span style="width:44px;height:44px;border-radius:99px;background:#7E22CE"></span>
+                <input type="text" value="#C2410C" aria-label="Color principal en hexadecimal" style="width:110px;height:44px;box-sizing:border-box;border:1px solid #E7E2DC;border-radius:12px;padding:0 12px;font:400 15px 'DM Sans',sans-serif;color:#1C1917;background:#fff">
+              </div>
+            </div>
           </div>
         </section>
-      </div>
-      <section style="flex:1 1 360px;min-width:0;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
+        <section style="background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;gap:6px">
         <h2 style="margin:0 0 8px;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Horarios</h2>
         <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6"><span style="flex:1;font-size:15px">Lunes</span><span style="font-size:15px;color:#57534E">Cerrado</span></div>
         <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6"><span style="flex:1;font-size:15px">Martes a jueves</span><span style="font-size:15px">12:00 – 23:30</span></div>
         <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6"><span style="flex:1;font-size:15px">Viernes y sábado</span><span style="font-size:15px">12:00 – 01:00</span></div>
         <div style="display:flex;align-items:center;gap:12px;min-height:52px;border-top:1px solid #F0ECE6"><span style="flex:1;font-size:15px">Domingo</span><span style="font-size:15px">12:00 – 17:00</span></div>
         <button type="button" style="margin-top:10px;min-height:48px;border:1px dashed #A8A29E;border-radius:12px;background:transparent;font:700 14px 'DM Sans',sans-serif;color:#44403C">Editar horarios</button>
-      </section>
+        </section>
+      </div>
+      <!-- Live preview: sticky on desktop, stacks below the form on narrow widths -->
+      <aside aria-label="Vista previa" style="flex:0 1 380px;min-width:340px;position:sticky;top:24px;box-sizing:border-box;background:#fff;border:1px solid #E7E2DC;border-radius:16px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:14px">
+        <div style="align-self:stretch;display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap">
+          <div style="display:flex;flex-direction:column;gap:2px">
+            <h2 style="margin:0;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px">Vista previa</h2>
+            <span style="font-size:13px;color:#57534E">Así lo ve tu cliente</span>
+          </div>
+          <span style="display:flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;background:#F7F5F2;border:1px solid #E7E2DC;font-size:12px;font-weight:700;color:#44403C"><span style="width:8px;height:8px;border-radius:99px;background:#15803D"></span>En vivo · se actualiza al editar</span>
+        </div>
+        <!-- Phone frame, no notch -->
+        <div style="--bg:#F7F5F2;--primary:#C2410C;width:320px;height:560px;box-sizing:border-box;border:8px solid #1C1917;border-radius:36px;overflow:hidden;position:relative;background:var(--bg);font-family:'DM Sans',system-ui,sans-serif;color:#1C1917">
+          <div style="height:96px;background:radial-gradient(circle at 78% 62%,#F6D9B4 0 18px,transparent 19px),radial-gradient(circle at 78% 62%,#D9A066 0 34px,transparent 35px),radial-gradient(circle at 30% 40%,#F2C896 0 12px,transparent 13px),radial-gradient(circle at 30% 40%,#C98B52 0 28px,transparent 29px),linear-gradient(135deg,#E9B98A 0%,#B45B2B 100%)"></div>
+          <div style="padding:0 14px;margin-top:-26px;display:flex;flex-direction:column;gap:5px">
+            <div style="width:52px;height:52px;border-radius:15px;background:var(--primary);border:3px solid var(--bg);box-sizing:border-box;display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:18px">LM</div>
+            <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:20px;line-height:1.1">Lo de Marta</span>
+            <span style="font-size:11px;line-height:1.4;color:#57534E">Hamburguesas, milanesas y minutas caseras. Hechas al momento, todos los días en Palermo.</span>
+            <span style="align-self:flex-start;padding:4px 9px;border-radius:999px;background:#DCFCE7;color:#166534;font-size:10px;font-weight:700">Abierto hasta las 23:30</span>
+          </div>
+          <div style="padding:12px 0 0">
+            <div style="display:flex;align-items:center;gap:6px;padding:0 14px 6px"><span style="color:var(--primary);font-size:13px;line-height:1">★</span><span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:14px">Promos del día</span></div>
+            <div style="display:flex;gap:8px;padding:0 14px;overflow:hidden">
+              <div style="flex:none;width:150px;background:#fff;border-radius:12px;border:1px solid #E7E2DC;overflow:hidden"><div style="height:70px;background:linear-gradient(135deg,#EBD9C6,#D8B48C)"></div><div style="padding:6px 9px 8px;display:flex;flex-direction:column"><span style="font-weight:700;font-size:11px">Combo completa + papas</span><span style="font-size:10px;line-height:1.35;color:#57534E;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">Hamburguesa completa con papas fritas medianas.</span><span style="font-weight:700;font-size:12px;color:var(--primary)">$11.900</span></div></div>
+              <div style="flex:none;width:150px;background:#fff;border-radius:12px;border:1px solid #E7E2DC;overflow:hidden"><div style="height:70px;background:linear-gradient(135deg,#E3C9AE,#C99D6B)"></div><div style="padding:6px 9px 8px;display:flex;flex-direction:column"><span style="font-weight:700;font-size:11px">Milanesa napolitana</span><span style="font-weight:700;font-size:12px;color:var(--primary)">$12.800</span></div></div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;padding:10px 14px 0;overflow:hidden">
+            <span style="flex:none;padding:7px 12px;border-radius:999px;background:var(--primary);color:#fff;font-weight:700;font-size:11px">Hamburguesas</span>
+            <span style="flex:none;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #E7E2DC;font-size:11px">Milanesas</span>
+            <span style="flex:none;padding:7px 12px;border-radius:999px;background:#fff;border:1px solid #E7E2DC;font-size:11px">Bebidas</span>
+          </div>
+          <div style="padding:8px 14px 0;display:flex;flex-direction:column;gap:6px">
+            <span style="font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:14px">Hamburguesas</span>
+            <div style="display:flex;gap:8px;padding:8px;background:#fff;border-radius:12px;border:1px solid #E7E2DC">
+              <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px"><span style="font-weight:700;font-size:11px">Hamburguesa completa</span><span style="font-size:10px;color:#57534E">Carne 180 g, queso, lechuga y tomate.</span><span style="font-weight:700;font-size:12px;color:var(--primary)">$9.000</span></div>
+              <div style="flex:none;width:44px;height:44px;border-radius:8px;background:#EBD9C6"></div>
+            </div>
+          </div>
+          <div style="position:absolute;left:0;right:0;bottom:0;padding:8px 14px 12px;background:var(--bg);border-top:1px solid #E7E2DC">
+            <div style="display:flex;align-items:center;justify-content:space-between;min-height:38px;padding:0 12px;border-radius:10px;background:var(--primary);color:#fff;font-weight:700;font-size:12px"><span>Ver pedido · 3</span><span>$28.500</span></div>
+          </div>
+        </div>
+        <span style="align-self:stretch;font-size:12px;color:#57534E;line-height:1.4;text-align:center">Los colores y la portada se ven igual que en tu menú real. Guardá para publicar los cambios.</span>
+      </aside>
     </div>
     <div style="display:flex;justify-content:flex-end"><button type="button" style="min-height:48px;padding:0 26px;border:0;border-radius:12px;background:#C2410C;color:#fff;font:700 15px 'DM Sans',sans-serif">Guardar cambios</button></div>
   </main>
