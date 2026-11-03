@@ -13,5 +13,13 @@ dist
 # Local secrets (never commit)
 data_sensible/
 
-# PDF exports inside the Obsidian vault (binaries; keep them on disk only)
-Menucito/*.pdf
+# Marketing videos (Remotion project, renders and screenshots)
+VIDEOS/
+
+# Non-code: Obsidian vault, docs, design boards, AI tooling (kept on disk only)
+Menucito/
+docs/
+.design-canvas/
+.claude/
+.atl/
+skills-lock.json
