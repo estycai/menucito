@@ -1,4 +1,38 @@
-import type { ApiErrorBody, CreateOrderRequest, CreateOrderResponse, PublicMenu } from "@menucito/shared";
+import type {
+  ApiErrorBody,
+  CartLine,
+  CreateOrderRequest,
+  CreateOrderResponse,
+  PaymentMethod,
+  PublicMenu,
+} from "@menucito/shared";
+import type { OrderFormValues } from "./order-form";
+
+/** How long the order request (headers and body) may take before it counts as a network error. */
+export const ORDER_SUBMIT_TIMEOUT_MS = 15000;
+
+/**
+ * The request body for a validated form (see `getFormErrors`). Text is trimmed and takeaway orders
+ * never carry an address, even when the diner typed one before switching.
+ */
+export function buildOrderRequest(
+  values: OrderFormValues,
+  lines: ReadonlyArray<Pick<CartLine, "productId" | "quantity" | "choices">>,
+  clientOrderId: string,
+  expectedTotalCents: number,
+): CreateOrderRequest {
+  const common = {
+    clientOrderId,
+    paymentMethod: values.payment as PaymentMethod,
+    expectedTotalCents,
+    items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, choices: { ...line.choices } })),
+  };
+  const name = values.name.trim();
+  const phone = values.phone.trim();
+  return values.fulfillment === "delivery"
+    ? { ...common, fulfillment: "delivery", customer: { name, phone, address: values.address.trim() } }
+    : { ...common, fulfillment: "takeaway", customer: { name, phone, address: null } };
+}
 
 export type SubmitOrderResult =
   | { ok: true; status: 200 | 201; data: CreateOrderResponse }
@@ -11,7 +45,8 @@ export async function submitOrder(
   fetchImpl: typeof fetch = fetch,
 ): Promise<SubmitOrderResult> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  // The abort stays armed until the body is read, so a stalled response body also times out.
+  const timeoutId = setTimeout(() => controller.abort(), ORDER_SUBMIT_TIMEOUT_MS);
 
   try {
     const res = await fetchImpl(`${apiUrl}/api/public/menus/${slug}/orders`, {
@@ -20,8 +55,6 @@ export async function submitOrder(
       body: JSON.stringify(body),
       signal: controller.signal,
     });
-
-    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = (await res.json()) as CreateOrderResponse;
@@ -36,13 +69,14 @@ export async function submitOrder(
       message: err?.error?.message,
     };
   } catch (error: unknown) {
-    clearTimeout(timeoutId);
     return {
       ok: false,
       status: 0,
       code: "NETWORK_ERROR",
       message: error instanceof Error ? error.message : "Error de red",
     };
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 

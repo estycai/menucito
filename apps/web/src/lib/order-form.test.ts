@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { ORDER_MESSAGES, ORDERS_MESSAGES } from "@menucito/shared";
 import type { StorageLike } from "./cart-store";
 import {
   EMPTY_ORDER_FORM,
+  getFormErrors,
+  minOrderShortfallCents,
   offeredFulfillments,
   offeredPaymentMethods,
   orderFormStorageKey,
@@ -73,5 +76,59 @@ describe("offeredFulfillments (scenario 10)", () => {
     expect(offeredFulfillments({ takeaway: true, delivery: true })).toEqual(["takeaway", "delivery"]);
     expect(offeredFulfillments({ takeaway: true, delivery: false })).toEqual(["takeaway"]);
     expect(offeredFulfillments({ takeaway: false, delivery: true })).toEqual(["delivery"]);
+  });
+});
+
+describe("getFormErrors", () => {
+  const valid = {
+    name: "Juan",
+    phone: "11 5555 1234",
+    fulfillment: "delivery",
+    address: "Calle 1",
+    payment: "cash",
+  } as const;
+  const both = ["takeaway", "delivery"] as const;
+  const methods = ["cash", "transfer"] as const;
+
+  it("accepts a complete form", () => {
+    expect(getFormErrors(valid, both, methods)).toEqual({});
+    expect(getFormErrors({ ...valid, fulfillment: "takeaway", address: "" }, both, methods)).toEqual({});
+  });
+
+  it("flags every missing field on an empty form", () => {
+    expect(getFormErrors(EMPTY_ORDER_FORM, both, methods)).toEqual({
+      name: ORDER_MESSAGES.nameRequired,
+      phone: ORDERS_MESSAGES.phoneRequired,
+      fulfillment: ORDER_MESSAGES.fulfillmentRequired,
+      payment: ORDER_MESSAGES.paymentRequired,
+    });
+  });
+
+  it("treats whitespace as empty and checks the length limits", () => {
+    expect(getFormErrors({ ...valid, name: "   " }, both, methods).name).toBe(ORDER_MESSAGES.nameRequired);
+    expect(getFormErrors({ ...valid, name: "n".repeat(61) }, both, methods).name).toBe(ORDER_MESSAGES.nameTooLong);
+    expect(getFormErrors({ ...valid, address: " " }, both, methods).address).toBe(ORDER_MESSAGES.addressRequired);
+    expect(getFormErrors({ ...valid, address: "a".repeat(201) }, both, methods).address).toBe(
+      ORDER_MESSAGES.addressTooLong,
+    );
+  });
+
+  it("rejects a phone that is not an Argentine WhatsApp number", () => {
+    expect(getFormErrors({ ...valid, phone: "1234" }, both, methods).phone).toBe(ORDERS_MESSAGES.phoneInvalid);
+  });
+
+  it("rejects choices the restaurant does not offer", () => {
+    const errors = getFormErrors(valid, ["takeaway"], ["transfer"]);
+    expect(errors.fulfillment).toBe(ORDER_MESSAGES.fulfillmentRequired);
+    expect(errors.payment).toBe(ORDER_MESSAGES.paymentRequired);
+  });
+});
+
+describe("minOrderShortfallCents", () => {
+  it("returns what is missing below the minimum and null otherwise", () => {
+    expect(minOrderShortfallCents(800_000, 1_000_000)).toBe(200_000);
+    expect(minOrderShortfallCents(1_000_000, 1_000_000)).toBeNull();
+    expect(minOrderShortfallCents(1_200_000, 1_000_000)).toBeNull();
+    expect(minOrderShortfallCents(100, null)).toBeNull();
   });
 });

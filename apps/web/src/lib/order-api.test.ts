@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CreateOrderRequest, CreateOrderResponse } from "@menucito/shared";
-import { ORDER_SUBMIT_MESSAGES, orderFailureAction, refreshMenu, submitOrder } from "./order-api";
+import {
+  ORDER_SUBMIT_MESSAGES,
+  ORDER_SUBMIT_TIMEOUT_MS,
+  buildOrderRequest,
+  orderFailureAction,
+  refreshMenu,
+  submitOrder,
+} from "./order-api";
 
 const sampleBody: CreateOrderRequest = {
   items: [{ productId: "p1", quantity: 1, choices: {} }],
@@ -135,5 +142,63 @@ describe("orderFailureAction (scenarios 60 and 61)", () => {
     const result = await submitOrder("http://api.local", "marta", sampleBody, vi.fn().mockRejectedValue(abort));
     expect(result.ok).toBe(false);
     if (!result.ok) expect(orderFailureAction(result)).toEqual({ kind: "message", message: ORDER_SUBMIT_MESSAGES.retry });
+  });
+});
+
+describe("submitOrder timeout", () => {
+  it("keeps the timeout armed while the response body is read", async () => {
+    vi.useFakeTimers();
+    try {
+      const stalledFetch = vi.fn((_url: string, init?: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 201,
+          json: () =>
+            new Promise((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () =>
+                reject(Object.assign(new Error("The operation was aborted"), { name: "AbortError" })),
+              );
+            }),
+        } as unknown as Response),
+      );
+      const pending = submitOrder("http://api.local", "marta", sampleBody, stalledFetch as unknown as typeof fetch);
+      await vi.advanceTimersByTimeAsync(ORDER_SUBMIT_TIMEOUT_MS);
+      const result = await pending;
+      expect(result).toMatchObject({ ok: false, status: 0, code: "NETWORK_ERROR" });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe("buildOrderRequest", () => {
+  const lines = [{ productId: "p1", quantity: 2, choices: { Queso: 2 } }];
+  const token = "10000000-0000-4000-8000-000000000001";
+
+  it("builds a delivery order with trimmed text and the address", () => {
+    const values = { name: " Juan ", phone: " 11 5555 1234 ", fulfillment: "delivery", address: " Calle 1 ", payment: "cash" } as const;
+    expect(buildOrderRequest(values, lines, token, 123_000)).toEqual({
+      clientOrderId: token,
+      customer: { name: "Juan", phone: "11 5555 1234", address: "Calle 1" },
+      fulfillment: "delivery",
+      paymentMethod: "cash",
+      expectedTotalCents: 123_000,
+      items: [{ productId: "p1", quantity: 2, choices: { Queso: 2 } }],
+    });
+  });
+
+  it("drops the address on takeaway orders", () => {
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "Calle 1", payment: "transfer" } as const;
+    const request = buildOrderRequest(values, lines, token, 100);
+    expect(request.fulfillment).toBe("takeaway");
+    expect(request.customer.address).toBeNull();
+    expect(request.paymentMethod).toBe("transfer");
+  });
+
+  it("copies the choices instead of sharing the cart object", () => {
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash" } as const;
+    const request = buildOrderRequest(values, lines, token, 100);
+    expect(request.items[0]?.choices).toEqual(lines[0]?.choices);
+    expect(request.items[0]?.choices).not.toBe(lines[0]?.choices);
   });
 });

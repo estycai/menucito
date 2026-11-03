@@ -4,17 +4,13 @@ import {
   FULFILLMENT_LABELS,
   MAX_LINE_QUANTITY,
   ORDER_ADDRESS_MAX_LENGTH,
-  ORDER_MESSAGES,
   ORDER_NAME_MAX_LENGTH,
-  ORDERS_MESSAGES,
   PAYMENT_LABELS,
   cartTotalCents,
   describeChanges,
   formatArs,
   lineTotalCents,
-  normalizeArWhatsapp,
-  type CreateOrderRequest,
-  type CreateOrderResponse,
+  orderTotals,
   type Fulfillment,
   type PaymentMethod,
   type PublicMenu,
@@ -22,10 +18,20 @@ import {
 } from "@menucito/shared";
 import { browserStorage } from "../lib/cart-store";
 import { toCatalog, type CatalogProduct } from "../lib/catalog";
-import { ORDER_SUBMIT_MESSAGES, orderFailureAction, refreshMenu, submitOrder } from "../lib/order-api";
-import { clearToken, getOrCreateToken } from "../lib/order-attempt";
-import { EMPTY_ORDER_FORM, offeredFulfillments, readOrderForm, writeOrderForm, type OrderFormValues } from "../lib/order-form";
+import { buildOrderRequest } from "../lib/order-api";
+import {
+  EMPTY_ORDER_FORM,
+  getFormErrors,
+  minOrderShortfallCents,
+  offeredFulfillments,
+  readOrderForm,
+  writeOrderForm,
+  type OrderFormField,
+  type OrderFormValues,
+} from "../lib/order-form";
 import { useCart } from "../lib/use-cart";
+import { useOrderSubmit } from "../lib/use-order-submit";
+import { OrderConfirmation } from "./OrderConfirmation";
 import { Stepper } from "./Stepper";
 
 interface OrderDetailProps {
@@ -39,8 +45,6 @@ interface OrderDetailProps {
   paymentMethods: PublicMenuPaymentMethod[];
   apiUrl: string;
 }
-
-type FormField = "name" | "phone" | "fulfillment" | "address" | "payment";
 
 /** The store rules the page works with: the server-rendered ones, replaced by a fresh menu after a conflict. */
 interface LiveStore {
@@ -68,54 +72,13 @@ function liveStoreFromMenu(menu: PublicMenu): LiveStore {
 
 const PHONE_HELP_ID = "order-phone-help";
 
-const FIELD_IDS: Record<FormField, string> = {
+const FIELD_IDS: Record<OrderFormField, string> = {
   name: "order-name",
   phone: "order-phone",
   fulfillment: "order-fulfillment",
   address: "order-address",
   payment: "order-payment",
 };
-
-function getFormErrors(
-  values: OrderFormValues,
-  offered: readonly Fulfillment[],
-  offeredMethods: readonly PaymentMethod[],
-): Partial<Record<FormField, string>> {
-  const errors: Partial<Record<FormField, string>> = {};
-
-  const trimmedName = values.name.trim();
-  if (!trimmedName) {
-    errors.name = ORDER_MESSAGES.nameRequired;
-  } else if (trimmedName.length > ORDER_NAME_MAX_LENGTH) {
-    errors.name = ORDER_MESSAGES.nameTooLong;
-  }
-
-  const trimmedPhone = values.phone.trim();
-  if (!trimmedPhone) {
-    errors.phone = ORDERS_MESSAGES.phoneRequired;
-  } else if (!normalizeArWhatsapp(trimmedPhone)) {
-    errors.phone = ORDERS_MESSAGES.phoneInvalid;
-  }
-
-  if (!values.fulfillment || !offered.includes(values.fulfillment as Fulfillment)) {
-    errors.fulfillment = ORDER_MESSAGES.fulfillmentRequired;
-  }
-
-  if (values.fulfillment === "delivery") {
-    const trimmedAddress = values.address.trim();
-    if (!trimmedAddress) {
-      errors.address = ORDER_MESSAGES.addressRequired;
-    } else if (trimmedAddress.length > ORDER_ADDRESS_MAX_LENGTH) {
-      errors.address = ORDER_MESSAGES.addressTooLong;
-    }
-  }
-
-  if (!values.payment || !offeredMethods.includes(values.payment as PaymentMethod)) {
-    errors.payment = ORDER_MESSAGES.paymentRequired;
-  }
-
-  return errors;
-}
 
 /** Order review, store policy validation, and submission with WhatsApp handoff. */
 export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps) {
@@ -130,17 +93,11 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   const regionRef = useRef<HTMLDivElement>(null);
   const emptyRef = useRef<HTMLDivElement>(null);
   const hadLines = useRef(false);
-  // A double tap or a double Enter must send a single request (scenario 60).
-  const inFlight = useRef(false);
 
   const [values, setValues] = useState<OrderFormValues>(EMPTY_ORDER_FORM);
   const [restored, setRestored] = useState(false);
-  const [touched, setTouched] = useState<ReadonlySet<FormField>>(new Set());
+  const [touched, setTouched] = useState<ReadonlySet<OrderFormField>>(new Set());
   const [submitted, setSubmitted] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [successOrder, setSuccessOrder] = useState<CreateOrderResponse | null>(null);
-  const [menuRefreshed, setMenuRefreshed] = useState(false);
 
   // Read the remembered form after hydration. Single available choices are preselected.
   useEffect(() => {
@@ -164,11 +121,31 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   }, [state.lines.length]);
 
   const change = (patch: Partial<OrderFormValues>) => setValues((current) => ({ ...current, ...patch }));
-  const touch = (field: FormField) => setTouched((current) => new Set(current).add(field));
+  const touch = (field: OrderFormField) => setTouched((current) => new Set(current).add(field));
+
+  /** Clears a choice the store no longer accepts, in the form and in the remembered copy. */
+  const resetChoice = (field: "payment" | "fulfillment") => {
+    const next = { ...values, [field]: "" };
+    // Not redundant with the persist effect: the fresh menu changes `offered`/`offeredMethods`, so the
+    // restore effect runs first in the same commit and would read the old choice back from storage.
+    writeOrderForm(browserStorage(), slug, next);
+    setValues(next);
+    touch(field);
+  };
+
+  const orderSubmit = useOrderSubmit({
+    slug,
+    apiUrl,
+    cart: store,
+    onMenu: (menu) => setLive(liveStoreFromMenu(menu)),
+    onPaused: () => setLive((current) => ({ ...current, acceptingOrders: false })),
+    onChoiceRejected: resetChoice,
+  });
+  const { submitting, submitError, successOrder, menuRefreshed } = orderSubmit;
 
   const errors = getFormErrors(values, offered, offeredMethods);
-  const visibleError = (field: FormField) => (submitted || touched.has(field) ? errors[field] : undefined);
-  const describedBy = (field: FormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
+  const visibleError = (field: OrderFormField) => (submitted || touched.has(field) ? errors[field] : undefined);
+  const describedBy = (field: OrderFormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
 
   if (successOrder) return <OrderConfirmation slug={slug} response={successOrder} />;
 
@@ -186,68 +163,22 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     );
   }
 
-  const subtotal = cartTotalCents(state.lines, priced);
-  const shipping = values.fulfillment === "delivery" ? shippingCents : 0;
-  const finalTotal = subtotal + shipping;
-  const isBelowMinOrder = minOrderCents !== null && subtotal < minOrderCents;
+  const totals = orderTotals({
+    subtotalCents: cartTotalCents(state.lines, priced),
+    shippingCents,
+    // Until a fulfillment is picked, the total is shown without shipping.
+    fulfillment: values.fulfillment === "delivery" ? "delivery" : "takeaway",
+  });
+  const shortfall = minOrderShortfallCents(totals.subtotalCents, minOrderCents);
+  const isBelowMinOrder = shortfall !== null;
 
-  /** Fetches the menu without cache and adopts its rules; `null` when it could not be read. */
-  const adoptFreshMenu = async (): Promise<PublicMenu | null> => {
-    const menu = await refreshMenu(apiUrl, slug);
-    if (menu) setLive(liveStoreFromMenu(menu));
-    return menu;
-  };
-
-  /** Clears a choice the store no longer accepts, in the form and in the remembered copy. */
-  const resetChoice = (field: "payment" | "fulfillment") => {
-    const next = { ...values, [field]: "" };
-    writeOrderForm(browserStorage(), slug, next);
-    setValues(next);
-    touch(field);
-  };
-
-  /** Reacts to a rejected order (scenario 61). Nothing is sent again until the diner taps once more. */
-  const handleFailure = async (failure: { status: number; code: string }) => {
-    const action = orderFailureAction(failure);
-    switch (action.kind) {
-      case "refreshMenu": {
-        const menu = await adoptFreshMenu();
-        if (!menu) {
-          setSubmitError(ORDER_SUBMIT_MESSAGES.retry);
-          return;
-        }
-        store.reconcile(toCatalog(menu));
-        setMenuRefreshed(true);
-        return;
-      }
-      case "paused":
-        setLive((current) => ({ ...current, acceptingOrders: false }));
-        return;
-      case "belowMinimum":
-        if (!(await adoptFreshMenu())) setSubmitError(ORDER_SUBMIT_MESSAGES.retry);
-        return;
-      case "refreshPaymentMethods":
-        await adoptFreshMenu();
-        resetChoice("payment");
-        return;
-      case "refreshFulfillments":
-        await adoptFreshMenu();
-        resetChoice("fulfillment");
-        return;
-      case "message":
-        setSubmitError(action.message);
-        return;
-    }
-  };
-
-  const submit = async (event: Event) => {
+  const submit = (event: Event) => {
     event.preventDefault();
-    if (inFlight.current) return;
+    if (orderSubmit.isSending()) return;
     setSubmitted(true);
-    setSubmitError(null);
+    orderSubmit.clearError();
 
-    const currentErrors = getFormErrors(values, offered, offeredMethods);
-    const firstInvalid = (Object.keys(FIELD_IDS) as FormField[]).find((field) => currentErrors[field]);
+    const firstInvalid = (Object.keys(FIELD_IDS) as OrderFormField[]).find((field) => errors[field]);
     if (firstInvalid) {
       document.getElementById(FIELD_IDS[firstInvalid])?.focus();
       return;
@@ -255,63 +186,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
 
     if (!acceptingOrders || isBelowMinOrder) return;
 
-    inFlight.current = true;
-    setSubmitting(true);
-    setMenuRefreshed(false);
-    const storage = browserStorage();
-    const clientOrderId = getOrCreateToken(storage, slug);
-
-    const items = state.lines.map((line) => ({
-      productId: line.productId,
-      quantity: line.quantity,
-      choices: { ...line.choices },
-    }));
-
-    const payload: CreateOrderRequest =
-      values.fulfillment === "delivery"
-        ? {
-            clientOrderId,
-            customer: {
-              name: values.name.trim(),
-              phone: values.phone.trim(),
-              address: values.address.trim(),
-            },
-            fulfillment: "delivery",
-            paymentMethod: values.payment as PaymentMethod,
-            expectedTotalCents: finalTotal,
-            items,
-          }
-        : {
-            clientOrderId,
-            customer: {
-              name: values.name.trim(),
-              phone: values.phone.trim(),
-              address: null,
-            },
-            fulfillment: "takeaway",
-            paymentMethod: values.payment as PaymentMethod,
-            expectedTotalCents: finalTotal,
-            items,
-          };
-
-    const result = await submitOrder(apiUrl, slug, payload);
-
-    if (result.ok) {
-      inFlight.current = false;
-      setSubmitting(false);
-      clearToken(storage, slug);
-      store.clear();
-      // The confirmation counts down and then opens WhatsApp (or the customer taps the button).
-      setSuccessOrder(result.data);
-      return;
-    }
-
-    try {
-      await handleFailure(result);
-    } finally {
-      inFlight.current = false;
-      setSubmitting(false);
-    }
+    void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents));
   };
 
   return (
@@ -326,7 +201,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         <Notice
           onDismiss={() => {
             store.dismissNotice();
-            setMenuRefreshed(false);
+            orderSubmit.dismissMenuRefreshed();
           }}
         />
       )}
@@ -379,7 +254,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
       <dl class="order-breakdown">
         <div class="order-breakdown-row">
           <dt>Subtotal</dt>
-          <dd>{formatArs(subtotal)}</dd>
+          <dd>{formatArs(totals.subtotalCents)}</dd>
         </div>
         {values.fulfillment === "delivery" &&
           (shippingCents > 0 ? (
@@ -395,7 +270,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         <div class="order-breakdown-total">
           <dt>Total</dt>
           <dd aria-live="polite" aria-atomic="true">
-            <strong>{formatArs(finalTotal)}</strong>
+            <strong>{formatArs(totals.totalCents)}</strong>
           </dd>
         </div>
       </dl>
@@ -548,9 +423,9 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         )}
 
         <div aria-live="polite" aria-atomic="true">
-          {isBelowMinOrder && minOrderCents !== null && (
+          {shortfall !== null && minOrderCents !== null && (
             <p class="order-min-warning">
-              El pedido mínimo es {formatArs(minOrderCents)}. Te faltan {formatArs(minOrderCents - subtotal)}.
+              El pedido mínimo es {formatArs(minOrderCents)}. Te faltan {formatArs(shortfall)}.
             </p>
           )}
         </div>
@@ -570,97 +445,6 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         </button>
         <p class="order-note">Al enviar, se abrirá WhatsApp con el detalle de tu pedido para coordinar con el local.</p>
       </form>
-    </div>
-  );
-}
-
-/** Seconds the confirmation stays on screen before opening WhatsApp on its own. */
-const WHATSAPP_REDIRECT_SECONDS = 5;
-
-/**
- * Scenario 59: the title takes the focus so the result is announced. WhatsApp opens after a short
- * countdown, so the customer can read the confirmation (and the transfer data) first; the button
- * opens it right away and the countdown can be stopped.
- */
-function OrderConfirmation({ slug, response }: { slug: string; response: CreateOrderResponse }) {
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  useEffect(() => titleRef.current?.focus(), []);
-
-  const { order, payment, whatsappUrl } = response;
-  const [secondsLeft, setSecondsLeft] = useState<number | null>(WHATSAPP_REDIRECT_SECONDS);
-
-  useEffect(() => {
-    if (secondsLeft === null) return;
-    if (secondsLeft === 0) {
-      // A navigation, not a new window, so pop-up blockers do not get in the way.
-      window.location.href = whatsappUrl;
-      return;
-    }
-    const timer = setTimeout(() => setSecondsLeft(secondsLeft - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [secondsLeft, whatsappUrl]);
-
-  return (
-    <div class="order-confirmation" role="status">
-      <span class="order-confirmation-badge" aria-hidden="true">
-        ✓
-      </span>
-      <h2 class="order-confirmation-title" ref={titleRef} tabIndex={-1}>
-        Pedido #{order.number} enviado
-      </h2>
-      <dl class="order-breakdown order-confirmation-summary">
-        <div class="order-breakdown-row">
-          <dt>Entrega</dt>
-          <dd>{FULFILLMENT_LABELS[order.fulfillment]}</dd>
-        </div>
-        <div class="order-breakdown-total">
-          <dt>Total</dt>
-          <dd>
-            <strong>{formatArs(order.totalCents)}</strong>
-          </dd>
-        </div>
-      </dl>
-      {order.paymentMethod === "transfer" && (
-        <div class="order-transfer-box">
-          {payment?.alias || payment?.holderName ? (
-            <>
-              <p>
-                <strong>Datos para la transferencia:</strong>
-              </p>
-              {payment.alias && (
-                <p>
-                  Alias: <strong>{payment.alias}</strong>
-                </p>
-              )}
-              {payment.holderName && (
-                <p>
-                  Titular: <strong>{payment.holderName}</strong>
-                </p>
-              )}
-            </>
-          ) : (
-            <p>El local te pasa los datos por WhatsApp</p>
-          )}
-        </div>
-      )}
-      <p class="order-confirmation-message">Tocá el botón para mandarle el pedido al local por WhatsApp.</p>
-      <a class="primary-button" href={whatsappUrl}>
-        Abrir WhatsApp
-      </a>
-      {secondsLeft !== null && (
-        // aria-live off: the parent status region would otherwise announce every tick.
-        <p class="order-confirmation-countdown" aria-live="off">
-          {secondsLeft > 0 ? `Te llevamos a WhatsApp en ${secondsLeft} s…` : "Abriendo WhatsApp…"}{" "}
-          {secondsLeft > 0 && (
-            <button type="button" class="link-button" onClick={() => setSecondsLeft(null)}>
-              Quedarme acá
-            </button>
-          )}
-        </p>
-      )}
-      <a class="back-link" href={`/${slug}`}>
-        ← Volver al menú
-      </a>
     </div>
   );
 }
