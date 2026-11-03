@@ -7,11 +7,29 @@
   --color-link: #9a3412;
   --color-accent: #fb923c;
   --color-line: #e7e2dc;
+  --color-line-soft: #f0ece6;
+  --color-line-strong: #d6d3d1;
   --color-muted: #57534e;
   --color-tab: #ede9e3;
   --color-danger: #b91c1c;
+  --color-danger-soft: #fee2e2;
   --color-success: #166534;
+  --color-success-soft: #dcfce7;
   --color-warning: #92400e;
+  --color-warning-soft: #fef3c7;
+  --color-info: #1e40af;
+  --color-info-soft: #dbeafe;
+  /*
+   * Order status: one hue per stage of the flow. Amber and green stay reserved for the payment
+   * status (Pendiente / Pagado) so the two badges of a row never read as the same thing. Dark text
+   * on a 100 tint keeps every pair above AA contrast.
+   */
+  --color-status-new: #1e40af;
+  --color-status-new-soft: #dbeafe;
+  --color-status-preparing: #5b21b6;
+  --color-status-preparing-soft: #ede9fe;
+  --color-status-ready: #115e59;
+  --color-status-ready-soft: #ccfbf1;
   --color-primary-soft: #fff7ed;
   --color-addon: #f5f3ef;
   --color-nav-active: #ffedd5;

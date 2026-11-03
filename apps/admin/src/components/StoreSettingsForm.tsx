@@ -1,20 +1,30 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { Notice } from "@/components/AuthLayout";
+import { FormField } from "@/components/FormField";
+import { QueryError } from "@/components/QueryError";
+import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   checkSettings,
   useStoreSettings,
   useUpdateStoreSettings,
   valuesFromSettings,
+  type StoreSettings,
   type StoreSettingsValues,
 } from "@/lib/settings";
-import { cn } from "@/lib/utils";
+
+const SETTINGS_LOAD_MESSAGES = {
+  loadFailed: "No pudimos cargar la configuración.",
+} as const;
 
 export function StoreSettingsForm() {
-  const { data: settings, isLoading } = useStoreSettings();
+  const { data: settings, isError, isRefetching, refetch } = useStoreSettings();
 
-  if (isLoading || !settings) {
-    return null;
+  if (!settings) {
+    return isError ? (
+      <QueryError message={SETTINGS_LOAD_MESSAGES.loadFailed} onRetry={() => void refetch()} retrying={isRefetching} />
+    ) : null;
   }
 
   return (
@@ -31,8 +41,8 @@ const RECEPTION_MESSAGES = {
   saveFailed: "No pudimos guardar el cambio. Probá de nuevo.",
 } as const;
 
-function ReceptionCard({ settings }: { settings: NonNullable<ReturnType<typeof useStoreSettings>["data"]> }) {
-  const id = useId();
+/** Container: saves the switch with an optimistic value that reverts when the save fails. */
+function ReceptionCard({ settings }: { settings: StoreSettings }) {
   const update = useUpdateStoreSettings();
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -40,8 +50,7 @@ function ReceptionCard({ settings }: { settings: NonNullable<ReturnType<typeof u
 
   const accepting = optimistic ?? settings.acceptingOrders;
 
-  async function handleToggle() {
-    const next = !accepting;
+  async function handleToggle(next: boolean) {
     setOptimistic(next);
     setError(null);
     setAnnouncement(next ? RECEPTION_MESSAGES.activeAnnouncement : RECEPTION_MESSAGES.pausedAnnouncement);
@@ -57,45 +66,41 @@ function ReceptionCard({ settings }: { settings: NonNullable<ReturnType<typeof u
   }
 
   return (
-    <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 sm:p-6">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex flex-col gap-1">
-          <h2 id={`${id}-title`} className="m-0 font-display text-xl font-extrabold">
-            Recepción de pedidos
-          </h2>
-          <p className="m-0 text-[13px] text-muted">
-            Pausá la recepción cuando no puedas tomar pedidos. Tu menú sigue visible para tus clientes.
-          </p>
-        </div>
+    <ReceptionCardView
+      accepting={accepting}
+      saving={update.isPending}
+      announcement={announcement}
+      error={error}
+      onToggle={handleToggle}
+    />
+  );
+}
 
-        <button
-          type="button"
-          role="switch"
-          aria-checked={accepting}
-          aria-label="Recibir pedidos"
-          disabled={update.isPending}
-          onClick={handleToggle}
-          className={cn(
-            "relative inline-flex min-h-[44px] w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-            accepting ? "bg-success" : "bg-[#d6d3d1]",
-          )}
-        >
-          <span
-            aria-hidden="true"
-            className={cn(
-              "pointer-events-none inline-block size-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
-              accepting ? "translate-x-7" : "translate-x-0.5",
-            )}
-          />
-        </button>
-      </div>
-
+function ReceptionCardView({
+  accepting,
+  saving,
+  announcement,
+  error,
+  onToggle,
+}: {
+  accepting: boolean;
+  saving: boolean;
+  announcement: string | null;
+  error: string | null;
+  onToggle: (next: boolean) => void;
+}) {
+  return (
+    <SectionCard
+      title="Recepción de pedidos"
+      description="Pausá la recepción cuando no puedas tomar pedidos. Tu menú sigue visible para tus clientes."
+      action={<Switch checked={accepting} onCheckedChange={onToggle} disabled={saving} aria-label="Recibir pedidos" />}
+    >
       <div aria-live="polite" className="sr-only">
         {announcement}
       </div>
 
       {error && <Notice tone="error">{error}</Notice>}
-    </section>
+    </SectionCard>
   );
 }
 
@@ -105,8 +110,7 @@ const SETTINGS_CARD_MESSAGES = {
   incompleteTransferWarning: "Completá el alias y el titular para que tus clientes sepan dónde transferir.",
 } as const;
 
-function PaymentsShippingCard({ settings }: { settings: NonNullable<ReturnType<typeof useStoreSettings>["data"]> }) {
-  const id = useId();
+function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
   const update = useUpdateStoreSettings();
   const [status, setStatus] = useState<"saved" | "error" | null>(null);
 
@@ -132,77 +136,31 @@ function PaymentsShippingCard({ settings }: { settings: NonNullable<ReturnType<t
     }
   }
 
-  const minOrderId = `${id}-min-order`;
-  const shippingId = `${id}-shipping`;
-  const aliasId = `${id}-transfer-alias`;
-  const holderId = `${id}-transfer-holder`;
-
   return (
-    <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 sm:p-6">
-      <h2 id={`${id}-title`} className="m-0 font-display text-xl font-extrabold">
-        Pagos y envío
-      </h2>
-
+    <SectionCard title="Pagos y envío">
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
-        {/* Min Order & Shipping */}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={minOrderId} className="text-[13px] font-bold">
-              Pedido mínimo
-            </label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">$</span>
-              <input
-                id={minOrderId}
-                type="text"
-                inputMode="numeric"
-                value={form.minOrder}
-                onChange={(e) => handleChange("minOrder", e.target.value)}
-                aria-invalid={check.errors.minOrder ? true : undefined}
-                aria-describedby={[`${minOrderId}-help`, check.errors.minOrder && `${minOrderId}-error`].filter(Boolean).join(" ")}
-                className="box-border min-h-[44px] w-full rounded-xl border border-line bg-white pl-8 pr-3.5 text-base text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-danger"
-              />
-            </div>
-            <span id={`${minOrderId}-help`} className="text-xs text-muted">
-              Dejalo vacío si no hay pedido mínimo.
-            </span>
-            {check.errors.minOrder && (
-              <p id={`${minOrderId}-error`} className="m-0 text-[13px] text-danger">
-                {check.errors.minOrder}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor={shippingId} className="text-[13px] font-bold">
-              Costo de envío
-            </label>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">$</span>
-              <input
-                id={shippingId}
-                type="text"
-                inputMode="numeric"
-                value={form.shipping}
-                onChange={(e) => handleChange("shipping", e.target.value)}
-                aria-invalid={check.errors.shipping ? true : undefined}
-                aria-describedby={[`${shippingId}-help`, check.errors.shipping && `${shippingId}-error`].filter(Boolean).join(" ")}
-                className="box-border min-h-[44px] w-full rounded-xl border border-line bg-white pl-8 pr-3.5 text-base text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-danger"
-              />
-            </div>
-            <span id={`${shippingId}-help`} className="text-xs text-muted">
-              Solo se suma en pedidos con envío a domicilio.
-            </span>
-            {check.errors.shipping && (
-              <p id={`${shippingId}-error`} className="m-0 text-[13px] text-danger">
-                {check.errors.shipping}
-              </p>
-            )}
-          </div>
+          <FormField
+            label="Pedido mínimo"
+            prefix="$"
+            inputMode="numeric"
+            value={form.minOrder}
+            onChange={(e) => handleChange("minOrder", e.target.value)}
+            hint="Dejalo vacío si no hay pedido mínimo."
+            error={check.errors.minOrder}
+          />
+          <FormField
+            label="Costo de envío"
+            prefix="$"
+            inputMode="numeric"
+            value={form.shipping}
+            onChange={(e) => handleChange("shipping", e.target.value)}
+            hint="Solo se suma en pedidos con envío a domicilio."
+            error={check.errors.shipping}
+          />
         </div>
 
-        {/* Payment Methods */}
-        <div className="flex flex-col gap-3 border-t border-[#f0ece6] pt-4">
+        <div className="flex flex-col gap-3 border-t border-line-soft pt-4">
           <span className="text-[13px] font-bold">Formas de pago que aceptás</span>
 
           {check.hasIncompleteTransferWarning && (
@@ -231,58 +189,28 @@ function PaymentsShippingCard({ settings }: { settings: NonNullable<ReturnType<t
             </label>
           </div>
 
-          {check.errors.methods && (
-            <p className="m-0 text-[13px] text-danger">{check.errors.methods}</p>
-          )}
+          {check.errors.methods && <p className="m-0 text-[13px] text-danger">{check.errors.methods}</p>}
 
           {form.transferEnabled && (
             <div className="mt-2 flex flex-col gap-3 rounded-xl border border-line bg-bg/50 p-3.5 sm:p-4">
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={aliasId} className="text-[13px] font-bold">
-                  Alias
-                </label>
-                <input
-                  id={aliasId}
-                  type="text"
-                  placeholder="ej: marta.hamburguesas"
-                  value={form.transferAlias}
-                  onChange={(e) => handleChange("transferAlias", e.target.value)}
-                  aria-invalid={check.errors.transferAlias ? true : undefined}
-                  aria-describedby={check.errors.transferAlias ? `${aliasId}-error` : undefined}
-                  className="box-border min-h-[44px] w-full rounded-xl border border-line bg-white px-3.5 text-base text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-danger"
-                />
-                {check.errors.transferAlias && (
-                  <p id={`${aliasId}-error`} className="m-0 text-[13px] text-danger">
-                    {check.errors.transferAlias}
-                  </p>
-                )}
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor={holderId} className="text-[13px] font-bold">
-                  Titular de la cuenta
-                </label>
-                <input
-                  id={holderId}
-                  type="text"
-                  placeholder="ej: Marta Gómez"
-                  value={form.transferHolderName}
-                  onChange={(e) => handleChange("transferHolderName", e.target.value)}
-                  aria-invalid={check.errors.transferHolderName ? true : undefined}
-                  aria-describedby={check.errors.transferHolderName ? `${holderId}-error` : undefined}
-                  className="box-border min-h-[44px] w-full rounded-xl border border-line bg-white px-3.5 text-base text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 aria-[invalid=true]:border-danger"
-                />
-                {check.errors.transferHolderName && (
-                  <p id={`${holderId}-error`} className="m-0 text-[13px] text-danger">
-                    {check.errors.transferHolderName}
-                  </p>
-                )}
-              </div>
+              <FormField
+                label="Alias"
+                placeholder="ej: marta.hamburguesas"
+                value={form.transferAlias}
+                onChange={(e) => handleChange("transferAlias", e.target.value)}
+                error={check.errors.transferAlias}
+              />
+              <FormField
+                label="Titular de la cuenta"
+                placeholder="ej: Marta Gómez"
+                value={form.transferHolderName}
+                onChange={(e) => handleChange("transferHolderName", e.target.value)}
+                error={check.errors.transferHolderName}
+              />
             </div>
           )}
         </div>
 
-        {/* Submit button & feedback */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
           <div className="min-w-0" aria-live="polite">
             {status === "saved" && <Notice tone="success">{SETTINGS_CARD_MESSAGES.saved}</Notice>}
@@ -297,6 +225,6 @@ function PaymentsShippingCard({ settings }: { settings: NonNullable<ReturnType<t
         </div>
         {status === "error" && <Notice tone="error">{SETTINGS_CARD_MESSAGES.saveFailed}</Notice>}
       </form>
-    </section>
+    </SectionCard>
   );
 }

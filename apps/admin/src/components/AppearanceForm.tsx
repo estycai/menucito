@@ -6,6 +6,7 @@ import { BACKGROUND_SWATCHES, ColorField, ColorReadOnly, PRIMARY_SWATCHES } from
 import { CoverUploader } from "@/components/CoverUploader";
 import { LogoUploader } from "@/components/LogoUploader";
 import { ProLock } from "@/components/ProLock";
+import { SectionCard } from "@/components/SectionCard";
 import { Button } from "@/components/ui/button";
 import {
   canCustomizeColors,
@@ -79,10 +80,7 @@ export function AppearanceForm({ restaurant, onDraftChange }: AppearanceFormProp
   const descriptionError = check.errors.description;
 
   return (
-    <section aria-labelledby={`${id}-title`} className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 sm:p-6">
-      <h2 id={`${id}-title`} className="m-0 font-display text-xl font-extrabold">
-        Apariencia
-      </h2>
+    <SectionCard title="Apariencia">
       <CoverUploader restaurant={restaurant} />
       <div className="flex flex-col gap-2">
         <span className="text-[13px] font-bold">Logo</span>
@@ -114,7 +112,7 @@ export function AppearanceForm({ restaurant, onDraftChange }: AppearanceFormProp
         </div>
 
         {customColors ? (
-          <section aria-labelledby={`${id}-colors`} className="flex flex-col gap-3 border-t border-[#f0ece6] pt-4">
+          <section aria-labelledby={`${id}-colors`} className="flex flex-col gap-3 border-t border-line-soft pt-4">
             <h3 id={`${id}-colors`} className="m-0 text-[13px] font-bold">
               Colores de tu menú
             </h3>
@@ -161,7 +159,7 @@ export function AppearanceForm({ restaurant, onDraftChange }: AppearanceFormProp
         </div>
         {status === "error" && <Notice tone="error">{MESSAGES.saveFailed}</Notice>}
       </form>
-    </section>
+    </SectionCard>
   );
 }
 
@@ -179,7 +177,7 @@ function LockedColors({ restaurant }: { restaurant: Restaurant }) {
       ) : (
         <div inert aria-hidden="true" className="flex items-center gap-2.5">
           {[...BACKGROUND_SWATCHES.slice(0, 2), ...PRIMARY_SWATCHES.slice(0, 2)].map((swatch) => (
-            <span key={swatch.hex} style={{ backgroundColor: swatch.hex }} className="size-9 rounded-full border border-[#d6d3d1]" />
+            <span key={swatch.hex} style={{ backgroundColor: swatch.hex }} className="size-9 rounded-full border border-line-strong" />
           ))}
         </div>
       )}

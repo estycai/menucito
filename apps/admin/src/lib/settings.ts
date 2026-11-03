@@ -10,6 +10,8 @@ import {
 } from "@menucito/shared";
 import { api } from "./restaurant";
 
+export type { StoreSettings };
+
 export const STORE_SETTINGS_KEY = ["restaurant", "settings"] as const;
 
 export interface StoreSettingsValues {

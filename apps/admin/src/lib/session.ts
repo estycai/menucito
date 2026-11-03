@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router";
 import { authClient, unwrap } from "./auth-client";
 import { RESTAURANT_KEY } from "./restaurant";
@@ -18,6 +18,15 @@ export function useSession() {
   });
 }
 
+/**
+ * Forgets the cached session and restaurant. With no session, `RequireAuth` sends every protected
+ * route to /login.
+ */
+export function clearSession(queryClient: QueryClient) {
+  queryClient.setQueryData(SESSION_KEY, null);
+  queryClient.removeQueries({ queryKey: RESTAURANT_KEY });
+}
+
 /** Ends the session, clears the cached session and restaurant, and lands on /login. */
 export function useSignOut() {
   const navigate = useNavigate();
@@ -25,8 +34,7 @@ export function useSignOut() {
   return useMutation({
     mutationFn: async () => unwrap(await authClient.signOut()),
     onSuccess: () => {
-      queryClient.setQueryData(SESSION_KEY, null);
-      queryClient.removeQueries({ queryKey: RESTAURANT_KEY });
+      clearSession(queryClient);
       navigate("/login", { replace: true });
     },
   });

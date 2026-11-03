@@ -7,6 +7,8 @@ import {
   dropTargetsFor,
   filtersFromSearchParams,
   filtersToSearchParams,
+  exportErrorFrom,
+  isExportTooLargeError,
   isInvalidTransitionError,
   isValidDrop,
   moveOrder,
@@ -158,5 +160,38 @@ describe("isInvalidTransitionError", () => {
     expect(isInvalidTransitionError(new ApiError(500, "INTERNAL", "x"))).toBe(false);
     expect(isInvalidTransitionError(new Error("network"))).toBe(false);
     expect(isInvalidTransitionError(null)).toBe(false);
+  });
+});
+
+describe("isExportTooLargeError", () => {
+  it("recognizes only the too-many-orders code, not any 422 or a network error", () => {
+    expect(isExportTooLargeError(new ApiError(422, "EXPORT_TOO_LARGE", "x"))).toBe(true);
+    expect(isExportTooLargeError(new ApiError(422, "VALIDATION_ERROR", "x"))).toBe(false);
+    expect(isExportTooLargeError(new TypeError("Failed to fetch"))).toBe(false);
+    expect(isExportTooLargeError(undefined)).toBe(false);
+  });
+});
+
+describe("exportErrorFrom", () => {
+  const json = (status: number, body: unknown) =>
+    new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+  it("reads the code from the JSON body", async () => {
+    const err = await exportErrorFrom(json(422, { error: { code: "EXPORT_TOO_LARGE", message: "Too many" } }));
+    expect(err).toBeInstanceOf(ApiError);
+    expect(err.status).toBe(422);
+    expect(err.code).toBe("EXPORT_TOO_LARGE");
+    expect(isExportTooLargeError(err)).toBe(true);
+  });
+
+  it("keeps other 422 codes apart from the too-many case", async () => {
+    const err = await exportErrorFrom(json(422, { error: { code: "VALIDATION_ERROR", message: "Bad dates" } }));
+    expect(isExportTooLargeError(err)).toBe(false);
+  });
+
+  it("falls back to UNKNOWN when the body is not JSON", async () => {
+    const err = await exportErrorFrom(new Response("<html>", { status: 502 }));
+    expect(err.status).toBe(502);
+    expect(err.code).toBe("UNKNOWN");
   });
 });

@@ -34,8 +34,8 @@ type NoticeTone = "info" | "error" | "success" | "warning";
 const NOTICE_STYLES: Record<NoticeTone, string> = {
   info: "border-line bg-white text-muted",
   error: "border-danger/30 bg-danger/5 text-danger",
-  success: "border-success/30 bg-[#DCFCE7] font-bold text-success",
-  warning: "border-warning/30 bg-[#FEF3C7] text-warning",
+  success: "border-success/30 bg-success-soft font-bold text-success",
+  warning: "border-warning/30 bg-warning-soft text-warning",
 };
 
 /** Check (success) and triangle (warning) icons; `error` and `info` have none. */

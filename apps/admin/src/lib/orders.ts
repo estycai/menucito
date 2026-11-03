@@ -3,6 +3,7 @@ import {
   ACTIVE_ORDER_STATUSES,
   canTransition,
   localDateKey,
+  type ApiErrorBody,
   type OrderDetail,
   type OrderStatus,
   type OrderSummary,
@@ -170,9 +171,24 @@ export function moveOrder(page: OrdersPage | undefined, id: string, status: Orde
   };
 }
 
+function hasErrorCode(err: unknown, code: string): boolean {
+  return Boolean(err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === code);
+}
+
 /** A 409 from the status change: someone else moved the order first. */
 export function isInvalidTransitionError(err: unknown): boolean {
-  return Boolean(err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === "INVALID_TRANSITION");
+  return hasErrorCode(err, "INVALID_TRANSITION");
+}
+
+/** A 422 from the export whose body says the range has too many orders (any other error is generic). */
+export function isExportTooLargeError(err: unknown): boolean {
+  return hasErrorCode(err, "EXPORT_TOO_LARGE");
+}
+
+/** Error of a failed export response, carrying the `{error: {code}}` of its JSON body when there is one. */
+export async function exportErrorFrom(res: Response): Promise<ApiError> {
+  const body = (await res.json().catch(() => null)) as ApiErrorBody | null;
+  return new ApiError(res.status, body?.error?.code ?? "UNKNOWN", body?.error?.message ?? res.statusText);
 }
 
 export function useOrders(filters: OrderFilters) {
@@ -253,12 +269,7 @@ export async function downloadOrdersCsv(filters: OrderFilters) {
     credentials: "same-origin",
   });
 
-  if (!res.ok) {
-    if (res.status === 422) {
-      throw new ApiError(422, "EXPORT_TOO_LARGE", "Hay demasiados pedidos para exportar. Acotá las fechas.");
-    }
-    throw new ApiError(res.status, "EXPORT_FAILED", "No pudimos exportar los pedidos. Probá de nuevo.");
-  }
+  if (!res.ok) throw await exportErrorFrom(res);
 
   const blob = await res.blob();
   const disposition = res.headers.get("Content-Disposition") ?? "";
