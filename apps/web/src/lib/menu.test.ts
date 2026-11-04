@@ -57,7 +57,10 @@ describe("resolveMenu", () => {
   it("returns the menu on 200", async () => {
     const fetchImpl = respond(200, menu);
     expect(await resolveMenu("lo-de-marta", API, fetchImpl)).toEqual({ status: "ok", menu });
-    expect(fetchImpl).toHaveBeenCalledWith(`${API}/api/public/menus/lo-de-marta`, expect.any(Object));
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `${API}/api/public/menus/lo-de-marta`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
   });
 
   it("answers not-found when the API does", async () => {
@@ -78,7 +81,7 @@ describe("resolveMenu", () => {
 
 describe("responseFor", () => {
   it("caches a menu briefly and never caches an error", () => {
-    expect(responseFor({ status: "ok", menu })).toEqual({ status: 200, cacheControl: "public, max-age=60" });
+    expect(responseFor({ status: "ok", menu })).toEqual({ status: 200, cacheControl: "private, no-cache" });
     expect(responseFor({ status: "not-found" })).toEqual({ status: 404, cacheControl: "no-store" });
     expect(responseFor({ status: "unavailable" })).toEqual({ status: 503, cacheControl: "no-store" });
   });

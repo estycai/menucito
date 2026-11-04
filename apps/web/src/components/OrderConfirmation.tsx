@@ -10,9 +10,10 @@ const NAVIGATION_STALL_MS = 2000;
 /**
  * Scenario 59: the title takes the focus so the result is announced. WhatsApp opens after a short
  * countdown, so the customer can read the confirmation (and the transfer data) first; the button
- * opens it right away and the countdown can be stopped.
+ * opens it right away and the countdown can be stopped. "Volver al menú" is the page's own link,
+ * above the island, so the confirmation does not repeat it.
  */
-export function OrderConfirmation({ slug, response }: { slug: string; response: CreateOrderResponse }) {
+export function OrderConfirmation({ response }: { response: CreateOrderResponse }) {
   const titleRef = useRef<HTMLHeadingElement>(null);
   useEffect(() => titleRef.current?.focus(), []);
 
@@ -93,9 +94,6 @@ export function OrderConfirmation({ slug, response }: { slug: string; response: 
           )}
         </p>
       )}
-      <a class="back-link" href={`/${slug}`}>
-        ← Volver al menú
-      </a>
     </div>
   );
 }

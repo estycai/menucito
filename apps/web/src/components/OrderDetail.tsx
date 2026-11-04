@@ -147,7 +147,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   const visibleError = (field: OrderFormField) => (submitted || touched.has(field) ? errors[field] : undefined);
   const describedBy = (field: OrderFormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
 
-  if (successOrder) return <OrderConfirmation slug={slug} response={successOrder} />;
+  if (successOrder) return <OrderConfirmation response={successOrder} />;
 
   if (!state.ready) return <p class="order-status">Cargando tu pedido…</p>;
 

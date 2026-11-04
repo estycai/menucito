@@ -14,7 +14,9 @@ export type MenuResult =
 
 /**
  * HTTP status and cache policy of a menu page, shared by every page that resolves a menu so the
- * menu and the order detail cannot drift. Errors are real statuses and are never cached.
+ * menu and the order detail cannot drift. Errors are real statuses and are never cached. A menu is
+ * revalidated on every visit, so pausing or resuming orders shows on the next load (spec 11b,
+ * decision 7).
  */
 export function responseFor(result: Exclude<MenuResult, { status: "redirect" }>): {
   status: 200 | 404 | 503;
@@ -22,7 +24,7 @@ export function responseFor(result: Exclude<MenuResult, { status: "redirect" }>)
 } {
   if (result.status === "not-found") return { status: 404, cacheControl: "no-store" };
   if (result.status === "unavailable") return { status: 503, cacheControl: "no-store" };
-  return { status: 200, cacheControl: "public, max-age=60" };
+  return { status: 200, cacheControl: "private, no-cache" };
 }
 
 /** `apiUrl` without a trailing slash. */
@@ -53,6 +55,8 @@ export async function resolveMenu(
   try {
     const response = await fetchImpl(`${trimBase(apiUrl)}/api/public/menus/${encodeURIComponent(lower)}`, {
       headers: { Accept: "application/json" },
+      // The API answers with `max-age=60` for other clients; the page always wants the current menu.
+      cache: "no-store",
       signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
     if (response.status === 404) return { status: "not-found" };

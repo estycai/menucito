@@ -28,8 +28,9 @@ const menu = result.status === "ok" ? result.menu : null;
       colors={menu.restaurant.colors}
     >
       <main class="column order-page">
+        {/* The only "Volver al menú" of the page: the confirmation reuses it (spec 11b, scenario 4). */}
         <a class="back-link" href={`/${menu.restaurant.slug}`}>
-          ← Volver al menú
+          <span aria-hidden="true">←</span> Volver al menú
         </a>
         <header class="order-header">
           <h1 class="order-title">Tu pedido</h1>

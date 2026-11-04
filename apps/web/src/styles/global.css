@@ -588,6 +588,7 @@ button:disabled {
   width: 100%;
   min-height: 48px;
   font-size: 16px;
+  text-decoration: none;
 }
 
 .primary-button:disabled {
@@ -838,11 +839,28 @@ button:disabled {
   padding-block: 16px 48px;
 }
 
-.back-link {
+/* Text button of the theme (like `.text-button`), but a link: no visited color, underline on hover. */
+.back-link,
+.back-link:visited {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: 44px;
-  font-weight: 500;
+  color: var(--color-link);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.back-link:focus-visible {
+  outline: 3px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
 
 .order-header {
@@ -1072,7 +1090,7 @@ button:disabled {
   color: var(--color-warning-ink);
   font-size: 14px;
   font-weight: 500;
-  margin-bottom: 16px;
+  margin-block: 16px;
 }
 
 .pause-banner a {
