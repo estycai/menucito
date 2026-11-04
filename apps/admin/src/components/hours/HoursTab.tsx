@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   HOURS_FULFILLMENTS,
@@ -105,21 +105,20 @@ function HoursEditor({ savedSlots }: { savedSlots: HoursSlot[] }) {
   const save = useSaveStoreHours();
   const [week, setWeek] = useState<WeekDraft>(() => weekFromSlots(savedSlots, newKey));
   const [baseline, setBaseline] = useState(() => weekSignature(weekFromSlots(savedSlots, newKey)));
-  const [errors, setErrors] = useState<Record<string, SlotErrors>>({});
   const [status, setStatus] = useState<SaveStatus>(null);
 
   const dirty = weekSignature(week) !== baseline;
+  // Checked on every edit so an overlap or a bad time shows up while typing, not only on save.
+  const check = useMemo(() => checkWeek(week), [week]);
+  const errors: Record<string, SlotErrors> = check.input ? {} : check.errors;
 
   function edit(next: (current: WeekDraft) => WeekDraft) {
     setStatus(null);
-    setErrors({});
     setWeek(next);
   }
 
   async function handleSave() {
-    const check = checkWeek(week);
     if (!check.input) {
-      setErrors(check.errors);
       setStatus({ tone: "error", text: HOURS_MESSAGES.invalid });
       return;
     }
