@@ -154,3 +154,99 @@ describe("migration 0006_orders (scenario 8)", () => {
     }
   });
 });
+
+describe("migration 0007_delivery_zones", () => {
+  it("keeps existing settings and orders valid, defaulting to flat delivery, and adds the zone tables empty", async () => {
+    const db = env.MIGRATION_DB;
+    const before = env.TEST_MIGRATIONS.filter((m) => m.name < "0007");
+    const zonesMigration = env.TEST_MIGRATIONS.filter((m) => m.name.startsWith("0007"));
+    expect(zonesMigration).toHaveLength(1);
+
+    await applyD1Migrations(db, before);
+
+    const now = 1_700_000_000_000;
+    await db.batch([
+      db
+        .prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)")
+        .bind("u4", "D", "d@example.com", now, now),
+      db
+        .prepare(
+          "INSERT INTO restaurants (id, owner_id, slug, name, whatsapp, delivery, takeaway, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)",
+        )
+        .bind("r4", "u4", "cuatro", "Cuatro", "5491112345678", now, now),
+      db
+        .prepare("INSERT INTO restaurant_settings (restaurant_id, shipping_cents, updated_at) VALUES (?, ?, ?)")
+        .bind("r4", 150000, now),
+      db
+        .prepare(
+          "INSERT INTO orders (id, restaurant_id, number, client_token, fulfillment, payment_method, customer_name, customer_phone, delivery_address, subtotal_cents, shipping_cents, total_cents, created_at, updated_at) VALUES (?, ?, 1, ?, 'delivery', 'cash', 'Ana', '5491112345678', 'Corrientes 1234', 500000, 150000, 650000, ?, ?)",
+        )
+        .bind("o1", "r4", "t1", now, now),
+    ]);
+
+    await applyD1Migrations(db, zonesMigration);
+
+    const settings = await db.prepare("SELECT * FROM restaurant_settings WHERE restaurant_id = ?").bind("r4").first();
+    expect(settings).toMatchObject({
+      shipping_cents: 150000,
+      delivery_mode: "flat",
+      address: null,
+      address_notes: null,
+      lat: null,
+      lng: null,
+      place_id: null,
+    });
+
+    const order = await db.prepare("SELECT * FROM orders WHERE id = ?").bind("o1").first();
+    expect(order).toMatchObject({
+      delivery_address: "Corrientes 1234",
+      shipping_cents: 150000,
+      delivery_lat: null,
+      delivery_lng: null,
+      delivery_place_id: null,
+      delivery_unit: null,
+      delivery_between_streets: null,
+      delivery_zone_id: null,
+      delivery_zone_name: null,
+      delivery_distance_m: null,
+    });
+
+    for (const table of ["delivery_zones", "customer_addresses"]) {
+      const count = await db.prepare(`SELECT count(*) as count FROM ${table}`).first<{ count: number }>();
+      expect(count?.count).toBe(0);
+    }
+  });
+
+  it("clears the zone of an order when the zone is deleted", async () => {
+    const db = env.MIGRATION_DB;
+    await applyD1Migrations(db, env.TEST_MIGRATIONS);
+
+    const now = 1_700_000_000_000;
+    await db.batch([
+      db.prepare("PRAGMA foreign_keys = ON"),
+      db
+        .prepare("INSERT INTO user (id, name, email, email_verified, created_at, updated_at) VALUES (?, ?, ?, 1, ?, ?)")
+        .bind("u5", "E", "e@example.com", now, now),
+      db
+        .prepare(
+          "INSERT INTO restaurants (id, owner_id, slug, name, whatsapp, delivery, takeaway, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 1, 1, ?, ?)",
+        )
+        .bind("r5", "u5", "cinco", "Cinco", "5491112345678", now, now),
+      db
+        .prepare(
+          "INSERT INTO delivery_zones (id, restaurant_id, name, color, sort, shape, radius_m, pricing, price_cents, created_at, updated_at) VALUES (?, ?, 'Centro', '#C2410C', 0, 'radius', 3000, 'fixed', 50000, ?, ?)",
+        )
+        .bind("z1", "r5", now, now),
+      db
+        .prepare(
+          "INSERT INTO orders (id, restaurant_id, number, client_token, fulfillment, payment_method, customer_name, customer_phone, subtotal_cents, shipping_cents, total_cents, delivery_zone_id, delivery_zone_name, created_at, updated_at) VALUES (?, ?, 1, ?, 'delivery', 'cash', 'Ana', '5491112345678', 500000, 50000, 550000, 'z1', 'Centro', ?, ?)",
+        )
+        .bind("o2", "r5", "t2", now, now),
+    ]);
+
+    await db.prepare("DELETE FROM delivery_zones WHERE id = ?").bind("z1").run();
+
+    const order = await db.prepare("SELECT delivery_zone_id, delivery_zone_name FROM orders WHERE id = ?").bind("o2").first();
+    expect(order).toEqual({ delivery_zone_id: null, delivery_zone_name: "Centro" });
+  });
+});

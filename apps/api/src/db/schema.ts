@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 // Tables follow the Better Auth core schema (user, session, account, verification).
 
@@ -115,6 +115,14 @@ export const restaurantSettings = sqliteTable("restaurant_settings", {
   acceptingOrders: integer("accepting_orders", { mode: "boolean" }).notNull().default(true),
   minOrderCents: integer("min_order_cents"),
   shippingCents: integer("shipping_cents").notNull().default(0),
+  // `flat` charges `shipping_cents` everywhere; `zones` prices by the `delivery_zones` rows.
+  deliveryMode: text("delivery_mode").notNull().default("flat"),
+  // The store's own location, the origin of radius and ring zones (`NULL` until the owner sets it).
+  address: text("address"),
+  addressNotes: text("address_notes"),
+  lat: real("lat"),
+  lng: real("lng"),
+  placeId: text("place_id"),
   updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
 });
 
@@ -232,6 +240,68 @@ export const customers = sqliteTable(
   (t) => [uniqueIndex("customers_restaurant_phone_unique").on(t.restaurantId, t.phone)],
 );
 
+// Addresses a customer used before (N:1 with `customers`), geocoded so they can be offered again.
+export const customerAddresses = sqliteTable(
+  "customer_addresses",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    // `home` | `work` | `other`; `NULL` when the customer did not label it.
+    label: text("label"),
+    formattedAddress: text("formatted_address").notNull(),
+    locality: text("locality"),
+    lat: real("lat").notNull(),
+    lng: real("lng").notNull(),
+    placeId: text("place_id"),
+    betweenStreets: text("between_streets"),
+    unit: text("unit"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("customer_addresses_customer_idx").on(t.customerId)],
+);
+
+// Delivery zones of a store (used when `restaurant_settings.delivery_mode` is `zones`). The first
+// active zone by `sort` that contains the address wins. Shape and pricing columns are filled
+// according to `shape` and `pricing`; the shared zod schema validates the combination.
+export const deliveryZones = sqliteTable(
+  "delivery_zones",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // `#RRGGBB` (uppercase), how the zone is drawn on the map.
+    color: text("color").notNull(),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    sort: integer("sort").notNull(),
+    // `radius` | `ring` | `polygon`.
+    shape: text("shape").notNull(),
+    radiusM: integer("radius_m"),
+    innerRadiusM: integer("inner_radius_m"),
+    // JSON `[[lat, lng], ...]` when `shape` is `polygon`.
+    polygon: text("polygon"),
+    // `fixed` | `per_km`.
+    pricing: text("pricing").notNull(),
+    priceCents: integer("price_cents"),
+    baseCents: integer("base_cents"),
+    perKmCents: integer("per_km_cents"),
+    minShippingCents: integer("min_shipping_cents"),
+    maxShippingCents: integer("max_shipping_cents"),
+    minOrderCents: integer("min_order_cents"),
+    freeFromCents: integer("free_from_cents"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("delivery_zones_restaurant_sort_idx").on(t.restaurantId, t.sort)],
+);
+
 // Promo codes table (placeholder created empty for foreign key integrity in orders).
 export const promoCodes = sqliteTable(
   "promo_codes",
@@ -272,6 +342,16 @@ export const orders = sqliteTable(
     customerName: text("customer_name").notNull(),
     customerPhone: text("customer_phone").notNull(),
     deliveryAddress: text("delivery_address"),
+    // Snapshot of the geocoded delivery address and the zone that priced it (all `NULL` for
+    // takeaway, flat-rate stores and orders placed before delivery zones).
+    deliveryLat: real("delivery_lat"),
+    deliveryLng: real("delivery_lng"),
+    deliveryPlaceId: text("delivery_place_id"),
+    deliveryUnit: text("delivery_unit"),
+    deliveryBetweenStreets: text("delivery_between_streets"),
+    deliveryZoneId: text("delivery_zone_id").references(() => deliveryZones.id, { onDelete: "set null" }),
+    deliveryZoneName: text("delivery_zone_name"),
+    deliveryDistanceM: integer("delivery_distance_m"),
     notes: text("notes"),
     subtotalCents: integer("subtotal_cents").notNull(),
     shippingCents: integer("shipping_cents").notNull(),
@@ -317,6 +397,10 @@ export type IngredientRow = typeof ingredients.$inferSelect;
 export type NewIngredientRow = typeof ingredients.$inferInsert;
 export type CustomerRow = typeof customers.$inferSelect;
 export type NewCustomerRow = typeof customers.$inferInsert;
+export type CustomerAddressRow = typeof customerAddresses.$inferSelect;
+export type NewCustomerAddressRow = typeof customerAddresses.$inferInsert;
+export type DeliveryZoneRow = typeof deliveryZones.$inferSelect;
+export type NewDeliveryZoneRow = typeof deliveryZones.$inferInsert;
 export type PromoCodeRow = typeof promoCodes.$inferSelect;
 export type OrderDbRow = typeof orders.$inferSelect;
 export type NewOrderDbRow = typeof orders.$inferInsert;
