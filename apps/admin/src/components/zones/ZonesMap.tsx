@@ -176,7 +176,9 @@ function MapCanvas({ libs, center, zones, selectedKey, drawingKey, onGeometryCha
     return () => {
       for (const zone of overlays.values()) removeOverlays(zone);
       overlays.clear();
+      // Dropped so a remount (StrictMode runs effects twice in dev) creates and attaches it again.
       markerRef.current?.setMap(null);
+      markerRef.current = null;
     };
   }, []);
 
@@ -275,12 +277,17 @@ function updateOverlays(
     const c = circle.getCenter();
     if (!c || c.lat() !== center.lat || c.lng() !== center.lng) circle.setCenter(center);
   }
-  if (outer && Math.abs(outer.getRadius() - zone.radiusM) >= 1) outer.setRadius(zone.radiusM);
+  if (outer && radiusDiffers(outer, zone.radiusM)) outer.setRadius(zone.radiusM);
   if (zone.shape === "ring" && inner) {
-    if (Math.abs(inner.getRadius() - zone.innerRadiusM) >= 1) inner.setRadius(zone.innerRadiusM);
+    if (radiusDiffers(inner, zone.innerRadiusM)) inner.setRadius(zone.innerRadiusM);
     overlays.polygon?.setOptions({ ...style, strokeWeight: 0, clickable: false, zIndex: zIndex - 1 });
     overlays.polygon?.setPaths([circlePath(center, zone.radiusM, true), circlePath(center, Math.max(1, zone.innerRadiusM), false)]);
   }
+}
+
+/** A new circle has no radius yet (`getRadius()` is undefined), which must count as different. */
+function radiusDiffers(circle: google.maps.Circle, radiusM: number) {
+  return !(Math.abs(circle.getRadius() - radiusM) < 1);
 }
 
 function removeOverlays(overlays: ZoneOverlays) {

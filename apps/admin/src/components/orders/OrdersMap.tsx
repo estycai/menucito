@@ -145,7 +145,9 @@ function MapCanvas({ libs, store, orders, onSelectOrder }: OrdersMapProps & { li
     return () => {
       for (const marker of markers.values()) marker.setMap(null);
       markers.clear();
+      // Dropped so a remount (StrictMode runs effects twice in dev) creates and attaches it again.
       storeMarkerRef.current?.setMap(null);
+      storeMarkerRef.current = null;
     };
   }, [libs]);
 
