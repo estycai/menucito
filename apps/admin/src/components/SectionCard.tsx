@@ -1,15 +1,18 @@
 import { useId, type ReactNode } from "react";
+import { cn } from "@/lib/utils";
 
 interface SectionCardProps {
   title: string;
   description?: string;
   /** Control aligned with the title, at the right (e.g. a switch). */
   action?: ReactNode;
+  /** Vertical alignment of `action`: with the title (default) or centered on title and description. */
+  actionAlign?: "start" | "center";
   children?: ReactNode;
 }
 
 /** White card of a settings screen: a titled `section` labelled by its heading. */
-export function SectionCard({ title, description, action, children }: SectionCardProps) {
+export function SectionCard({ title, description, action, actionAlign = "start", children }: SectionCardProps) {
   const titleId = useId();
   const heading = (
     <div className="flex flex-col gap-1">
@@ -26,7 +29,7 @@ export function SectionCard({ title, description, action, children }: SectionCar
       className="flex min-w-0 flex-col gap-4 rounded-2xl border border-line bg-white p-4 sm:p-6"
     >
       {action ? (
-        <div className="flex items-start justify-between gap-4">
+        <div className={cn("flex justify-between gap-4", actionAlign === "center" ? "items-center" : "items-start")}>
           {heading}
           {action}
         </div>

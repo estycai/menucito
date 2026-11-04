@@ -94,6 +94,7 @@ function ReceptionCardView({
       title="Recepción de pedidos"
       description="Pausá la recepción cuando no puedas tomar pedidos. Tu menú sigue visible para tus clientes."
       action={<Switch checked={accepting} onCheckedChange={onToggle} disabled={saving} aria-label="Recibir pedidos" />}
+      actionAlign="center"
     >
       <div aria-live="polite" className="sr-only">
         {announcement}

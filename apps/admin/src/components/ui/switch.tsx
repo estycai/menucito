@@ -8,7 +8,10 @@ interface SwitchProps {
   disabled?: boolean;
 }
 
-/** On/off toggle (`role="switch"`) with a 44px touch target. */
+/**
+ * On/off toggle (`role="switch"`). The visible track is 44 x 24 px with a 20 px knob and a 2 px gap
+ * on every side; the transparent button around it keeps the 44 x 44 px touch target.
+ */
 export function Switch({ checked, onCheckedChange, disabled, "aria-label": ariaLabel }: SwitchProps) {
   return (
     <button
@@ -18,18 +21,22 @@ export function Switch({ checked, onCheckedChange, disabled, "aria-label": ariaL
       aria-label={ariaLabel}
       disabled={disabled}
       onClick={() => onCheckedChange(!checked)}
-      className={cn(
-        "relative inline-flex min-h-[44px] w-14 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent p-0.5 transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
-        checked ? "bg-success" : "bg-line-strong",
-      )}
+      className="group inline-flex size-11 shrink-0 cursor-pointer items-center justify-center rounded-full focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
     >
       <span
         aria-hidden="true"
         className={cn(
-          "pointer-events-none inline-block size-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
-          checked ? "translate-x-7" : "translate-x-0.5",
+          "relative h-6 w-11 rounded-full transition-colors duration-150 ease-out group-focus-visible:ring-2 group-focus-visible:ring-primary group-focus-visible:ring-offset-2 motion-reduce:transition-none",
+          checked ? "bg-success" : "bg-switch-off",
         )}
-      />
+      >
+        <span
+          className={cn(
+            "absolute top-0.5 left-0.5 size-5 rounded-full bg-white shadow-sm transition-transform duration-150 ease-out motion-reduce:transition-none",
+            checked ? "translate-x-5" : "translate-x-0",
+          )}
+        />
+      </span>
     </button>
   );
 }
