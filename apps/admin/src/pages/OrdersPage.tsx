@@ -8,6 +8,8 @@ import { OrderFiltersBar } from "@/components/orders/OrderFiltersBar";
 import { Button } from "@/components/ui/button";
 import {
   ACTIVE_ORDERS_FILTERS,
+  DELIVERED_TODAY_FILTERS,
+  DELIVERED_TODAY_HISTORY_FILTERS,
   filtersFromSearchParams,
   filtersToSearchParams,
   useOrders,
@@ -16,8 +18,8 @@ import {
 } from "@/lib/orders";
 import { publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { useDocumentTitle } from "@/lib/use-document-title";
-import { useNewOrderAnnouncer } from "@/lib/use-new-order-announcer";
 import { useOrdersExport } from "@/lib/use-orders-export";
+import { useOrdersNavigationTarget } from "@/lib/use-orders-navigation-target";
 import { cn } from "@/lib/utils";
 
 export type OrdersTab = "active" | "history";
@@ -33,9 +35,15 @@ export function OrdersPage() {
   const historyFilters = filtersFromSearchParams(searchParams);
 
   const activeQuery = useOrders(ACTIVE_ORDERS_FILTERS);
+  const deliveredQuery = useOrders(DELIVERED_TODAY_FILTERS);
   const historyQuery = useOrdersHistory(historyFilters);
-  const announcement = useNewOrderAnnouncer(activeQuery.data?.orders);
   const csvExport = useOrdersExport(historyFilters);
+
+  // A new-order toast lands here with the board to show and maybe an order to open.
+  useOrdersNavigationTarget((target) => {
+    setTab("active");
+    if (target.openOrderId) setSelectedOrderId(target.openOrderId);
+  });
 
   const activeOrders = activeQuery.data?.orders;
   const historyOrders = historyQuery.data?.pages.flatMap((page) => page.orders);
@@ -55,6 +63,17 @@ export function OrdersPage() {
 
   function handleClearFilters() {
     setSearchParams(new URLSearchParams());
+  }
+
+  /** Both lists of the "Activos" board: active orders and today's delivered ones. */
+  function refreshBoard() {
+    void activeQuery.refetch();
+    void deliveredQuery.refetch();
+  }
+
+  function handleShowDeliveredHistory() {
+    setSearchParams(filtersToSearchParams(DELIVERED_TODAY_HISTORY_FILTERS));
+    setTab("history");
   }
 
   return (
@@ -78,10 +97,10 @@ export function OrdersPage() {
           <Button
             type="button"
             variant="outline"
-            disabled={activeQuery.isRefetching || historyQuery.isRefetching}
+            disabled={activeQuery.isRefetching || deliveredQuery.isRefetching || historyQuery.isRefetching}
             onClick={() => {
-              if (tab === "active") activeQuery.refetch();
-              else historyQuery.refetch();
+              if (tab === "active") refreshBoard();
+              else void historyQuery.refetch();
             }}
             className="min-h-11 px-4 text-sm font-bold"
           >
@@ -91,10 +110,6 @@ export function OrdersPage() {
       </div>
 
       {csvExport.error && <Notice tone="error">{csvExport.error}</Notice>}
-
-      <div aria-live="polite" className="sr-only">
-        {announcement}
-      </div>
 
       {hasNoOrdersEver ? (
         <section className="flex flex-col items-center justify-center gap-3 rounded-2xl border border-line bg-white p-8 text-center sm:p-12">
@@ -124,11 +139,14 @@ export function OrdersPage() {
           {tab === "active" && (
             <ActiveOrdersBoard
               orders={activeOrders}
+              deliveredOrders={deliveredQuery.data?.orders}
               isLoading={activeQuery.isLoading}
               isError={activeQuery.isError}
-              isRefetching={activeQuery.isRefetching}
-              onRefresh={() => void activeQuery.refetch()}
+              deliveredError={deliveredQuery.isError}
+              isRefetching={activeQuery.isRefetching || deliveredQuery.isRefetching}
+              onRefresh={refreshBoard}
               onSelectOrder={setSelectedOrderId}
+              onShowDeliveredHistory={handleShowDeliveredHistory}
             />
           )}
 

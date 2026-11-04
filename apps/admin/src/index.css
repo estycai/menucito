@@ -30,6 +30,11 @@
   --color-status-preparing-soft: #ede9fe;
   --color-status-ready: #115e59;
   --color-status-ready-soft: #ccfbf1;
+  /* Fuchsia, not red: "Enviado" must not read as "Cancelado" (7:1 on its tint). */
+  --color-status-sent: #86198f;
+  --color-status-sent-soft: #fae8ff;
+  /* Track of a switch that is off: 4.8:1 against its white knob (the light line tokens are below 3:1). */
+  --color-switch-off: #78716c;
   --color-primary-soft: #fff7ed;
   --color-addon: #f5f3ef;
   --color-nav-active: #ffedd5;

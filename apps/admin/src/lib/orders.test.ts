@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { OrderSummary } from "@menucito/shared";
 import { ApiError } from "./restaurant";
 import {
+  ACTIVE_ORDERS_KEY,
+  DELIVERED_TODAY_FILTERS,
+  DELIVERED_TODAY_KEY,
   adjacentColumn,
   buildQueryString,
   dropTargetsFor,
@@ -12,8 +15,10 @@ import {
   isInvalidTransitionError,
   isValidDrop,
   moveOrder,
+  revertOrder,
   ordersPath,
   resolvePresetDates,
+  type BoardPages,
   type OrderFilters,
   type OrdersPage,
 } from "./orders";
@@ -96,61 +101,136 @@ describe("pagination cursor", () => {
 
 describe("board drag and drop", () => {
   it("offers only the columns ahead of the order (no going back)", () => {
-    expect(dropTargetsFor("new")).toEqual(["preparing", "ready", "delivered"]);
-    expect(dropTargetsFor("preparing")).toEqual(["ready", "delivered"]);
-    expect(dropTargetsFor("ready")).toEqual(["delivered"]);
-    expect(dropTargetsFor("delivered")).toEqual([]);
-    expect(dropTargetsFor("cancelled")).toEqual([]);
+    expect(dropTargetsFor("new", "delivery")).toEqual(["preparing", "ready", "sent", "delivered"]);
+    expect(dropTargetsFor("preparing", "delivery")).toEqual(["ready", "sent", "delivered"]);
+    expect(dropTargetsFor("ready", "delivery")).toEqual(["sent", "delivered"]);
+    expect(dropTargetsFor("sent", "delivery")).toEqual(["delivered"]);
+    expect(dropTargetsFor("delivered", "delivery")).toEqual([]);
+    expect(dropTargetsFor("cancelled", "delivery")).toEqual([]);
+  });
+
+  it("never offers Enviados to a takeaway order (spec 11b, scenario 14)", () => {
+    expect(dropTargetsFor("new", "takeaway")).toEqual(["preparing", "ready", "delivered"]);
+    expect(dropTargetsFor("preparing", "takeaway")).toEqual(["ready", "delivered"]);
+    expect(dropTargetsFor("ready", "takeaway")).toEqual(["delivered"]);
+    expect(isValidDrop("ready", "takeaway", "sent")).toBe(false);
+    expect(isValidDrop("ready", "delivery", "sent")).toBe(true);
   });
 
   it("accepts a drop only on a forward board column", () => {
-    expect(isValidDrop("new", "preparing")).toBe(true);
-    expect(isValidDrop("new", "ready")).toBe(true);
-    expect(isValidDrop("preparing", "ready")).toBe(true);
-    expect(isValidDrop("new", "delivered")).toBe(true);
-    expect(isValidDrop("ready", "delivered")).toBe(true);
+    expect(isValidDrop("new", "delivery", "preparing")).toBe(true);
+    expect(isValidDrop("new", "delivery", "ready")).toBe(true);
+    expect(isValidDrop("preparing", "delivery", "ready")).toBe(true);
+    expect(isValidDrop("new", "takeaway", "delivered")).toBe(true);
+    expect(isValidDrop("ready", "takeaway", "delivered")).toBe(true);
+    expect(isValidDrop("sent", "delivery", "delivered")).toBe(true);
     // Same column, backwards, off the board or not a column at all
-    expect(isValidDrop("preparing", "preparing")).toBe(false);
-    expect(isValidDrop("ready", "new")).toBe(false);
-    expect(isValidDrop("preparing", "new")).toBe(false);
-    expect(isValidDrop("new", "cancelled")).toBe(false);
-    expect(isValidDrop("new", null)).toBe(false);
-    expect(isValidDrop("new", "order-1")).toBe(false);
+    expect(isValidDrop("preparing", "delivery", "preparing")).toBe(false);
+    expect(isValidDrop("ready", "delivery", "new")).toBe(false);
+    expect(isValidDrop("sent", "delivery", "ready")).toBe(false);
+    expect(isValidDrop("preparing", "delivery", "new")).toBe(false);
+    expect(isValidDrop("new", "delivery", "cancelled")).toBe(false);
+    expect(isValidDrop("new", "delivery", null)).toBe(false);
+    expect(isValidDrop("new", "delivery", "order-1")).toBe(false);
   });
 
   it("walks the columns with the arrow keys and stops at the ends", () => {
     expect(adjacentColumn("new", 1)).toBe("preparing");
     expect(adjacentColumn("preparing", 1)).toBe("ready");
-    expect(adjacentColumn("ready", 1)).toBe("delivered");
+    expect(adjacentColumn("ready", 1)).toBe("sent");
+    expect(adjacentColumn("sent", 1)).toBe("delivered");
     expect(adjacentColumn("delivered", 1)).toBeNull();
+    expect(adjacentColumn("delivered", -1)).toBe("sent");
     expect(adjacentColumn("preparing", -1)).toBe("new");
     expect(adjacentColumn("new", -1)).toBeNull();
     expect(adjacentColumn(undefined, 1)).toBeNull();
   });
 });
 
+describe("delivered today query", () => {
+  it("asks for the orders delivered (last updated) today, at most 50 (spec 11b, decision 4)", () => {
+    const path = ordersPath(DELIVERED_TODAY_FILTERS);
+    expect(path).toMatch(
+      /^\/api\/orders\?status=delivered&from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}&dateField=updated&limit=50$/,
+    );
+    expect(DELIVERED_TODAY_KEY).not.toEqual(ACTIVE_ORDERS_KEY);
+  });
+});
+
 describe("moveOrder", () => {
-  const order = (id: string, status: OrderSummary["status"]) => ({ id, status }) as OrderSummary;
-  const page: OrdersPage = { orders: [order("a", "new"), order("b", "preparing")], nextBefore: null };
+  const order = (id: string, number: number, status: OrderSummary["status"]) => ({ id, number, status }) as OrderSummary;
+  const active: OrdersPage = { orders: [order("a", 3, "new"), order("b", 2, "preparing")], nextBefore: null };
+  const delivered: OrdersPage = { orders: [order("c", 4, "delivered"), order("d", 1, "delivered")], nextBefore: null };
+  const pages: BoardPages = { active, delivered };
 
   it("moves the order to another column keeping the list order", () => {
-    const moved = moveOrder(page, "a", "ready");
-    expect(moved?.orders.map((o) => [o.id, o.status])).toEqual([
-      ["a", "ready"],
+    const moved = moveOrder(pages, "a", "sent");
+    expect(moved.active?.orders.map((o) => [o.id, o.status])).toEqual([
+      ["a", "sent"],
       ["b", "preparing"],
     ]);
+    expect(moved.delivered).toBe(delivered);
     // The cached page is not mutated: it is the rollback value
-    expect(page.orders[0]!.status).toBe("new");
+    expect(active.orders[0]!.status).toBe("new");
   });
 
-  it("takes the order off the board once it is delivered or cancelled", () => {
-    expect(moveOrder(page, "b", "delivered")?.orders.map((o) => o.id)).toEqual(["a"]);
-    expect(moveOrder(page, "a", "cancelled")?.orders.map((o) => o.id)).toEqual(["b"]);
+  it("moves a delivered order to Entregados, newest first (spec 11b, scenario 15)", () => {
+    const moved = moveOrder(pages, "b", "delivered");
+    expect(moved.active?.orders.map((o) => o.id)).toEqual(["a"]);
+    expect(moved.delivered?.orders.map((o) => [o.id, o.status])).toEqual([
+      ["c", "delivered"],
+      ["b", "delivered"],
+      ["d", "delivered"],
+    ]);
+    expect(delivered.orders).toHaveLength(2);
   });
 
-  it("leaves the page untouched when the order is not on it or there is no page yet", () => {
-    expect(moveOrder(page, "zzz", "ready")).toBe(page);
-    expect(moveOrder(undefined, "a", "ready")).toBeUndefined();
+  it("does not cap Entregados optimistically: the refetch trims it", () => {
+    const full: OrdersPage = {
+      orders: Array.from({ length: 50 }, (_, i) => order(`d${i}`, 100 + i, "delivered")),
+      nextBefore: null,
+    };
+    const moved = moveOrder({ active, delivered: full }, "a", "delivered");
+    expect(moved.delivered?.orders).toHaveLength(51);
+    expect(moved.delivered?.orders.some((o) => o.id === "a")).toBe(true);
+  });
+
+  it("starts Entregados with the moved order when it has not loaded yet", () => {
+    const moved = moveOrder({ active, delivered: undefined }, "b", "delivered");
+    expect(moved.delivered).toEqual({ orders: [{ ...order("b", 2, "preparing"), status: "delivered" }], nextBefore: null });
+  });
+
+  it("takes the order off the board once it is cancelled", () => {
+    const moved = moveOrder(pages, "a", "cancelled");
+    expect(moved.active?.orders.map((o) => o.id)).toEqual(["b"]);
+    expect(moved.delivered).toBe(delivered);
+  });
+
+  it("leaves the pages untouched when the order is not on the active list or there is no list yet", () => {
+    expect(moveOrder(pages, "zzz", "ready")).toBe(pages);
+    const empty: BoardPages = { active: undefined, delivered: undefined };
+    expect(moveOrder(empty, "a", "ready")).toBe(empty);
+  });
+});
+
+describe("revertOrder", () => {
+  const order = (id: string, number: number, status: OrderSummary["status"]) => ({ id, number, status }) as OrderSummary;
+
+  it("puts back only the failed order, keeping another order moved meanwhile", () => {
+    const start: BoardPages = {
+      active: { orders: [order("a", 3, "new"), order("b", 2, "new"), order("c", 1, "ready")], nextBefore: null },
+      delivered: { orders: [], nextBefore: null },
+    };
+    // "a" goes to Entregados and fails; "c" goes to Enviados and succeeds.
+    const afterBoth = moveOrder(moveOrder(start, "a", "delivered"), "c", "sent");
+    const reverted = revertOrder(afterBoth, order("a", 3, "new"));
+
+    expect(reverted.active?.orders.map((o) => [o.id, o.status])).toEqual([
+      ["a", "new"],
+      ["b", "new"],
+      ["c", "sent"],
+    ]);
+    expect(reverted.delivered?.orders).toEqual([]);
   });
 });
 

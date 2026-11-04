@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, RESTAURANT_KEY } from "./restaurant";
 import { createQueryClient, isUnauthorizedError } from "./query-client";
-import { SESSION_KEY } from "./session";
+import { ACTIVE_ORDERS_KEY, DELIVERED_TODAY_KEY, ORDERS_KEY } from "./orders";
+import { SESSION_KEY, clearSession } from "./session";
 
 describe("isUnauthorizedError", () => {
   it("is true only for an API 401", () => {
@@ -47,5 +48,20 @@ describe("createQueryClient", () => {
     ).rejects.toThrow();
 
     expect(client.getQueryData(SESSION_KEY)).toEqual(session);
+  });
+});
+
+describe("clearSession", () => {
+  it("drops every order list so the next account never sees them (spec 11b)", () => {
+    const client = createQueryClient();
+    const page = { orders: [{ id: "o1" }], nextBefore: null };
+    client.setQueryData(ACTIVE_ORDERS_KEY, page);
+    client.setQueryData(DELIVERED_TODAY_KEY, page);
+    client.setQueryData([...ORDERS_KEY, "history", {}], { pages: [page], pageParams: [undefined] });
+
+    clearSession(client);
+
+    expect(client.getQueryCache().findAll({ queryKey: ORDERS_KEY })).toHaveLength(0);
+    expect(client.getQueryData(SESSION_KEY)).toBeNull();
   });
 });

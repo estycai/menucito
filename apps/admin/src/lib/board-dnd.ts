@@ -13,12 +13,25 @@ import {
 import { ORDER_STATUS_LABELS, type OrderSummary } from "@menucito/shared";
 import { adjacentColumn, isValidDrop, type BoardDropStatus } from "./orders";
 
-// "Entregados" is only a drop zone: delivered orders leave the board (they live in "Historial").
-export const BOARD_COLUMNS: Array<{ status: BoardDropStatus; label: string }> = [
-  { status: "new", label: "Nuevos" },
-  { status: "preparing", label: "En preparación" },
-  { status: "ready", label: "Listos" },
-  { status: "delivered", label: "Entregados" },
+export interface BoardColumnConfig {
+  status: BoardDropStatus;
+  /** Plural title ("Listos"), unlike the status labels of `ORDER_STATUS_LABELS` ("Listo"). */
+  label: string;
+  /**
+   * A final status: the column lists the orders delivered today (its own query), its cards open
+   * the detail but cannot be dragged, and it links to the history. It still accepts drops.
+   */
+  isFinal?: boolean;
+  emptyMessage: string;
+}
+
+/** Columns of the board, in reading order. */
+export const BOARD_COLUMNS: BoardColumnConfig[] = [
+  { status: "new", label: "Nuevos", emptyMessage: "Sin pedidos" },
+  { status: "preparing", label: "En preparación", emptyMessage: "Sin pedidos" },
+  { status: "ready", label: "Listos", emptyMessage: "Sin pedidos" },
+  { status: "sent", label: "Enviados", emptyMessage: "Sin pedidos" },
+  { status: "delivered", label: "Entregados", emptyMessage: "Sin pedidos entregados hoy", isFinal: true },
 ];
 
 // Long enough to cover the keyup "click" that follows a keyboard drop, short enough to go unnoticed.
@@ -54,13 +67,13 @@ export function boardAnnouncements(findOrder: (id: UniqueIdentifier) => OrderSum
       if (!over) return `Pedido ${numberOf(active.id)} fuera de las columnas.`;
       const order = findOrder(active.id);
       const label = ORDER_STATUS_LABELS[over.id as BoardDropStatus];
-      return order && isValidDrop(order.status, over.id)
+      return order && isValidDrop(order.status, order.fulfillment, over.id)
         ? `Pedido ${numberOf(active.id)} sobre ${label}.`
         : `Pedido ${numberOf(active.id)} sobre ${label}. No se puede mover ahí.`;
     },
     onDragEnd: ({ active, over }) => {
       const order = findOrder(active.id);
-      return order && over && isValidDrop(order.status, over.id)
+      return order && over && isValidDrop(order.status, order.fulfillment, over.id)
         ? `Soltaste el pedido ${numberOf(active.id)} en ${ORDER_STATUS_LABELS[over.id]}.`
         : `Soltaste el pedido ${numberOf(active.id)}. No cambió de estado.`;
     },

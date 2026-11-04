@@ -70,6 +70,8 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
 
   const isPendingAction = statusMutation.isPending || paymentMutation.isPending;
   const loadFailed = isError && !order;
+  // The next step depends on the fulfillment: only a delivery order is "Enviado" (spec 11b).
+  const next = order ? nextStatus(order.status, order.fulfillment) : null;
 
   return (
     <dialog
@@ -124,14 +126,14 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             <OrderTotals order={order} />
 
             <div className="flex flex-col gap-2 border-t border-line pt-4">
-              {nextStatus(order.status) && !showCancelConfirm && (
+              {next && !showCancelConfirm && (
                 <Button
                   type="button"
                   disabled={isPendingAction}
-                  onClick={() => handleStatusChange(nextStatus(order.status)!)}
+                  onClick={() => handleStatusChange(next)}
                   className="min-h-11 w-full text-sm font-bold"
                 >
-                  Pasar a {ORDER_STATUS_LABELS[nextStatus(order.status)!]}
+                  Pasar a {ORDER_STATUS_LABELS[next]}
                 </Button>
               )}
 

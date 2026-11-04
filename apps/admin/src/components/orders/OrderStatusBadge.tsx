@@ -6,6 +6,7 @@ const ORDER_STATUS_TONE: Record<OrderStatus, BadgeTone> = {
   new: "new",
   preparing: "preparing",
   ready: "ready",
+  sent: "sent",
   delivered: "neutral",
   cancelled: "danger",
 };

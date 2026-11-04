@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import { ORDER_STATUSES, ORDER_STATUS_LABELS } from "@menucito/shared";
 import type { DatePreset, OrderFilters } from "@/lib/orders";
 
 const CONTROL_CLASS =
@@ -51,11 +52,12 @@ export function OrderFiltersBar({ filters, onFilterChange }: { filters: OrderFil
           {(id) => (
             <select id={id} value={filters.status ?? ""} onChange={(e) => set("status")(e.target.value)} className={CONTROL_CLASS}>
               <option value="">Todos los estados</option>
-              <option value="new">Nuevo</option>
-              <option value="preparing">En preparación</option>
-              <option value="ready">Listo</option>
-              <option value="delivered">Entregado</option>
-              <option value="cancelled">Cancelado</option>
+              {/* Single statuses only; the "active" group is the board's, not a history filter. */}
+              {ORDER_STATUSES.map((status) => (
+                <option key={status} value={status}>
+                  {ORDER_STATUS_LABELS[status]}
+                </option>
+              ))}
             </select>
           )}
         </FilterField>

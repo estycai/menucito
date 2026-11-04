@@ -1,31 +1,60 @@
-import { useEffect, useRef, useState } from "react";
+import { FULFILLMENT_LABELS, formatArs, type OrderSummary } from "@menucito/shared";
+
+/** How long a new-order toast stays on screen (spec 11b, scenario 20); the Toaster's default. */
+export const NEW_ORDER_TOAST_MS = 8000;
 
 /**
- * Orders in `orders` that were not in `prevIds`. `null` means "first load": what is already there
- * is not new, but the very first order arriving on an empty board is (scenario 41).
+ * Orders in `orders` whose id is not in `seenIds`. `null` means "first load": what is already there
+ * is not new, but the very first order arriving on an empty board is (scenario 41). Orders that
+ * left the list are simply not in `orders`, so they never count.
  */
-export function countNewOrders(prevIds: ReadonlySet<string> | null, orders: ReadonlyArray<{ id: string }>): number {
-  if (prevIds === null) return 0;
-  return orders.filter((order) => !prevIds.has(order.id)).length;
+export function findNewOrders<T extends { id: string }>(seenIds: ReadonlySet<string> | null, orders: ReadonlyArray<T>): T[] {
+  if (seenIds === null) return [];
+  return orders.filter((order) => !seenIds.has(order.id));
 }
 
-/** Screen reader message for `count` new orders, or `null` when there are none. */
-export function newOrdersMessage(count: number): string | null {
-  if (count <= 0) return null;
-  return count === 1 ? "Llegó 1 pedido nuevo" : `Llegaron ${count} pedidos nuevos`;
+/** Where a new-order toast takes the owner: the "Activos" board, opening one order when there is one. */
+export interface OrdersNavigationState {
+  showActiveOrders: true;
+  openOrderId?: string;
 }
 
-/** Text for an `aria-live` region that announces orders arriving on the board between refreshes. */
-export function useNewOrderAnnouncer(orders: ReadonlyArray<{ id: string }> | undefined): string | null {
-  const [announcement, setAnnouncement] = useState<string | null>(null);
-  const prevIdsRef = useRef<Set<string> | null>(null);
+/** The router state a new-order toast set, or `null` for any other (or no) state. Same reference, so it is stable. */
+export function ordersNavigationState(state: unknown): OrdersNavigationState | null {
+  if (!state || typeof state !== "object") return null;
+  const candidate = state as Partial<OrdersNavigationState>;
+  if (candidate.showActiveOrders !== true) return null;
+  if (candidate.openOrderId !== undefined && typeof candidate.openOrderId !== "string") return null;
+  return candidate as OrdersNavigationState;
+}
 
-  useEffect(() => {
-    if (!orders) return;
-    const message = newOrdersMessage(countNewOrders(prevIdsRef.current, orders));
-    if (message) setAnnouncement(message);
-    prevIdsRef.current = new Set(orders.map((order) => order.id));
-  }, [orders]);
+export interface NewOrdersToast {
+  title: string;
+  description?: string;
+  actionLabel: string;
+  target: OrdersNavigationState;
+}
 
-  return announcement;
+type ToastOrder = Pick<OrderSummary, "id" | "number" | "customerName" | "fulfillment" | "totalCents">;
+
+/**
+ * Toast for the orders found by one poll: the order itself when there is one, a single summary
+ * when several arrived together (spec 11b, scenario 19), `null` when none did.
+ */
+export function newOrdersToast(orders: ReadonlyArray<ToastOrder>): NewOrdersToast | null {
+  const [first] = orders;
+  if (!first) return null;
+  if (orders.length > 1) {
+    return {
+      title: `Llegaron ${orders.length} pedidos nuevos`,
+      actionLabel: "Ver pedidos",
+      target: { showActiveOrders: true },
+    };
+  }
+  return {
+    title: `Nuevo pedido #${first.number}`,
+    description: `${first.customerName} · ${FULFILLMENT_LABELS[first.fulfillment]} · ${formatArs(first.totalCents)}`,
+    actionLabel: "Ver pedido",
+    target: { showActiveOrders: true, openOrderId: first.id },
+  };
 }

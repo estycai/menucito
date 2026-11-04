@@ -14,6 +14,7 @@ const badgeVariants = cva("rounded-md text-xs font-bold", {
       new: "bg-status-new-soft text-status-new",
       preparing: "bg-status-preparing-soft text-status-preparing",
       ready: "bg-status-ready-soft text-status-ready",
+      sent: "bg-status-sent-soft text-status-sent",
     },
     size: {
       sm: "px-2 py-0.5",

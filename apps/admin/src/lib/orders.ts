@@ -1,9 +1,18 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  queryOptions,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type QueryClient,
+} from "@tanstack/react-query";
 import {
   ACTIVE_ORDER_STATUSES,
   canTransition,
   localDateKey,
   type ApiErrorBody,
+  type Fulfillment,
+  type OrderDateField,
   type OrderDetail,
   type OrderStatus,
   type OrderSummary,
@@ -26,6 +35,10 @@ export interface OrderFilters {
   preset?: DatePreset;
   from?: string;
   to?: string;
+  /** Page size; only the board sets it, the history keeps the API default. */
+  limit?: number;
+  /** Timestamp the dates filter on; only the board sets it (`created` in the API by default). */
+  dateField?: OrderDateField;
 }
 
 /** A page of `GET /api/orders`. `nextBefore` is the cursor of the next page; it never goes in the URL. */
@@ -115,6 +128,8 @@ export function buildQueryString(filters: OrderFilters, before?: number): string
     if (filters.to) params.set("to", filters.to);
   }
 
+  if (filters.dateField) params.set("dateField", filters.dateField);
+  if (filters.limit !== undefined) params.set("limit", String(filters.limit));
   if (before !== undefined) params.set("before", String(before));
 
   return params.toString();
@@ -129,21 +144,40 @@ export function ordersPath(filters: OrderFilters, before?: number): string {
 export const ACTIVE_ORDERS_FILTERS: OrderFilters = { status: "active" };
 export const ACTIVE_ORDERS_KEY = [...ORDERS_KEY, ACTIVE_ORDERS_FILTERS] as const;
 
-/** Drop targets of the board, in reading order: the active columns plus the "Entregado" zone. */
+/** Most delivered orders the "Entregados" column shows; the rest are in "Historial". */
+export const DELIVERED_TODAY_LIMIT = 50;
+/**
+ * Filters of the "Entregados" column: the orders delivered today, newest first (spec 11b, decision 4).
+ * "Delivered today" is approximated by the last update, since there is no delivery timestamp.
+ */
+export const DELIVERED_TODAY_FILTERS: OrderFilters = {
+  status: "delivered",
+  preset: "today",
+  dateField: "updated",
+  limit: DELIVERED_TODAY_LIMIT,
+};
+export const DELIVERED_TODAY_KEY = [...ORDERS_KEY, DELIVERED_TODAY_FILTERS] as const;
+/** History filters behind "Ver todos en el historial" of the "Entregados" column. */
+export const DELIVERED_TODAY_HISTORY_FILTERS: OrderFilters = { status: "delivered", preset: "today" };
+
+/** Drop targets of the board, in reading order: the active columns plus "Entregados". */
 export const BOARD_DROP_STATUSES = [...ACTIVE_ORDER_STATUSES, "delivered"] as const;
 export type BoardDropStatus = (typeof BOARD_DROP_STATUSES)[number];
 
 /**
  * Board drop targets an order in `status` can be dropped on: forward only, never its own column
- * (decision "Sin marcha atrás").
+ * (decision "Sin marcha atrás"), and "Enviados" only for delivery orders.
  */
-export function dropTargetsFor(status: OrderStatus): BoardDropStatus[] {
-  return BOARD_DROP_STATUSES.filter((column) => canTransition(status, column));
+export function dropTargetsFor(status: OrderStatus, fulfillment: Fulfillment): BoardDropStatus[] {
+  return BOARD_DROP_STATUSES.filter((column) => canTransition(status, column, fulfillment));
 }
 
 /** Whether dropping an order in `status` on `target` (a droppable id, if any) changes its status. */
-export function isValidDrop(status: OrderStatus, target: unknown): target is BoardDropStatus {
-  return (BOARD_DROP_STATUSES as readonly unknown[]).includes(target) && canTransition(status, target as BoardDropStatus);
+export function isValidDrop(status: OrderStatus, fulfillment: Fulfillment, target: unknown): target is BoardDropStatus {
+  return (
+    (BOARD_DROP_STATUSES as readonly unknown[]).includes(target) &&
+    canTransition(status, target as BoardDropStatus, fulfillment)
+  );
 }
 
 /**
@@ -156,18 +190,53 @@ export function adjacentColumn(current: unknown, step: 1 | -1): BoardDropStatus 
   return BOARD_DROP_STATUSES[index + step] ?? null;
 }
 
+/** The two lists of the board: active orders and the ones delivered today. */
+export interface BoardPages {
+  active: OrdersPage | undefined;
+  delivered: OrdersPage | undefined;
+}
+
+/** Order of both board lists, as the API returns them: the highest (newest) number first. */
+const newestFirst = (a: OrderSummary, b: OrderSummary) => b.number - a.number;
+
+/** `orders` without `order.id`, plus `order` in its newest-first place. */
+function withOrder(orders: OrderSummary[], order: OrderSummary): OrderSummary[] {
+  return [...orders.filter((o) => o.id !== order.id), order].sort(newestFirst);
+}
+
 /**
- * The active list after `id` moves to `status`: it changes column, or leaves the board once it is
- * delivered or cancelled. Returns the same page when the order is not on it.
+ * The board after `id` moves to `status`: it changes column, moves to "Entregados" once delivered
+ * or leaves the board once cancelled. "Entregados" is not capped here (the refetch trims it), and
+ * a list that has not loaded yet starts with the moved order. Returns the same pages when the
+ * order is not on the active list.
  */
-export function moveOrder(page: OrdersPage | undefined, id: string, status: OrderStatus): OrdersPage | undefined {
-  if (!page || !page.orders.some((order) => order.id === id)) return page;
+export function moveOrder(pages: BoardPages, id: string, status: OrderStatus): BoardPages {
+  const order = pages.active?.orders.find((o) => o.id === id);
+  if (!pages.active || !order) return pages;
   const stillActive = (ACTIVE_ORDER_STATUSES as readonly OrderStatus[]).includes(status);
-  return {
-    ...page,
+  const active: OrdersPage = {
+    ...pages.active,
     orders: stillActive
-      ? page.orders.map((order) => (order.id === id ? { ...order, status } : order))
-      : page.orders.filter((order) => order.id !== id),
+      ? pages.active.orders.map((o) => (o.id === id ? { ...o, status } : o))
+      : pages.active.orders.filter((o) => o.id !== id),
+  };
+  if (status !== "delivered") return { active, delivered: pages.delivered };
+
+  const base: OrdersPage = pages.delivered ?? { orders: [], nextBefore: null };
+  return { active, delivered: { ...base, orders: withOrder(base.orders, { ...order, status }) } };
+}
+
+/**
+ * Undoes a failed `moveOrder` for that one order only: `previous` (the order as it was) goes back
+ * to the active list and leaves "Entregados". Other orders moved meanwhile keep their new place.
+ */
+export function revertOrder(pages: BoardPages, previous: OrderSummary): BoardPages {
+  return {
+    active: pages.active && { ...pages.active, orders: withOrder(pages.active.orders, previous) },
+    delivered: pages.delivered && {
+      ...pages.delivered,
+      orders: pages.delivered.orders.filter((o) => o.id !== previous.id),
+    },
   };
 }
 
@@ -191,13 +260,21 @@ export async function exportErrorFrom(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body?.error?.code ?? "UNKNOWN", body?.error?.message ?? res.statusText);
 }
 
-export function useOrders(filters: OrderFilters) {
-  return useQuery({
+/** How often the order lists refresh, only while the tab is visible. */
+export const ORDERS_POLL_MS = 30000;
+
+/** Query of a list of orders; shared by `useOrders` and anything that observes the same list. */
+export function ordersQueryOptions(filters: OrderFilters) {
+  return queryOptions({
     queryKey: [...ORDERS_KEY, filters],
     queryFn: () => api<OrdersPage>(ordersPath(filters)),
-    refetchInterval: 30000,
+    refetchInterval: ORDERS_POLL_MS,
     refetchIntervalInBackground: false,
   });
+}
+
+export function useOrders(filters: OrderFilters) {
+  return useQuery(ordersQueryOptions(filters));
 }
 
 /** History with "Cargar más": each page is appended after the ones already loaded (scenario 44). */
@@ -207,7 +284,7 @@ export function useOrdersHistory(filters: OrderFilters) {
     queryFn: ({ pageParam }) => api<OrdersPage>(ordersPath(filters, pageParam)),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) => lastPage.nextBefore ?? undefined,
-    refetchInterval: 30000,
+    refetchInterval: ORDERS_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
@@ -220,6 +297,19 @@ export function useOrder(id: string | null) {
   });
 }
 
+function readBoard(queryClient: QueryClient): BoardPages {
+  return {
+    active: queryClient.getQueryData<OrdersPage>(ACTIVE_ORDERS_KEY),
+    delivered: queryClient.getQueryData<OrdersPage>(DELIVERED_TODAY_KEY),
+  };
+}
+
+/** Writes only the lists that changed, so an untouched (or never loaded) query is left alone. */
+function writeBoard(queryClient: QueryClient, current: BoardPages, next: BoardPages) {
+  if (next.active !== current.active) queryClient.setQueryData(ACTIVE_ORDERS_KEY, next.active);
+  if (next.delivered !== current.delivered) queryClient.setQueryData(DELIVERED_TODAY_KEY, next.delivered);
+}
+
 export function useChangeOrderStatus() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -229,19 +319,29 @@ export function useChangeOrderStatus() {
         method: "PATCH",
         body: JSON.stringify({ status }),
       }),
-    // Optimistic move on the board; the previous list comes back if the change fails.
+    // Optimistic move on the board. A failure puts back only that order, so another drag that
+    // happened meanwhile is not undone with it.
     onMutate: async ({ id, status }) => {
-      await queryClient.cancelQueries({ queryKey: ACTIVE_ORDERS_KEY, exact: true });
-      const previous = queryClient.getQueryData<OrdersPage>(ACTIVE_ORDERS_KEY);
-      queryClient.setQueryData<OrdersPage>(ACTIVE_ORDERS_KEY, (page) => moveOrder(page, id, status));
-      return { previous };
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ACTIVE_ORDERS_KEY, exact: true }),
+        queryClient.cancelQueries({ queryKey: DELIVERED_TODAY_KEY, exact: true }),
+      ]);
+      const pages = readBoard(queryClient);
+      const previousOrder = pages.active?.orders.find((o) => o.id === id);
+      writeBoard(queryClient, pages, moveOrder(pages, id, status));
+      return { previousOrder };
     },
     onError: (_err, _variables, context) => {
-      if (context?.previous) queryClient.setQueryData(ACTIVE_ORDERS_KEY, context.previous);
+      if (!context?.previousOrder) return;
+      const pages = readBoard(queryClient);
+      writeBoard(queryClient, pages, revertOrder(pages, context.previousOrder));
     },
     onSuccess: (updated) => {
       queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
-      queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+    },
+    // Both board lists (and the history) reload whatever the outcome.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
     },
   });
 }

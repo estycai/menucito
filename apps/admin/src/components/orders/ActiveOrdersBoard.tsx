@@ -40,21 +40,29 @@ import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 interface ActiveOrdersBoardProps {
   /** `undefined` until the first successful load. */
   orders: OrderSummary[] | undefined;
+  /** Orders delivered today, for the "Entregados" column; `undefined` until they load. */
+  deliveredOrders: OrderSummary[] | undefined;
   isLoading: boolean;
   isError: boolean;
+  /** The delivered list failed: the board still works, with a notice. */
+  deliveredError: boolean;
   isRefetching: boolean;
   onRefresh: () => void;
   onSelectOrder: (id: string) => void;
+  onShowDeliveredHistory: () => void;
 }
 
 /** "Activos" tab: the board of active orders, moved forward by drag and drop (mouse, touch or keyboard). */
 export function ActiveOrdersBoard({
   orders,
+  deliveredOrders = [],
   isLoading,
   isError,
+  deliveredError,
   isRefetching,
   onRefresh,
   onSelectOrder,
+  onShowDeliveredHistory,
 }: ActiveOrdersBoardProps) {
   const statusMutation = useChangeOrderStatus();
   const [boardError, setBoardError] = useState<string | null>(null);
@@ -95,11 +103,11 @@ export function ActiveOrdersBoard({
     ) : null;
   }
 
-  const staleNotice = isError && (
+  const staleNotice = (isError || deliveredError) && (
     <QueryError compact message={ORDERS_UI_MESSAGES.listRefreshFailed} onRetry={onRefresh} retrying={isRefetching} />
   );
 
-  if (orders.length === 0) {
+  if (orders.length === 0 && deliveredOrders.length === 0) {
     return (
       <div className="flex flex-col gap-4">
         {staleNotice}
@@ -110,9 +118,10 @@ export function ActiveOrdersBoard({
     );
   }
 
+  // Only active orders are draggable, so only they are looked up by the drag handlers.
   const findOrder = (id: UniqueIdentifier) => orders.find((o) => o.id === id);
   const activeOrder = activeId === null ? undefined : findOrder(activeId);
-  const validTargets = activeOrder ? dropTargetsFor(activeOrder.status) : [];
+  const validTargets = activeOrder ? dropTargetsFor(activeOrder.status, activeOrder.fulfillment) : [];
 
   function handleDragStart({ active, activatorEvent }: DragStartEvent) {
     setActiveId(active.id);
@@ -130,7 +139,7 @@ export function ActiveOrdersBoard({
 
     const order = findOrder(active.id);
     // Same column, a column behind or outside the board: nothing changes.
-    if (!order || !over || !isValidDrop(order.status, over.id)) return;
+    if (!order || !over || !isValidDrop(order.status, order.fulfillment, over.id)) return;
 
     setBoardError(null);
     try {
@@ -166,18 +175,21 @@ export function ActiveOrdersBoard({
         onDragEnd={handleDragEnd}
         onDragCancel={handleDragCancel}
       >
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-4">
-          {BOARD_COLUMNS.map(({ status, label }) => (
-            <BoardColumn
-              key={status}
-              status={status}
-              label={label}
-              orders={orders.filter((o) => o.status === status)}
-              dragState={!activeOrder ? "idle" : validTargets.includes(status) ? "valid" : "invalid"}
-              savingIds={savingIds}
-              onSelectOrder={handleSelectOrder}
-            />
-          ))}
+        {/* From lg the five columns share a row; when they do not fit, the board scrolls, not the page. */}
+        <div className="lg:-mx-1 lg:overflow-x-auto lg:px-1 lg:pb-2">
+          <div className="grid grid-cols-1 gap-5 lg:grid-cols-[repeat(5,minmax(11rem,1fr))] lg:gap-3">
+            {BOARD_COLUMNS.map((column) => (
+              <BoardColumn
+                key={column.status}
+                column={column}
+                orders={column.isFinal ? deliveredOrders : orders.filter((o) => o.status === column.status)}
+                dragState={!activeOrder ? "idle" : validTargets.includes(column.status) ? "valid" : "invalid"}
+                savingIds={savingIds}
+                onSelectOrder={handleSelectOrder}
+                footer={column.isFinal && <HistoryLink onClick={onShowDeliveredHistory} />}
+              />
+            ))}
+          </div>
         </div>
 
         <DragOverlay>
@@ -189,5 +201,18 @@ export function ActiveOrdersBoard({
         </DragOverlay>
       </DndContext>
     </div>
+  );
+}
+
+/** Footer of the final column: today's delivered orders in "Historial", beyond the ones shown here. */
+function HistoryLink({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="min-h-11 cursor-pointer self-start rounded-lg px-1 text-sm font-bold text-link hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+    >
+      Ver todos en el historial
+    </button>
   );
 }

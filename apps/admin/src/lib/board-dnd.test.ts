@@ -26,7 +26,7 @@ describe("arrowStep", () => {
 });
 
 describe("boardAnnouncements", () => {
-  const order = { id: "o1", number: 7, status: "new" } as OrderSummary;
+  const order = { id: "o1", number: 7, status: "new", fulfillment: "takeaway" } as OrderSummary;
   const announce = boardAnnouncements((id) => (id === order.id ? order : undefined));
   const active = { id: "o1" } as Active;
   const over = (id: string) => ({ id }) as Over;
@@ -39,6 +39,8 @@ describe("boardAnnouncements", () => {
 
   it("warns when the column is not a valid target", () => {
     expect(announce.onDragOver?.({ active, over: over("new") })).toBe("Pedido #7 sobre Nuevo. No se puede mover ahí.");
+    // A takeaway order is never sent (spec 11b, scenario 14).
+    expect(announce.onDragOver?.({ active, over: over("sent") })).toBe("Pedido #7 sobre Enviado. No se puede mover ahí.");
   });
 
   it("says whether the drop changed the status", () => {

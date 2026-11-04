@@ -1,29 +1,32 @@
+import type { ReactNode } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
+import type { BoardColumnConfig } from "@/lib/board-dnd";
 import type { OrderSummary } from "@menucito/shared";
 import { ORDER_CARD_CLASS, OrderCardContent } from "@/components/orders/OrderCard";
-import type { BoardDropStatus } from "@/lib/orders";
 import { cn } from "@/lib/utils";
 
 export type ColumnDragState = "idle" | "valid" | "invalid";
 
-/** A column of the board (or the "Entregados" drop zone), highlighted while a card is dragged. */
+/**
+ * A column of the board, highlighted while a card is dragged. Cards of a final column can still be
+ * opened but not dragged: they have nowhere to go.
+ */
 export function BoardColumn({
-  status,
-  label,
+  column: { status, label, isFinal = false, emptyMessage },
   orders,
   dragState,
   savingIds,
   onSelectOrder,
+  footer,
 }: {
-  status: BoardDropStatus;
-  label: string;
+  column: BoardColumnConfig;
   orders: OrderSummary[];
   dragState: ColumnDragState;
   savingIds: Array<string | undefined>;
   onSelectOrder: (id: string) => void;
+  footer?: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
-  const isDropZone = status === "delivered";
 
   return (
     <div
@@ -37,31 +40,38 @@ export function BoardColumn({
     >
       <div className="flex items-center justify-between">
         <h2 className="m-0 text-base font-extrabold">{label}</h2>
-        {!isDropZone && (
-          <span className="rounded-full bg-line px-2.5 py-0.5 text-xs font-bold">{orders.length}</span>
-        )}
+        <span className="rounded-full bg-line px-2.5 py-0.5 text-xs font-bold">{orders.length}</span>
       </div>
 
-      {isDropZone ? (
+      {orders.length === 0 ? (
         <p className="m-0 rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-          Soltá un pedido acá para marcarlo como entregado.
-        </p>
-      ) : orders.length === 0 ? (
-        <p className="m-0 rounded-xl border border-dashed border-line p-6 text-center text-sm text-muted">
-          Sin pedidos
+          {emptyMessage}
         </p>
       ) : (
         <div className="flex flex-col gap-3">
-          {orders.map((order) => (
-            <DraggableOrderCard
-              key={order.id}
-              order={order}
-              isSaving={savingIds.includes(order.id)}
-              onClick={() => onSelectOrder(order.id)}
-            />
-          ))}
+          {orders.map((order) =>
+            isFinal ? (
+              <button
+                key={order.id}
+                type="button"
+                onClick={() => onSelectOrder(order.id)}
+                className={ORDER_CARD_CLASS}
+              >
+                <OrderCardContent order={order} />
+              </button>
+            ) : (
+              <DraggableOrderCard
+                key={order.id}
+                order={order}
+                isSaving={savingIds.includes(order.id)}
+                onClick={() => onSelectOrder(order.id)}
+              />
+            ),
+          )}
         </div>
       )}
+
+      {footer}
     </div>
   );
 }

@@ -1,18 +1,21 @@
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 import { activeNavItem, documentTitle } from "@/lib/nav";
+import { useNewOrderToasts } from "@/lib/use-new-order-toasts";
 import { MobileTopBar } from "./MobileTopBar";
 import { NavDrawer } from "./NavDrawer";
 import { NavPanel } from "./NavPanel";
+import { OrderToaster } from "./OrderToaster";
 
 /**
  * Layout route of every admin page with a restaurant: sidebar from `lg`, top bar + drawer below it.
- * Owns the only `<main>` of those pages.
+ * Owns the only `<main>` of those pages and the new-order toasts shown on any of them.
  */
 export function AdminShell() {
   const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  useNewOrderToasts();
 
   const section = activeNavItem(pathname)?.title;
   // A layout effect runs before the pages' own `useDocumentTitle` effects, so a page can override this.
@@ -44,6 +47,7 @@ export function AdminShell() {
           <Outlet />
         </main>
       </div>
+      <OrderToaster />
     </div>
   );
 }
