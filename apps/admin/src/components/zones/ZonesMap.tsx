@@ -182,7 +182,7 @@ function MapCanvas({ libs, center, zones, selectedKey, drawingKey, onGeometryCha
     };
   }, []);
 
-  return <div ref={containerRef} className="h-[360px] w-full overflow-hidden rounded-xl lg:h-[560px]" aria-label="Mapa de zonas de entrega" role="region" />;
+  return <div ref={containerRef} className="h-[360px] w-full overflow-hidden rounded-xl lg:h-auto lg:min-h-0 lg:flex-1" aria-label="Mapa de zonas de entrega" role="region" />;
 }
 
 type Report = (key: string, patch: GeometryPatch) => void;

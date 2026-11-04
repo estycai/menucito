@@ -156,8 +156,8 @@ function DeliveryZonesEditor({ location, savedZones }: { location: StoreLocation
   }
 
   return (
-    <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
-      <div className="flex min-w-0 flex-col gap-5 xl:flex-1">
+    <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
+      <div className="flex min-w-0 flex-col gap-5 lg:basis-1/2">
         <StoreAddressCard location={location} />
         <DeliveryModeCard location={location} />
         {zonesMode ? (
@@ -184,7 +184,7 @@ function DeliveryZonesEditor({ location, savedZones }: { location: StoreLocation
           <StoreSettingsGate>{(settings) => <ShippingCostCard settings={settings} />}</StoreSettingsGate>
         )}
       </div>
-      <aside aria-label="Mapa" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-white p-3 sm:p-4 xl:sticky xl:top-6 xl:w-[440px] xl:shrink-0">
+      <aside aria-label="Mapa" className="flex min-w-0 flex-col gap-3 rounded-2xl border border-line bg-white p-3 sm:p-4 lg:sticky lg:top-6 lg:h-[calc(100dvh-3rem)] lg:basis-1/2">
         <ZonesMap
           center={center}
           zones={zonesMode ? visible : []}
