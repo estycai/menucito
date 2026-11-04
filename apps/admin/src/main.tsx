@@ -1,4 +1,4 @@
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -6,7 +6,13 @@ import { AdminShell } from "@/components/shell/AdminShell";
 import { GuestOnly, RequireAuth, RequireNoRestaurant, RequireRestaurant } from "@/components/guards";
 import { ComingSoonPage } from "@/pages/ComingSoonPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
-import { LocalPage } from "@/pages/LocalPage";
+import {
+  LocalAppearanceTab,
+  LocalGeneralTab,
+  LocalPage,
+  LocalPaymentsTab,
+  LocalZonesTab,
+} from "@/pages/LocalPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { MenuPage } from "@/pages/MenuPage";
 import { OnboardingPage } from "@/pages/OnboardingPage";
@@ -16,10 +22,19 @@ import { ProductEditorPage } from "@/pages/ProductEditorPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { SummaryPage } from "@/pages/SummaryPage";
 import { VerifyEmailPage } from "@/pages/VerifyEmailPage";
+import { DEFAULT_LOCAL_TAB_PATH, LOCAL_TABS, type LocalTab } from "@/lib/local-tabs";
 import { createQueryClient } from "@/lib/query-client";
 import "./index.css";
 
 const queryClient = createQueryClient();
+
+/** Content of each "Mi local" tab; paths and order come from `LOCAL_TABS`. */
+const LOCAL_TAB_ELEMENTS: Record<LocalTab["id"], ReactNode> = {
+  general: <LocalGeneralTab />,
+  appearance: <LocalAppearanceTab />,
+  payments: <LocalPaymentsTab />,
+  zones: <LocalZonesTab />,
+};
 
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
@@ -34,7 +49,13 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 <Route path="/menu" element={<MenuPage />} />
                 <Route path="/menu/products/new" element={<ProductEditorPage />} />
                 <Route path="/menu/products/:id" element={<ProductEditorPage />} />
-                <Route path="/local" element={<LocalPage />} />
+                <Route path="/local" element={<LocalPage />}>
+                  <Route index element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
+                  {LOCAL_TABS.map((tab) => (
+                    <Route key={tab.id} path={tab.path} element={LOCAL_TAB_ELEMENTS[tab.id]} />
+                  ))}
+                  <Route path="*" element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
+                </Route>
                 <Route path="/qr" element={<ComingSoonPage id="qr" />} />
                 <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
                 <Route path="/plan" element={<PlanPage />} />

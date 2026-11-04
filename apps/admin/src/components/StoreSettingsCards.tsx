@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { Notice } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
 import { QueryError } from "@/components/QueryError";
@@ -7,18 +7,21 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import {
   checkSettings,
+  sectionValues,
   useStoreSettings,
   useUpdateStoreSettings,
   valuesFromSettings,
+  type SectionValues,
+  type SettingsSection,
   type StoreSettings,
-  type StoreSettingsValues,
 } from "@/lib/settings";
 
 const SETTINGS_LOAD_MESSAGES = {
   loadFailed: "No pudimos cargar la configuración.",
 } as const;
 
-export function StoreSettingsForm() {
+/** Loads the store settings and renders `children` with them, or the load error with a retry. */
+export function StoreSettingsGate({ children }: { children: (settings: StoreSettings) => ReactNode }) {
   const { data: settings, isError, isRefetching, refetch } = useStoreSettings();
 
   if (!settings) {
@@ -27,12 +30,7 @@ export function StoreSettingsForm() {
     ) : null;
   }
 
-  return (
-    <>
-      <ReceptionCard settings={settings} />
-      <PaymentsShippingCard key={JSON.stringify(settings)} settings={settings} />
-    </>
-  );
+  return children(settings);
 }
 
 const RECEPTION_MESSAGES = {
@@ -42,7 +40,7 @@ const RECEPTION_MESSAGES = {
 } as const;
 
 /** Container: saves the switch with an optimistic value that reverts when the save fails. */
-function ReceptionCard({ settings }: { settings: StoreSettings }) {
+export function ReceptionCard({ settings }: { settings: StoreSettings }) {
   const update = useUpdateStoreSettings();
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
@@ -111,17 +109,20 @@ const SETTINGS_CARD_MESSAGES = {
   incompleteTransferWarning: "Completá el alias y el titular para que tus clientes sepan dónde transferir.",
 } as const;
 
-function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
+/**
+ * Draft and save of one settings card. The draft holds the card's own fields; the rest come from the
+ * saved settings, so the PATCH carries only this card's changes.
+ */
+function useSettingsSection<S extends SettingsSection>(section: S, settings: StoreSettings) {
   const update = useUpdateStoreSettings();
   const [status, setStatus] = useState<"saved" | "error" | null>(null);
+  const [draft, setDraft] = useState<SectionValues<S>>(() => sectionValues(section, valuesFromSettings(settings)));
 
-  const [form, setForm] = useState<StoreSettingsValues>(() => valuesFromSettings(settings));
+  const check = checkSettings(settings, { ...valuesFromSettings(settings), ...draft });
 
-  const check = checkSettings(settings, form);
-
-  function handleChange(field: keyof StoreSettingsValues, value: string | boolean) {
+  function change<F extends keyof SectionValues<S>>(field: F, value: SectionValues<S>[F]) {
     setStatus(null);
-    setForm((prev) => ({ ...prev, [field]: value }));
+    setDraft((prev) => ({ ...prev, [field]: value }));
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -130,40 +131,95 @@ function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
 
     setStatus(null);
     try {
-      await update.mutateAsync(check.changes);
+      const updated = await update.mutateAsync(check.changes);
+      // Show the values as the API saved them (formatted amounts, trimmed alias).
+      setDraft(sectionValues(section, valuesFromSettings(updated)));
       setStatus("saved");
     } catch {
       setStatus("error");
     }
   }
 
+  return {
+    draft,
+    check,
+    change,
+    handleSubmit,
+    status,
+    canSave: Boolean(check.changes) && !check.invalid && !update.isPending,
+  };
+}
+
+/** Footer of a settings card: the saved notice and "Guardar cambios", then the save error. */
+function SaveRow({ status, canSave }: { status: "saved" | "error" | null; canSave: boolean }) {
   return (
-    <SectionCard title="Pagos y envío">
+    <>
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+        <div className="min-w-0" aria-live="polite">
+          {status === "saved" && <Notice tone="success">{SETTINGS_CARD_MESSAGES.saved}</Notice>}
+        </div>
+        <Button type="submit" className="min-h-12 rounded-xl px-[26px] text-[15px]" disabled={!canSave}>
+          Guardar cambios
+        </Button>
+      </div>
+      {status === "error" && <Notice tone="error">{SETTINGS_CARD_MESSAGES.saveFailed}</Notice>}
+    </>
+  );
+}
+
+export function MinOrderCard({ settings }: { settings: StoreSettings }) {
+  const { draft, check, change, handleSubmit, status, canSave } = useSettingsSection("minOrder", settings);
+
+  return (
+    <SectionCard title="Pedido mínimo" description="El monto mínimo que tiene que sumar un pedido para que lo puedas recibir.">
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:max-w-[280px]">
           <FormField
-            label="Pedido mínimo"
+            label="Monto mínimo"
             prefix="$"
             inputMode="numeric"
-            value={form.minOrder}
-            onChange={(e) => handleChange("minOrder", e.target.value)}
+            value={draft.minOrder}
+            onChange={(e) => change("minOrder", e.target.value)}
             hint="Dejalo vacío si no hay pedido mínimo."
             error={check.errors.minOrder}
           />
+        </div>
+        <SaveRow status={status} canSave={canSave} />
+      </form>
+    </SectionCard>
+  );
+}
+
+export function ShippingCostCard({ settings }: { settings: StoreSettings }) {
+  const { draft, check, change, handleSubmit, status, canSave } = useSettingsSection("shipping", settings);
+
+  return (
+    <SectionCard title="Costo de envío" description="Solo se suma en pedidos con envío a domicilio.">
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <div className="sm:max-w-[280px]">
           <FormField
-            label="Costo de envío"
+            label="Costo fijo"
             prefix="$"
             inputMode="numeric"
-            value={form.shipping}
-            onChange={(e) => handleChange("shipping", e.target.value)}
-            hint="Solo se suma en pedidos con envío a domicilio."
+            value={draft.shipping}
+            onChange={(e) => change("shipping", e.target.value)}
+            hint="Poné 0 si el envío es gratis."
             error={check.errors.shipping}
           />
         </div>
+        <SaveRow status={status} canSave={canSave} />
+      </form>
+    </SectionCard>
+  );
+}
 
-        <div className="flex flex-col gap-3 border-t border-line-soft pt-4">
-          <span className="text-[13px] font-bold">Formas de pago que aceptás</span>
+export function PaymentMethodsCard({ settings }: { settings: StoreSettings }) {
+  const { draft, check, change, handleSubmit, status, canSave } = useSettingsSection("payments", settings);
 
+  return (
+    <SectionCard title="Formas de pago" description="Elegí cómo te pueden pagar tus clientes.">
+      <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <div className="flex flex-col gap-3">
           {check.hasIncompleteTransferWarning && (
             <Notice tone="warning">{SETTINGS_CARD_MESSAGES.incompleteTransferWarning}</Notice>
           )}
@@ -172,8 +228,8 @@ function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
             <label className="flex min-h-[44px] cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
-                checked={form.cashEnabled}
-                onChange={(e) => handleChange("cashEnabled", e.target.checked)}
+                checked={draft.cashEnabled}
+                onChange={(e) => change("cashEnabled", e.target.checked)}
                 className="size-5 cursor-pointer rounded border-line accent-primary"
               />
               <span className="text-sm font-semibold">Efectivo</span>
@@ -182,8 +238,8 @@ function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
             <label className="flex min-h-[44px] cursor-pointer items-center gap-3">
               <input
                 type="checkbox"
-                checked={form.transferEnabled}
-                onChange={(e) => handleChange("transferEnabled", e.target.checked)}
+                checked={draft.transferEnabled}
+                onChange={(e) => change("transferEnabled", e.target.checked)}
                 className="size-5 cursor-pointer rounded border-line accent-primary"
               />
               <span className="text-sm font-semibold">Transferencia</span>
@@ -192,39 +248,27 @@ function PaymentsShippingCard({ settings }: { settings: StoreSettings }) {
 
           {check.errors.methods && <p className="m-0 text-[13px] text-danger">{check.errors.methods}</p>}
 
-          {form.transferEnabled && (
+          {draft.transferEnabled && (
             <div className="mt-2 flex flex-col gap-3 rounded-xl border border-line bg-bg/50 p-3.5 sm:p-4">
               <FormField
                 label="Alias"
                 placeholder="ej: marta.hamburguesas"
-                value={form.transferAlias}
-                onChange={(e) => handleChange("transferAlias", e.target.value)}
+                value={draft.transferAlias}
+                onChange={(e) => change("transferAlias", e.target.value)}
                 error={check.errors.transferAlias}
               />
               <FormField
                 label="Titular de la cuenta"
                 placeholder="ej: Marta Gómez"
-                value={form.transferHolderName}
-                onChange={(e) => handleChange("transferHolderName", e.target.value)}
+                value={draft.transferHolderName}
+                onChange={(e) => change("transferHolderName", e.target.value)}
                 error={check.errors.transferHolderName}
               />
             </div>
           )}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-          <div className="min-w-0" aria-live="polite">
-            {status === "saved" && <Notice tone="success">{SETTINGS_CARD_MESSAGES.saved}</Notice>}
-          </div>
-          <Button
-            type="submit"
-            className="min-h-12 rounded-xl px-[26px] text-[15px]"
-            disabled={!check.changes || check.invalid || update.isPending}
-          >
-            Guardar cambios
-          </Button>
-        </div>
-        {status === "error" && <Notice tone="error">{SETTINGS_CARD_MESSAGES.saveFailed}</Notice>}
+        <SaveRow status={status} canSave={canSave} />
       </form>
     </SectionCard>
   );

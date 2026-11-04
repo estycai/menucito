@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { StoreSettings } from "@menucito/shared";
-import { checkSettings, valuesFromSettings } from "./settings";
+import { checkSettings, sectionValues, valuesFromSettings } from "./settings";
 
 const sampleSettings: StoreSettings = {
   acceptingOrders: true,
@@ -116,5 +116,27 @@ describe("checkSettings", () => {
         holderName: null,
       });
     });
+  });
+});
+
+describe("sectionValues (one save per card)", () => {
+  it("picks only the fields of the section", () => {
+    expect(sectionValues("minOrder", savedValues)).toEqual({ minOrder: "1.000" });
+    expect(sectionValues("shipping", savedValues)).toEqual({ shipping: "500" });
+    expect(sectionValues("payments", savedValues)).toEqual({
+      cashEnabled: true,
+      transferEnabled: true,
+      transferAlias: "marta.mp",
+      transferHolderName: "Marta Gomez",
+    });
+  });
+
+  it("sends only the card's own changes, reading the other fields from the saved settings", () => {
+    // The payments draft was taken before the shipping changed elsewhere; the shipping is not resent.
+    const draft = { ...sectionValues("payments", savedValues), cashEnabled: false };
+    const latest: StoreSettings = { ...sampleSettings, shippingCents: 80_000 };
+    const check = checkSettings(latest, { ...valuesFromSettings(latest), ...draft });
+    expect(check.invalid).toBe(false);
+    expect(Object.keys(check.changes ?? {})).toEqual(["paymentMethods"]);
   });
 });

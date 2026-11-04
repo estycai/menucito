@@ -37,6 +37,24 @@ export function valuesFromSettings(settings: StoreSettings): StoreSettingsValues
   };
 }
 
+/**
+ * Fields edited by each card of "Mi local". A card keeps a draft of its own fields only and reads the
+ * rest from the saved settings, so its save sends just its own changes.
+ */
+export const SETTINGS_SECTION_FIELDS = {
+  minOrder: ["minOrder"],
+  shipping: ["shipping"],
+  payments: ["cashEnabled", "transferEnabled", "transferAlias", "transferHolderName"],
+} as const satisfies Record<string, readonly (keyof StoreSettingsValues)[]>;
+
+export type SettingsSection = keyof typeof SETTINGS_SECTION_FIELDS;
+export type SectionValues<S extends SettingsSection> = Pick<StoreSettingsValues, (typeof SETTINGS_SECTION_FIELDS)[S][number]>;
+
+export function sectionValues<S extends SettingsSection>(section: S, values: StoreSettingsValues): SectionValues<S> {
+  const fields: readonly (keyof StoreSettingsValues)[] = SETTINGS_SECTION_FIELDS[section];
+  return Object.fromEntries(fields.map((field) => [field, values[field]])) as SectionValues<S>;
+}
+
 export interface SettingsCheck {
   changes: UpdateSettingsInput | null;
   errors: {
