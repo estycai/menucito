@@ -2,6 +2,7 @@
 import { formatArs } from "@menucito/shared";
 import { AddControl } from "../components/AddControl";
 import { CartBar } from "../components/CartBar";
+import { HoursBadge, HoursNotice } from "../components/MenuHours";
 import MenuProblem from "../components/MenuProblem.astro";
 import Layout from "../layouts/Layout.astro";
 import { toCatalog, toCatalogProduct } from "../lib/catalog";
@@ -29,6 +30,12 @@ const cover = menu ? assetUrl(apiUrl, menu.restaurant.coverUrl) : null;
 const title = menu ? `${menu.restaurant.name} · Menucito` : "Menucito";
 const description = menu ? menu.restaurant.description || `Menú de ${menu.restaurant.name}` : "Menucito";
 const featured = menu?.featured ?? null;
+// Depends on the diner's clock, so the islands work it out after hydration. A paused store shows only
+// the pause banner: "Abierto" would contradict it and "Cerrado" would repeat it.
+const hours =
+  menu && menu.restaurant.acceptingOrders && menu.restaurant.hours.length > 0
+    ? { slots: menu.restaurant.hours, acceptOrdersOutsideHours: menu.restaurant.acceptOrdersOutsideHours }
+    : null;
 // With nothing but the featured row there is nothing to navigate between.
 const hasCategories = (menu?.categories.length ?? 0) > 0;
 // A scrollable region needs to be focusable, unless a button inside already gives the keyboard a way in.
@@ -58,7 +65,10 @@ const featuredRowProps = featured?.products.some((product) => product.available)
                 {initials(menu.restaurant.name)}
               </span>
             )}
-            <h1 class="menu-title">{menu.restaurant.name}</h1>
+            <div class="menu-heading">
+              <h1 class="menu-title">{menu.restaurant.name}</h1>
+              {hours && <HoursBadge client:load hours={hours} />}
+            </div>
             {menu.restaurant.description && <p class="menu-description">{menu.restaurant.description}</p>}
           </div>
         </header>
@@ -71,6 +81,8 @@ const featuredRowProps = featured?.products.some((product) => product.available)
             </aside>
           </div>
         )}
+
+        {hours && <HoursNotice client:load hours={hours} />}
 
         {catalog.length === 0 ? (
           <p class="column empty-menu">Este menú todavía no tiene productos.</p>

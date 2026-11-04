@@ -30,3 +30,35 @@ export function orderHoursNotice(hours: StoreHours, date: Date, fulfillment: Ful
   }
   return { canOrder: false, text: when ? `Cerrado ahora. Abrimos ${when}.` : "Cerrado ahora." };
 }
+
+/** What the menu page shows about the opening hours, and whether it lets the diner add to the order. */
+export interface MenuHoursStatus {
+  open: boolean;
+  /** Open, or closed but accepting orders outside its hours. */
+  canOrder: boolean;
+  /** Badge next to the restaurant name: "Abierto" or "Cerrado · Abre hoy a las 18:00". */
+  badge: string;
+  /** Notice under the header while ordering is closed; `null` while the diner can order. */
+  notice: string | null;
+}
+
+/**
+ * The hours status of the menu page at `date`, counting every slot. `null` for a store without hours
+ * (always open, nothing to show). Pausing orders is checked apart and takes priority over this.
+ */
+export function menuHoursStatus(hours: StoreHours, date: Date): MenuHoursStatus | null {
+  if (hours.slots.length === 0) return null;
+  const status = hoursStatus(hours, date);
+  if (status.open) return { open: true, canOrder: true, badge: "Abierto", notice: null };
+  const when = status.next ? describeNextOpening(status.next) : null;
+  return {
+    open: false,
+    canOrder: status.canOrder,
+    badge: when ? `Cerrado · Abre ${when}` : "Cerrado",
+    notice: status.canOrder
+      ? null
+      : when
+        ? `Ahora no tomamos pedidos. Podés mirar el menú; abrimos ${when}.`
+        : "Ahora no tomamos pedidos. Podés mirar el menú.",
+  };
+}

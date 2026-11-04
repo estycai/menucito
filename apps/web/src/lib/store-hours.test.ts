@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { HoursSlot } from "@menucito/shared";
-import { orderHoursNotice } from "./store-hours";
+import { menuHoursStatus, orderHoursNotice } from "./store-hours";
 
 // 2026-11-02 is a Monday; Argentina is UTC-3.
 const at = (isoLocal: string) => new Date(`${isoLocal}-03:00`);
@@ -53,5 +53,47 @@ describe("orderHoursNotice", () => {
     expect(orderHoursNotice({ slots: takeawayOnly, acceptOrdersOutsideHours: true }, at("2026-11-02T10:00:00"), "delivery").text).toBe(
       "Estamos cerrados. Tu pedido se va a preparar cuando abramos.",
     );
+  });
+});
+
+describe("menuHoursStatus", () => {
+  const closedHours = { slots, acceptOrdersOutsideHours: false };
+
+  it("shows nothing for a store without hours", () => {
+    expect(menuHoursStatus({ slots: [], acceptOrdersOutsideHours: false }, at("2026-11-02T10:00:00"))).toBeNull();
+  });
+
+  it("says open while any slot is open, including past midnight", () => {
+    expect(menuHoursStatus(closedHours, at("2026-11-03T00:30:00"))).toEqual({
+      open: true,
+      canOrder: true,
+      badge: "Abierto",
+      notice: null,
+    });
+  });
+
+  it("says when it opens: today, tomorrow or on a weekday", () => {
+    expect(menuHoursStatus(closedHours, at("2026-11-02T10:00:00"))?.badge).toBe("Cerrado · Abre hoy a las 19:00");
+    expect(menuHoursStatus({ slots: [dinner], acceptOrdersOutsideHours: false }, at("2026-11-01T10:00:00"))?.badge).toBe(
+      "Cerrado · Abre mañana a las 19:00",
+    );
+    expect(menuHoursStatus({ slots: [dinner], acceptOrdersOutsideHours: false }, at("2026-11-03T10:00:00"))?.badge).toBe(
+      "Cerrado · Abre el lunes a las 19:00",
+    );
+  });
+
+  it("stops orders while closed unless the store accepts them outside its hours", () => {
+    expect(menuHoursStatus(closedHours, at("2026-11-02T10:00:00"))).toEqual({
+      open: false,
+      canOrder: false,
+      badge: "Cerrado · Abre hoy a las 19:00",
+      notice: "Ahora no tomamos pedidos. Podés mirar el menú; abrimos hoy a las 19:00.",
+    });
+    expect(menuHoursStatus({ slots, acceptOrdersOutsideHours: true }, at("2026-11-02T10:00:00"))).toEqual({
+      open: false,
+      canOrder: true,
+      badge: "Cerrado · Abre hoy a las 19:00",
+      notice: null,
+    });
   });
 });

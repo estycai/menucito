@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import { MAX_LINE_QUANTITY, lineKey, type Quantities } from "@menucito/shared";
 import type { CatalogProduct } from "../lib/catalog";
 import { useCart } from "../lib/use-cart";
+import { useMenuHours } from "../lib/use-menu-hours";
 import { IngredientSheet } from "./IngredientSheet";
 import { Stepper } from "./Stepper";
+
+const CLOSED_MESSAGE = "Ahora no tomamos pedidos.";
 
 interface AddControlProps {
   slug: string;
@@ -13,9 +16,11 @@ interface AddControlProps {
 /**
  * The add control of one available product. A product without customizable ingredients gets an
  * "Agregar" button that turns into a − N + stepper; one with ingredients opens the sheet every time.
+ * While the store is closed and takes no orders, nothing can be added (removing still works).
  */
 export function AddControl({ slug, product }: AddControlProps) {
   const { state, store } = useCart(slug);
+  const closed = useMenuHours()?.canOrder === false;
   const [sheetOpen, setSheetOpen] = useState(false);
   const [refusal, setRefusal] = useState("");
   const addRef = useRef<HTMLButtonElement>(null);
@@ -36,6 +41,8 @@ export function AddControl({ slug, product }: AddControlProps) {
   }, [showStepper]);
 
   const tryAdd = (quantities: Quantities, units: number): string | null => {
+    // The sheet may have been open when the store closed.
+    if (closed) return CLOSED_MESSAGE;
     const result = store.add(product, quantities, units);
     return result.ok ? null : result.message;
   };
@@ -48,6 +55,7 @@ export function AddControl({ slug, product }: AddControlProps) {
           value={plainLine.quantity}
           min={0}
           max={MAX_LINE_QUANTITY}
+          increaseDisabled={closed}
           onChange={(value) => {
             if (value === 0) pendingFocus.current = "add";
             store.setQuantity(plainLine.key, value);
@@ -70,6 +78,7 @@ export function AddControl({ slug, product }: AddControlProps) {
         ref={addRef}
         aria-label={`Agregar ${product.name}`}
         aria-haspopup={customizable ? "dialog" : undefined}
+        disabled={closed}
         onClick={() => {
           setRefusal("");
           if (customizable) {

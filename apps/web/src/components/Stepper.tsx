@@ -5,10 +5,12 @@ interface StepperProps {
   min: number;
   max: number;
   onChange: (value: number) => void;
+  /** Disables only the + button, e.g. while the store takes no orders. */
+  increaseDisabled?: boolean;
 }
 
 /** A − N + control. The count is a polite live region so a screen reader hears each change. */
-export function Stepper({ name, value, min, max, onChange }: StepperProps) {
+export function Stepper({ name, value, min, max, onChange, increaseDisabled = false }: StepperProps) {
   return (
     <div class="stepper">
       <button
@@ -27,7 +29,7 @@ export function Stepper({ name, value, min, max, onChange }: StepperProps) {
         type="button"
         class="stepper-button"
         aria-label={`Agregar una unidad de ${name}`}
-        disabled={value >= max}
+        disabled={value >= max || increaseDisabled}
         onClick={() => onChange(value + 1)}
       >
         <span aria-hidden="true">+</span>
