@@ -10,4 +10,9 @@ export default defineConfig({
   integrations: [preact()],
   session: false,
   server: { port: 4321 },
+  vite: {
+    // The Maps loader is only reached through a dynamic import() when the address map opens, so the
+    // dev server never prebundles it on startup and the first load 404s. Prebundle it up front.
+    optimizeDeps: { include: ["@googlemaps/js-api-loader"] },
+  },
 });
