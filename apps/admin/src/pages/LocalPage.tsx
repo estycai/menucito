@@ -4,7 +4,14 @@ import { DEFAULT_COLORS } from "@menucito/shared";
 import { AppearanceForm } from "@/components/AppearanceForm";
 import { MenuPreview } from "@/components/MenuPreview";
 import { PageTabs } from "@/components/PageTabs";
-import { MinOrderCard, PaymentMethodsCard, ReceptionCard, StoreSettingsGate } from "@/components/StoreSettingsCards";
+import {
+  MinOrderCard,
+  OutsideHoursCard,
+  PaymentMethodsCard,
+  ReceptionCard,
+  StoreSettingsGate,
+} from "@/components/StoreSettingsCards";
+import { HoursTab } from "@/components/hours/HoursTab";
 import { DeliveryZonesTab } from "@/components/zones/DeliveryZonesTab";
 import type { AppearanceDraft } from "@/lib/appearance";
 import { LOCAL_TABS, localTabPath } from "@/lib/local-tabs";
@@ -23,7 +30,7 @@ export function LocalPage() {
   );
 }
 
-/** "General": order reception and the minimum order. */
+/** "General": order reception, orders outside the opening hours and the minimum order. */
 export function LocalGeneralTab() {
   return (
     <div className="flex max-w-[720px] flex-col gap-5">
@@ -31,6 +38,7 @@ export function LocalGeneralTab() {
         {(settings) => (
           <>
             <ReceptionCard settings={settings} />
+            <OutsideHoursCard settings={settings} />
             <MinOrderCard settings={settings} />
           </>
         )}
@@ -75,6 +83,11 @@ export function LocalAppearanceTab() {
       </aside>
     </div>
   );
+}
+
+/** "Horarios": whether the store is open now and the weekly opening hours. */
+export function LocalHoursTab() {
+  return <HoursTab />;
 }
 
 /** "Métodos de pago": cash and bank transfer. */

@@ -8,6 +8,7 @@ import {
   placeIdSchema,
   placeSearchQuerySchema,
   replaceDeliveryZonesSchema,
+  replaceHoursSchema,
   storeLocationSchema,
   updateAppearanceSchema,
   updateSettingsSchema,
@@ -16,6 +17,7 @@ import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { coverServiceFor } from "../services/covers";
 import { deliveryServiceFor } from "../services/delivery";
+import { hoursServiceFor } from "../services/hours";
 import { logoServiceFor } from "../services/logos";
 import { placesServiceFor } from "../services/places";
 import { restaurantsServiceFor } from "../services/restaurants";
@@ -93,6 +95,17 @@ export const restaurantsRoutes = new Hono<AppEnv>()
     const body = await parseJsonBody(c, replaceDeliveryZonesSchema);
     if ("response" in body) return body.response;
     return c.json(await deliveryServiceFor(c.env.DB).replaceZones(c.get("userId"), body.data));
+  })
+
+  // Opening hours: the whole week, replaced at once. A weekday without slots is closed.
+  .get("/me/hours", async (c) => {
+    return c.json(await hoursServiceFor(c.env.DB).getHours(c.get("userId")));
+  })
+
+  .put("/me/hours", async (c) => {
+    const body = await parseJsonBody(c, replaceHoursSchema);
+    if ("response" in body) return body.response;
+    return c.json(await hoursServiceFor(c.env.DB).replaceHours(c.get("userId"), body.data));
   })
 
   // Address search of the store (Google Places). `session` groups the calls of one search for billing.

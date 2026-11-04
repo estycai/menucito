@@ -4,6 +4,7 @@ import { checkSettings, sectionValues, valuesFromSettings } from "./settings";
 
 const sampleSettings: StoreSettings = {
   acceptingOrders: true,
+  acceptOrdersOutsideHours: false,
   minOrderCents: 100_000, // $1.000
   shippingCents: 50_000, // $500
   paymentMethods: [

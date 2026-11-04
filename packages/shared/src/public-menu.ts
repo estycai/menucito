@@ -1,5 +1,6 @@
 import type { Ingredient } from "./catalog";
 import type { DeliveryMode, LatLng } from "./delivery";
+import type { HoursSlot } from "./hours";
 import type { PaymentMethod } from "./order";
 
 /**
@@ -58,6 +59,13 @@ export interface PublicMenuRestaurant {
   colors: { background: string; primary: string };
   /** Whether the store is currently accepting orders. */
   acceptingOrders: boolean;
+  /**
+   * Opening hours (Argentina time), to compute with `hoursStatus` whether orders are taken now. Empty
+   * when the store has not set hours: then it is treated as always open.
+   */
+  hours: HoursSlot[];
+  /** With hours set and the store closed: whether orders are still taken (prepared when it opens). */
+  acceptOrdersOutsideHours: boolean;
   /** Minimum order in ARS cents, or `null` if none. */
   minOrderCents: number | null;
   /** Shipping cost in ARS cents (`flat` mode; in `zones` mode the address quote prices it). */

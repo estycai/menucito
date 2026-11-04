@@ -67,6 +67,7 @@ export function createSettingsService(
 
       const resulting: StoreSettings = {
         acceptingOrders: changes.acceptingOrders ?? current.acceptingOrders,
+        acceptOrdersOutsideHours: changes.acceptOrdersOutsideHours ?? current.acceptOrdersOutsideHours,
         // `null` clears the minimum, so only `undefined` keeps the current one.
         minOrderCents: changes.minOrderCents !== undefined ? changes.minOrderCents : current.minOrderCents,
         shippingCents: changes.shippingCents ?? current.shippingCents,

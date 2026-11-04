@@ -110,6 +110,7 @@ describe("orderFailureAction (scenarios 60 and 61)", () => {
     ["PRICE_CHANGED", { kind: "refreshMenu" }],
     ["PRODUCT_UNAVAILABLE", { kind: "refreshMenu" }],
     ["STORE_PAUSED", { kind: "paused" }],
+    ["STORE_CLOSED", { kind: "closed" }],
     ["BELOW_MINIMUM", { kind: "belowMinimum" }],
     ["PAYMENT_METHOD_NOT_ACCEPTED", { kind: "refreshPaymentMethods" }],
     ["FULFILLMENT_NOT_OFFERED", { kind: "refreshFulfillments" }],

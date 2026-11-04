@@ -570,7 +570,9 @@ describe("GET /api/public/menus/:slug appearance (scenario 13)", () => {
     // An exact key list is the whitelist: no owner, plan, status, WhatsApp, timestamps or flags.
     expect([...keys].sort()).toEqual(
       [
+        "acceptOrdersOutsideHours",
         "acceptingOrders",
+        "hours",
         "alias",
         "available",
         "background",

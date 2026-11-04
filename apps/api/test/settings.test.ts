@@ -56,6 +56,7 @@ describe("GET /api/restaurants/me/settings (scenario 10)", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as StoreSettings;
     expect(body.acceptingOrders).toBe(true);
+    expect(body.acceptOrdersOutsideHours).toBe(false);
     expect(body.minOrderCents).toBeNull();
     expect(body.shippingCents).toBe(0);
     expect(body.paymentMethods).toEqual([

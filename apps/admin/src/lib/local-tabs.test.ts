@@ -4,12 +4,12 @@ import { activeNavItem } from "./nav";
 
 describe("LOCAL_TABS", () => {
   it("keeps the display order", () => {
-    expect(LOCAL_TABS.map((tab) => tab.label)).toEqual(["Apariencia", "General", "Métodos de pago", "Zonas de entrega"]);
+    expect(LOCAL_TABS.map((tab) => tab.label)).toEqual(["Apariencia", "General", "Horarios", "Métodos de pago", "Zonas de entrega"]);
   });
 
   it("gives every tab its own URL under /local", () => {
     const paths = LOCAL_TABS.map(localTabPath);
-    expect(paths).toEqual(["/local/apariencia", "/local/general", "/local/pagos", "/local/zonas"]);
+    expect(paths).toEqual(["/local/apariencia", "/local/general", "/local/horarios", "/local/pagos", "/local/zonas"]);
   });
 
   it("keeps Mi local active on every tab", () => {

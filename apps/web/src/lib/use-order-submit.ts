@@ -74,6 +74,11 @@ export function useOrderSubmit({
       case "paused":
         onPaused();
         return;
+      case "closed":
+        // The fresh hours update the notice; the message covers a clock that still says "open".
+        await adoptFreshMenu();
+        setSubmitError(ORDER_SUBMIT_MESSAGES.closed);
+        return;
       case "belowMinimum":
         if (!(await adoptFreshMenu())) setSubmitError(ORDER_SUBMIT_MESSAGES.retry);
         return;

@@ -284,6 +284,7 @@ describe("Scenario 3: createOrderRequestSchema", () => {
 describe("Scenario 4: updateSettingsSchema and settingsProblem", () => {
   const validState: StoreSettings = {
     acceptingOrders: true,
+    acceptOrdersOutsideHours: false,
     minOrderCents: 500000,
     shippingCents: 150000,
     paymentMethods: [
@@ -298,6 +299,7 @@ describe("Scenario 4: updateSettingsSchema and settingsProblem", () => {
     // only cash enabled, min null, shipping 0
     const onlyCash: StoreSettings = {
       acceptingOrders: true,
+      acceptOrdersOutsideHours: false,
       minOrderCents: null,
       shippingCents: 0,
       paymentMethods: [

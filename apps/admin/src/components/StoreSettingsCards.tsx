@@ -33,65 +33,48 @@ export function StoreSettingsGate({ children }: { children: (settings: StoreSett
   return children(settings);
 }
 
-const RECEPTION_MESSAGES = {
-  activeAnnouncement: "Tu local vuelve a recibir pedidos",
-  pausedAnnouncement: "Tu local ya no recibe pedidos",
-  saveFailed: "No pudimos guardar el cambio. Probá de nuevo.",
-} as const;
+const SWITCH_SAVE_FAILED = "No pudimos guardar el cambio. Probá de nuevo.";
+
+/** A settings flag shown as a card with a switch. */
+interface SwitchSettingProps {
+  field: "acceptingOrders" | "acceptOrdersOutsideHours";
+  title: string;
+  description: string;
+  ariaLabel: string;
+  /** Screen reader announcements after turning it on and off. */
+  onAnnouncement: string;
+  offAnnouncement: string;
+}
 
 /** Container: saves the switch with an optimistic value that reverts when the save fails. */
-export function ReceptionCard({ settings }: { settings: StoreSettings }) {
+function SwitchSettingCard({ settings, ...card }: SwitchSettingProps & { settings: StoreSettings }) {
   const update = useUpdateStoreSettings();
   const [optimistic, setOptimistic] = useState<boolean | null>(null);
   const [announcement, setAnnouncement] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const accepting = optimistic ?? settings.acceptingOrders;
+  const checked = optimistic ?? settings[card.field];
 
   async function handleToggle(next: boolean) {
     setOptimistic(next);
     setError(null);
-    setAnnouncement(next ? RECEPTION_MESSAGES.activeAnnouncement : RECEPTION_MESSAGES.pausedAnnouncement);
+    setAnnouncement(next ? card.onAnnouncement : card.offAnnouncement);
 
     try {
-      await update.mutateAsync({ acceptingOrders: next });
+      await update.mutateAsync({ [card.field]: next });
       setOptimistic(null);
     } catch {
       setOptimistic(null); // revert switch
-      setError(RECEPTION_MESSAGES.saveFailed);
+      setError(SWITCH_SAVE_FAILED);
       setAnnouncement(null);
     }
   }
 
   return (
-    <ReceptionCardView
-      accepting={accepting}
-      saving={update.isPending}
-      announcement={announcement}
-      error={error}
-      onToggle={handleToggle}
-    />
-  );
-}
-
-function ReceptionCardView({
-  accepting,
-  saving,
-  announcement,
-  error,
-  onToggle,
-}: {
-  accepting: boolean;
-  saving: boolean;
-  announcement: string | null;
-  error: string | null;
-  onToggle: (next: boolean) => void;
-}) {
-  return (
     <SectionCard
-      title="Recepción de pedidos"
-      description="Pausá la recepción cuando no puedas tomar pedidos. Tu menú sigue visible para tus clientes."
-      action={<Switch checked={accepting} onCheckedChange={onToggle} disabled={saving} aria-label="Recibir pedidos" />}
+      title={card.title}
+      description={card.description}
+      action={<Switch checked={checked} onCheckedChange={handleToggle} disabled={update.isPending} aria-label={card.ariaLabel} />}
       actionAlign="center"
     >
       <div aria-live="polite" className="sr-only">
@@ -100,6 +83,35 @@ function ReceptionCardView({
 
       {error && <Notice tone="error">{error}</Notice>}
     </SectionCard>
+  );
+}
+
+export function ReceptionCard({ settings }: { settings: StoreSettings }) {
+  return (
+    <SwitchSettingCard
+      settings={settings}
+      field="acceptingOrders"
+      title="Recepción de pedidos"
+      description="Pausá la recepción cuando no puedas tomar pedidos. Tu menú sigue visible para tus clientes."
+      ariaLabel="Recibir pedidos"
+      onAnnouncement="Tu local vuelve a recibir pedidos"
+      offAnnouncement="Tu local ya no recibe pedidos"
+    />
+  );
+}
+
+/** Only matters once the store has opening hours ("Horarios"). */
+export function OutsideHoursCard({ settings }: { settings: StoreSettings }) {
+  return (
+    <SwitchSettingCard
+      settings={settings}
+      field="acceptOrdersOutsideHours"
+      title="Aceptar pedidos fuera de horario"
+      description="Tus clientes pueden pedir con el local cerrado; el pedido se prepara cuando abrís."
+      ariaLabel="Aceptar pedidos fuera de horario"
+      onAnnouncement="Tus clientes pueden pedir con el local cerrado"
+      offAnnouncement="Con el local cerrado, tus clientes solo ven el menú"
+    />
   );
 }
 

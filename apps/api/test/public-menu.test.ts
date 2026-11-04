@@ -91,6 +91,8 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
         description: "",
         colors: { background: "#F7F5F2", primary: "#C2410C" },
         acceptingOrders: true,
+        hours: [],
+        acceptOrdersOutsideHours: false,
         minOrderCents: null,
         shippingCents: 0,
         deliveryMode: "flat",
@@ -139,7 +141,9 @@ describe("GET /api/public/menus/:slug (scenarios 8 and 9)", () => {
 
     expect([...keys].sort()).toEqual(
       [
+        "acceptOrdersOutsideHours",
         "acceptingOrders",
+        "hours",
         "alias",
         "available",
         "background",

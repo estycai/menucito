@@ -28,6 +28,7 @@ describe("activeNavItem", () => {
     ["/menu/products/abc123", "Mi menú"],
     ["/local", "Mi local"],
     ["/local/general", "Mi local"],
+    ["/local/horarios", "Mi local"],
     ["/local/apariencia", "Mi local"],
     ["/local/pagos", "Mi local"],
     ["/local/zonas", "Mi local"],

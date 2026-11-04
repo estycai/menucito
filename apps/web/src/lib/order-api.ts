@@ -105,6 +105,7 @@ export async function refreshMenu(
 export const ORDER_SUBMIT_MESSAGES = {
   retry: "No pudimos enviar tu pedido. Probá de nuevo.",
   tooManyOrders: "Ya enviaste varios pedidos. Esperá unos minutos o escribile al local.",
+  closed: "El local está cerrado ahora. Probá de nuevo cuando abra.",
 } as const;
 
 /** What the order page does after a failed submission (scenarios 60 and 61). Nothing is resent automatically. */
@@ -113,6 +114,8 @@ export type OrderFailureAction =
   | { kind: "refreshMenu" }
   /** The store paused: show the pause banner. */
   | { kind: "paused" }
+  /** The store is outside its hours: fetch its current hours and show the closed notice. */
+  | { kind: "closed" }
   /** The subtotal does not reach the minimum: show the minimum notice. */
   | { kind: "belowMinimum" }
   /** The chosen payment method is gone: refresh the methods and ask to choose again. */
@@ -136,6 +139,8 @@ export function orderFailureAction(failure: { status: number; code: string }): O
       return { kind: "outOfCoverage" };
     case "STORE_PAUSED":
       return { kind: "paused" };
+    case "STORE_CLOSED":
+      return { kind: "closed" };
     case "BELOW_MINIMUM":
       return { kind: "belowMinimum" };
     case "PAYMENT_METHOD_NOT_ACCEPTED":

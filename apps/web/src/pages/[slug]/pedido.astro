@@ -46,6 +46,8 @@ const menu = result.status === "ok" ? result.menu : null;
           takeaway={menu.restaurant.takeaway}
           products={toCatalog(menu)}
           acceptingOrders={menu.restaurant.acceptingOrders}
+          hours={menu.restaurant.hours}
+          acceptOrdersOutsideHours={menu.restaurant.acceptOrdersOutsideHours}
           minOrderCents={menu.restaurant.minOrderCents}
           shippingCents={menu.restaurant.shippingCents}
           deliveryMode={menu.restaurant.deliveryMode}

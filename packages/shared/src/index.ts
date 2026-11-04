@@ -3,6 +3,7 @@ export * from "./cart";
 export * from "./catalog";
 export * from "./delivery";
 export * from "./delivery-coverage";
+export * from "./hours";
 export * from "./media";
 export * from "./order";
 export * from "./orders";

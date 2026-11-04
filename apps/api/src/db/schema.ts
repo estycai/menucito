@@ -115,6 +115,9 @@ export const restaurantSettings = sqliteTable("restaurant_settings", {
   acceptingOrders: integer("accepting_orders", { mode: "boolean" }).notNull().default(true),
   minOrderCents: integer("min_order_cents"),
   shippingCents: integer("shipping_cents").notNull().default(0),
+  // With hours set and the store closed, take orders anyway (prepared when it opens) instead of
+  // leaving the menu browse-only.
+  acceptOrdersOutsideHours: integer("accept_orders_outside_hours", { mode: "boolean" }).notNull().default(false),
   // `flat` charges `shipping_cents` everywhere; `zones` prices by the `delivery_zones` rows.
   deliveryMode: text("delivery_mode").notNull().default("flat"),
   // The store's own location, the origin of radius and ring zones (`NULL` until the owner sets it).
@@ -300,6 +303,26 @@ export const deliveryZones = sqliteTable(
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [index("delivery_zones_restaurant_sort_idx").on(t.restaurantId, t.sort)],
+);
+
+// Opening hours of a store: one row per slot of a weekday (0 = Sunday), in minutes since midnight
+// (Argentina time). `closes_at <= opens_at` crosses midnight (19:00–01:00). A weekday without rows is
+// closed. `sort` is the slot's position within its day.
+export const restaurantHours = sqliteTable(
+  "restaurant_hours",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    weekday: integer("weekday").notNull(),
+    opensAt: integer("opens_at").notNull(),
+    closesAt: integer("closes_at").notNull(),
+    // `all` | `delivery` | `takeaway`.
+    fulfillment: text("fulfillment").notNull(),
+    sort: integer("sort").notNull(),
+  },
+  (t) => [index("restaurant_hours_restaurant_weekday_sort_idx").on(t.restaurantId, t.weekday, t.sort)],
 );
 
 // Promo codes table (placeholder created empty for foreign key integrity in orders).

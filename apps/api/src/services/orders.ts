@@ -5,6 +5,7 @@ import {
   buildOrderMessage,
   canTransition,
   checkSlug,
+  hoursStatus,
   localDateKey,
   localDayRange,
   orderTotals,
@@ -23,6 +24,7 @@ import {
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow, RestaurantRow } from "../db/schema";
 import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
+import { createHoursRepository, type HoursRepository } from "../repositories/hours";
 import { UniqueViolationError } from "../repositories/errors";
 import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import {
@@ -47,6 +49,7 @@ import {
   PriceChangedError,
   ProductUnavailableError,
   RestaurantNotFoundError,
+  StoreClosedError,
   StorePausedError,
   TooManyOrdersError,
   ValidationError,
@@ -65,6 +68,7 @@ export interface PublicOrdersDependencies {
   products: ProductsRepository;
   ingredients: IngredientsRepository;
   delivery: DeliveryRepository;
+  hours: HoursRepository;
   now?: () => Date;
   generateId?: () => string;
 }
@@ -186,6 +190,7 @@ export function createPublicOrdersService({
   products,
   ingredients,
   delivery,
+  hours,
   now = () => new Date(),
   generateId = () => crypto.randomUUID(),
 }: PublicOrdersDependencies) {
@@ -296,6 +301,14 @@ export function createPublicOrdersService({
         throw new StorePausedError();
       }
 
+      // 4b. Opening hours: closed for this fulfillment refuses the order, unless the store takes
+      // orders outside its hours. A store without hours is always open.
+      const slots = await hours.listSlots(restaurant.id);
+      const status = hoursStatus({ slots, acceptOrdersOutsideHours: storeSettings.acceptOrdersOutsideHours }, now(), req.fulfillment);
+      if (!status.canOrder) {
+        throw new StoreClosedError();
+      }
+
       // 5. Phone throttle: at most 3 orders in 10 minutes
       const since = new Date(now().getTime() - ORDER_THROTTLE.windowMs);
       const recentCount = await orders.countRecentByPhone(restaurant.id, req.customer.phone, since);
@@ -389,6 +402,7 @@ export function publicOrdersServiceFor(db: D1Database): PublicOrdersService {
     products: createProductsRepository(db),
     ingredients: createIngredientsRepository(db),
     delivery: createDeliveryRepository(db),
+    hours: createHoursRepository(db),
   });
 }
 

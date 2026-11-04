@@ -12,6 +12,7 @@ import {
 import type { IngredientRow, ProductRow } from "../db/schema";
 import { createCategoriesRepository, type CategoriesRepository } from "../repositories/categories";
 import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
+import { createHoursRepository, type HoursRepository } from "../repositories/hours";
 import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import { createProductsRepository, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
@@ -33,6 +34,7 @@ export interface PublicMenuDependencies {
   ingredients: IngredientsRepository;
   settings: SettingsRepository;
   delivery: DeliveryRepository;
+  hours: HoursRepository;
 }
 
 function toPublicProduct(row: ProductRow, ingredients: readonly IngredientRow[]): PublicMenuProduct {
@@ -65,6 +67,7 @@ export function createPublicMenuService({
   ingredients,
   settings,
   delivery,
+  hours,
 }: PublicMenuDependencies) {
   return {
     /** Throws `MenuNotFoundError` for a malformed, reserved or unknown slug. */
@@ -77,12 +80,13 @@ export function createPublicMenuService({
       // Ingredients saved before a downgrade stay in the database but are never published on a plan
       // without customizable ingredients, so skip the query altogether.
       const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
-      const [categoryRows, productRows, ingredientRows, storeSettingsRaw, location] = await Promise.all([
+      const [categoryRows, productRows, ingredientRows, storeSettingsRaw, location, hourSlots] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
         withIngredients ? ingredients.listByRestaurant(restaurant.id) : Promise.resolve([]),
         settings.findSettings(restaurant.id),
         delivery.findLocation(restaurant.id),
+        hours.listSlots(restaurant.id),
       ]);
 
       if (!storeSettingsRaw) {
@@ -148,6 +152,8 @@ export function createPublicMenuService({
             primary: (customColors && restaurant.primaryColor) || DEFAULT_COLORS.primary,
           },
           acceptingOrders: storeSettings.acceptingOrders,
+          hours: hourSlots,
+          acceptOrdersOutsideHours: storeSettings.acceptOrdersOutsideHours,
           minOrderCents: storeSettings.minOrderCents,
           shippingCents: storeSettings.shippingCents,
           deliveryMode: zonesLocation ? "zones" : "flat",
@@ -172,5 +178,6 @@ export function publicMenuServiceFor(db: D1Database): PublicMenuService {
     ingredients: createIngredientsRepository(db),
     settings: createSettingsRepository(db),
     delivery: createDeliveryRepository(db),
+    hours: createHoursRepository(db),
   });
 }

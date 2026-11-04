@@ -26,6 +26,8 @@ export interface PaymentMethodSetting {
 
 export interface StoreSettings {
   acceptingOrders: boolean;
+  /** With hours set and the store closed: take orders anyway (`true`) or leave the menu browse-only. */
+  acceptOrdersOutsideHours: boolean;
   minOrderCents: number | null;
   shippingCents: number;
   paymentMethods: PaymentMethodSetting[];
@@ -33,6 +35,7 @@ export interface StoreSettings {
 
 export const DEFAULT_SETTINGS: StoreSettings = {
   acceptingOrders: true,
+  acceptOrdersOutsideHours: false,
   minOrderCents: null,
   shippingCents: 0,
   paymentMethods: [
@@ -112,6 +115,7 @@ export const updatePaymentMethodSchema = z.object({
 export const updateSettingsSchema = z
   .object({
     acceptingOrders: z.boolean().optional(),
+    acceptOrdersOutsideHours: z.boolean().optional(),
     minOrderCents: z
       .number()
       .int(SETTINGS_MESSAGES.minOrderInvalid)

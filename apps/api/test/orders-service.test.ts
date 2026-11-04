@@ -1,10 +1,11 @@
 import { DrizzleQueryError } from "drizzle-orm";
 import { Hono } from "hono";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEFAULT_SETTINGS, type CreateOrderRequest, type OrderDetail } from "@menucito/shared";
+import { DEFAULT_SETTINGS, type CreateOrderRequest, type HoursSlot, type OrderDetail } from "@menucito/shared";
 import type { ProductRow, RestaurantRow } from "../src/db/schema";
 import type { AppEnv } from "../src/env";
 import type { DeliveryRepository } from "../src/repositories/delivery";
+import type { HoursRepository } from "../src/repositories/hours";
 import { UniqueViolationError } from "../src/repositories/errors";
 import type { IngredientsRepository } from "../src/repositories/ingredients";
 import type { OrdersRepository } from "../src/repositories/orders";
@@ -60,8 +61,14 @@ const storedOrder: OrderDetail = {
 const numberCollision = () => new UniqueViolationError("restaurant_id", "orders", ["restaurant_id", "number"]);
 const tokenCollision = () => new UniqueViolationError("restaurant_id", "orders", ["restaurant_id", "client_token"]);
 
+interface HoursOptions {
+  slots?: HoursSlot[];
+  acceptOrdersOutsideHours?: boolean;
+  now?: Date;
+}
+
 /** Service over in-memory fakes; `insertOrder` plays the given outcomes in order. */
-function serviceWith(outcomes: Array<OrderDetail | Error>, raced: OrderDetail | null = null) {
+function serviceWith(outcomes: Array<OrderDetail | Error>, raced: OrderDetail | null = null, hours: HoursOptions = {}) {
   let lookups = 0;
   const insertOrder = vi.fn(async () => {
     const outcome = outcomes.shift();
@@ -77,11 +84,15 @@ function serviceWith(outcomes: Array<OrderDetail | Error>, raced: OrderDetail | 
   } as unknown as OrdersRepository;
   const service = createPublicOrdersService({
     restaurants: { findBySlug: async () => restaurant } as unknown as RestaurantsRepository,
-    settings: { findSettings: async () => DEFAULT_SETTINGS } as unknown as SettingsRepository,
+    settings: {
+      findSettings: async () => ({ ...DEFAULT_SETTINGS, acceptOrdersOutsideHours: hours.acceptOrdersOutsideHours ?? false }),
+    } as unknown as SettingsRepository,
     orders,
     products: { list: async () => [product] } as unknown as ProductsRepository,
     ingredients: { listByRestaurant: async () => [] } as unknown as IngredientsRepository,
     delivery: { findLocation: async () => null, listZones: async () => [] } as unknown as DeliveryRepository,
+    hours: { listSlots: async () => hours.slots ?? [] } as unknown as HoursRepository,
+    ...(hours.now ? { now: () => hours.now! } : {}),
   });
   return { service, insertOrder };
 }
@@ -121,6 +132,52 @@ describe("createOrder insert retries (no database)", () => {
     const { service, insertOrder } = serviceWith([failure, storedOrder]);
     await expect(service.createOrder(restaurant.slug, request)).rejects.toBe(failure);
     expect(insertOrder).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("createOrder opening hours (no database)", () => {
+  // 2026-11-02 is a Monday; Argentina is UTC-3.
+  const at = (isoLocal: string) => new Date(`${isoLocal}-03:00`);
+  const dinner: HoursSlot = { weekday: 1, opensAt: 19 * 60, closesAt: 60, fulfillment: "all" };
+
+  it("takes the order while open", async () => {
+    const { service } = serviceWith([storedOrder], null, { slots: [dinner], now: at("2026-11-02T20:00:00") });
+    expect((await service.createOrder(restaurant.slug, request)).status).toBe(201);
+  });
+
+  it("refuses with STORE_CLOSED while closed when the store does not take orders outside its hours", async () => {
+    const { service, insertOrder } = serviceWith([storedOrder], null, { slots: [dinner], now: at("2026-11-02T12:00:00") });
+    await expect(service.createOrder(restaurant.slug, request)).rejects.toMatchObject({ code: "STORE_CLOSED" });
+    expect(insertOrder).not.toHaveBeenCalled();
+  });
+
+  it("takes the order while closed when the store accepts orders outside its hours", async () => {
+    const { service } = serviceWith([storedOrder], null, {
+      slots: [dinner],
+      acceptOrdersOutsideHours: true,
+      now: at("2026-11-02T12:00:00"),
+    });
+    expect((await service.createOrder(restaurant.slug, request)).status).toBe(201);
+  });
+
+  it("treats a store without hours as always open", async () => {
+    const { service } = serviceWith([storedOrder], null, { slots: [], now: at("2026-11-02T04:00:00") });
+    expect((await service.createOrder(restaurant.slug, request)).status).toBe(201);
+  });
+
+  it("keeps Monday 19:00–01:00 open on Tuesday at 00:30, then closes at 01:00", async () => {
+    const open = serviceWith([storedOrder], null, { slots: [dinner], now: at("2026-11-03T00:30:00") });
+    expect((await open.service.createOrder(restaurant.slug, request)).status).toBe(201);
+
+    const closed = serviceWith([storedOrder], null, { slots: [dinner], now: at("2026-11-03T01:00:00") });
+    await expect(closed.service.createOrder(restaurant.slug, request)).rejects.toMatchObject({ code: "STORE_CLOSED" });
+  });
+
+  it("checks the slot's fulfillment against the order's", async () => {
+    const deliveryOnly: HoursSlot = { ...dinner, fulfillment: "delivery" };
+    const { service } = serviceWith([storedOrder], null, { slots: [deliveryOnly], now: at("2026-11-02T20:00:00") });
+    // `request` is a takeaway order.
+    await expect(service.createOrder(restaurant.slug, request)).rejects.toMatchObject({ code: "STORE_CLOSED" });
   });
 });
 

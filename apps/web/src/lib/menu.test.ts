@@ -16,6 +16,8 @@ const menu: PublicMenu = {
     description: "",
     colors: { background: "#F7F5F2", primary: "#C2410C" },
     acceptingOrders: true,
+    hours: [],
+    acceptOrdersOutsideHours: false,
     minOrderCents: null,
     shippingCents: 0,
     deliveryMode: "flat",

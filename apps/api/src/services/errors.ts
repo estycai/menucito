@@ -27,6 +27,14 @@ export class StorePausedError extends DomainError {
   }
 }
 
+/** The store is outside its opening hours and does not take orders while closed. */
+export class StoreClosedError extends DomainError {
+  readonly code = "STORE_CLOSED";
+  constructor(message = "El local está cerrado ahora") {
+    super(message);
+  }
+}
+
 export class BelowMinimumError extends DomainError {
   readonly code = "BELOW_MINIMUM";
   constructor(message = "El pedido no alcanza el monto mínimo") {

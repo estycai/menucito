@@ -9,6 +9,7 @@ import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import {
   LocalAppearanceTab,
   LocalGeneralTab,
+  LocalHoursTab,
   LocalPage,
   LocalPaymentsTab,
   LocalZonesTab,
@@ -32,6 +33,7 @@ const queryClient = createQueryClient();
 const LOCAL_TAB_ELEMENTS: Record<LocalTab["id"], ReactNode> = {
   general: <LocalGeneralTab />,
   appearance: <LocalAppearanceTab />,
+  hours: <LocalHoursTab />,
   payments: <LocalPaymentsTab />,
   zones: <LocalZonesTab />,
 };

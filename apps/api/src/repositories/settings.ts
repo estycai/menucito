@@ -47,6 +47,7 @@ export function createSettingsRepository(d1: D1Database): SettingsRepository {
 
     return {
       acceptingOrders: Boolean(settingsRow.acceptingOrders),
+      acceptOrdersOutsideHours: Boolean(settingsRow.acceptOrdersOutsideHours),
       minOrderCents: settingsRow.minOrderCents,
       shippingCents: settingsRow.shippingCents,
       paymentMethods: methods,
@@ -57,16 +58,16 @@ export function createSettingsRepository(d1: D1Database): SettingsRepository {
     findSettings,
 
     async upsertSettings(restaurantId, settings, updatedAt) {
-      const { acceptingOrders, minOrderCents, shippingCents } = settings;
+      const { acceptingOrders, acceptOrdersOutsideHours, minOrderCents, shippingCents } = settings;
 
       type BatchStatement = Parameters<typeof db.batch>[0][number];
       const batchStatements: BatchStatement[] = [
         db
           .insert(restaurantSettings)
-          .values({ restaurantId, acceptingOrders, minOrderCents, shippingCents, updatedAt })
+          .values({ restaurantId, acceptingOrders, acceptOrdersOutsideHours, minOrderCents, shippingCents, updatedAt })
           .onConflictDoUpdate({
             target: restaurantSettings.restaurantId,
-            set: { acceptingOrders, minOrderCents, shippingCents, updatedAt },
+            set: { acceptingOrders, acceptOrdersOutsideHours, minOrderCents, shippingCents, updatedAt },
           }),
       ];
 

@@ -13,6 +13,7 @@ import {
   orderTotals,
   type DeliveryMode,
   type Fulfillment,
+  type HoursSlot,
   type LatLng,
   type OrderDelivery,
   type PaymentMethod,
@@ -36,6 +37,7 @@ import {
 import { useCart } from "../lib/use-cart";
 import { useDeliveryQuote } from "../lib/use-delivery-quote";
 import { useOrderSubmit } from "../lib/use-order-submit";
+import { orderHoursNotice } from "../lib/store-hours";
 import { AddressDialog } from "./AddressDialog";
 import { CoverageDialog } from "./CoverageDialog";
 import { OrderConfirmation } from "./OrderConfirmation";
@@ -47,6 +49,8 @@ interface OrderDetailProps {
   takeaway: boolean;
   products: CatalogProduct[];
   acceptingOrders: boolean;
+  hours: HoursSlot[];
+  acceptOrdersOutsideHours: boolean;
   minOrderCents: number | null;
   shippingCents: number;
   deliveryMode: DeliveryMode;
@@ -61,6 +65,8 @@ interface LiveStore {
   takeaway: boolean;
   products: CatalogProduct[];
   acceptingOrders: boolean;
+  hours: HoursSlot[];
+  acceptOrdersOutsideHours: boolean;
   minOrderCents: number | null;
   shippingCents: number;
   deliveryMode: DeliveryMode;
@@ -75,6 +81,8 @@ function liveStoreFromMenu(menu: PublicMenu): LiveStore {
     takeaway: restaurant.takeaway,
     products: toCatalog(menu),
     acceptingOrders: restaurant.acceptingOrders,
+    hours: restaurant.hours,
+    acceptOrdersOutsideHours: restaurant.acceptOrdersOutsideHours,
     minOrderCents: restaurant.minOrderCents,
     shippingCents: restaurant.shippingCents,
     deliveryMode: restaurant.deliveryMode,
@@ -96,8 +104,19 @@ const FIELD_IDS: Record<OrderFormField, string> = {
 /** Order review, store policy validation, and submission with WhatsApp handoff. */
 export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps) {
   const [live, setLive] = useState<LiveStore>(initialStore);
-  const { delivery, takeaway, products, acceptingOrders, minOrderCents, shippingCents, deliveryMode, location, paymentMethods } =
-    live;
+  const {
+    delivery,
+    takeaway,
+    products,
+    acceptingOrders,
+    hours,
+    acceptOrdersOutsideHours,
+    minOrderCents,
+    shippingCents,
+    deliveryMode,
+    location,
+    paymentMethods,
+  } = live;
   // `zones`: the diner picks a geocoded address and the API quotes it; `flat`: a typed address.
   const storeLocation = deliveryMode === "zones" ? location : null;
   const { state, store } = useCart(slug, initialStore.products);
@@ -118,6 +137,12 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   const [deliveryAddress, setDeliveryAddress] = useState<OrderDelivery | null>(null);
   const [addressOpen, setAddressOpen] = useState(false);
   const [coverageOpen, setCoverageOpen] = useState(false);
+  // The clock the opening hours are checked against, refreshed so an open page follows the hours.
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(timer);
+  }, []);
 
   // Read the remembered form after hydration. Single available choices are preselected.
   useEffect(() => {
@@ -211,6 +236,9 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   // Out of coverage the button only looks disabled: tapping it explains why (and offers a way out).
   const outOfCoverage = zonesDelivery && pricing.covered === false;
   const quoting = zonesDelivery && deliveryAddress !== null && quote.status === "loading";
+  // Pausing takes priority: while paused, the hours notice is not shown.
+  const hoursNotice = orderHoursNotice({ slots: hours, acceptOrdersOutsideHours }, now, values.fulfillment);
+  const closed = acceptingOrders && !hoursNotice.canOrder;
 
   const submit = (event: Event) => {
     event.preventDefault();
@@ -232,7 +260,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
       retryQuote();
       return;
     }
-    if (!acceptingOrders || isBelowMinOrder || quoting) return;
+    if (!acceptingOrders || closed || isBelowMinOrder || quoting) return;
 
     const geocoded = zonesDelivery ? deliveryAddress : null;
     void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents, geocoded));
@@ -243,6 +271,11 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
       {!acceptingOrders && (
         <aside class="pause-banner" role="status">
           Este local no está recibiendo pedidos por ahora. <a href={`/${slug}`}>Podés ver el menú</a>.
+        </aside>
+      )}
+      {acceptingOrders && hoursNotice.text && (
+        <aside class="pause-banner" role="status">
+          {hoursNotice.text}
         </aside>
       )}
 
@@ -503,7 +536,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         <button
           type="submit"
           class="primary-button"
-          disabled={submitting || !acceptingOrders || quoting || (isBelowMinOrder && !outOfCoverage)}
+          disabled={submitting || !acceptingOrders || closed || quoting || (isBelowMinOrder && !outOfCoverage)}
           aria-disabled={outOfCoverage ? "true" : undefined}
           aria-describedby={outOfCoverage ? COVERAGE_HINT_ID : undefined}
         >
@@ -511,7 +544,9 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
             ? "Enviando…"
             : !acceptingOrders
               ? "Recepción pausada"
-              : quoting
+              : closed
+                ? "Local cerrado"
+                : quoting
                 ? "Calculando envío…"
                 : "Enviar pedido"}
         </button>
