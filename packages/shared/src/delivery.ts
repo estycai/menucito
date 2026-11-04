@@ -35,6 +35,7 @@ export const DELIVERY_MESSAGES = {
   pricingInvalid: "Tipo de precio inválido",
   moneyInvalid: "El monto debe ser de hasta $1.000.000",
   minAboveMax: "El envío mínimo no puede ser mayor que el máximo",
+  freeFromZero: "Tiene que ser mayor a $0. Dejalo vacío si nunca es gratis.",
 } as const;
 
 export interface LatLng {
@@ -122,8 +123,11 @@ const zoneCommonSchema = z.object({
   color: hexColorSchema,
   /** Minimum subtotal to deliver to this zone; `null` means no minimum. */
   minOrderCents: moneySchema.nullable().optional(),
-  /** Subtotal from which shipping to this zone is free; `null` means never free. */
-  freeFromCents: moneySchema.nullable().optional(),
+  /**
+   * Subtotal from which shipping to this zone is free; `null` means never free. Zero is refused: every
+   * order would reach it, silently making the zone free (a free zone is a fixed price of 0).
+   */
+  freeFromCents: moneySchema.min(1, DELIVERY_MESSAGES.freeFromZero).nullable().optional(),
 });
 
 /**
