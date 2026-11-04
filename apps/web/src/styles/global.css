@@ -213,6 +213,8 @@ img.avatar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  /* The hours badge sits at the right edge; on narrow screens it wraps under the name. */
+  justify-content: space-between;
   gap: 6px 12px;
 }
 
