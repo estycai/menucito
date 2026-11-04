@@ -112,3 +112,35 @@ export class PlaceNotFoundError extends DomainError {
     super(message);
   }
 }
+
+/** The delivery address is outside every active zone of the store. */
+export class OutOfCoverageError extends DomainError {
+  readonly code = "OUT_OF_COVERAGE";
+  constructor(message = "Tu dirección está fuera de la zona de entrega") {
+    super(message);
+  }
+}
+
+/** The store does not deliver by zones, so the address search and the quote are not available. */
+export class DeliveryZonesDisabledError extends DomainError {
+  readonly code = "DELIVERY_ZONES_DISABLED";
+  constructor(message = "Este local no usa zonas de entrega") {
+    super(message);
+  }
+}
+
+/** The store now delivers by zones and the order came with a typed address only (an outdated page). */
+export class DeliveryLocationRequiredError extends DomainError {
+  readonly code = "DELIVERY_LOCATION_REQUIRED";
+  constructor(message = "Elegí tu dirección en el mapa para que el local calcule el envío") {
+    super(message);
+  }
+}
+
+/** Too many requests from the same address (IP) in a short time. */
+export class RateLimitedError extends DomainError {
+  readonly code = "RATE_LIMITED";
+  constructor(message = "Hiciste muchas búsquedas seguidas. Probá de nuevo en unos minutos.") {
+    super(message);
+  }
+}

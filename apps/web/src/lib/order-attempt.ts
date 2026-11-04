@@ -30,7 +30,8 @@ function parseToken(raw: string | null | undefined): string | null {
   return null;
 }
 
-function newToken(): string {
+/** A random UUID v4, also where `crypto.randomUUID` is missing (old browsers, insecure origins). */
+export function newToken(): string {
   return typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
     ? crypto.randomUUID()
     : "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {

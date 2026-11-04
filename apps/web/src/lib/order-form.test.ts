@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ORDER_MESSAGES, ORDERS_MESSAGES } from "@menucito/shared";
+import { DELIVERY_ADDRESS_MESSAGES, ORDER_MESSAGES, ORDERS_MESSAGES } from "@menucito/shared";
 import type { StorageLike } from "./cart-store";
 import {
   EMPTY_ORDER_FORM,
@@ -27,13 +27,20 @@ function fakeStorage(initial: Record<string, string> = {}): StorageLike & { data
 }
 
 describe("order form storage (scenario 11)", () => {
-  it("remembers the values per restaurant including phone", () => {
+  it("remembers the values per restaurant including phone, but never the address", () => {
     const storage = fakeStorage();
     const values = { name: "Juan", phone: "11 5555 1234", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
     writeOrderForm(storage, "a", values);
     expect(Object.keys(storage.data)).toEqual(["menucito:order-form:a"]);
-    expect(readOrderForm(storage, "a")).toEqual(values);
+    expect(storage.data["menucito:order-form:a"]).not.toContain("Calle 1");
+    expect(readOrderForm(storage, "a")).toEqual({ ...values, address: "" });
     expect(readOrderForm(storage, "b")).toEqual(EMPTY_ORDER_FORM);
+  });
+
+  it("ignores an address remembered by an older version", () => {
+    const key = orderFormStorageKey("a");
+    const storage = fakeStorage({ [key]: JSON.stringify({ v: 1, name: "Juan", address: "Calle 1" }) });
+    expect(readOrderForm(storage, "a").address).toBe("");
   });
 
   it("drops a fulfillment the restaurant no longer offers", () => {
@@ -115,6 +122,24 @@ describe("getFormErrors", () => {
 
   it("rejects a phone that is not an Argentine WhatsApp number", () => {
     expect(getFormErrors({ ...valid, phone: "1234" }, both, methods).phone).toBe(ORDERS_MESSAGES.phoneInvalid);
+  });
+
+  it("asks for the geocoded address instead of the typed one in zones mode", () => {
+    const chosen = {
+      placeId: null,
+      lat: -34.6,
+      lng: -58.4,
+      formattedAddress: "Av. Corrientes 1500",
+      locality: null,
+      unit: null,
+      betweenStreets: null,
+      label: null,
+    };
+    expect(getFormErrors({ ...valid, address: "" }, both, methods, { address: null }).address).toBe(
+      DELIVERY_ADDRESS_MESSAGES.addressRequired,
+    );
+    expect(getFormErrors({ ...valid, address: "" }, both, methods, { address: chosen })).toEqual({});
+    expect(getFormErrors({ ...valid, fulfillment: "takeaway" }, both, methods, { address: null })).toEqual({});
   });
 
   it("rejects choices the restaurant does not offer", () => {

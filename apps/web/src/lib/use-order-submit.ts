@@ -15,6 +15,8 @@ export interface UseOrderSubmitOptions {
   onPaused: () => void;
   /** The store no longer accepts the chosen payment method or fulfillment. */
   onChoiceRejected: (field: "payment" | "fulfillment") => void;
+  /** No delivery zone covers the chosen address. */
+  onOutOfCoverage: () => void;
 }
 
 export interface OrderSubmit {
@@ -32,7 +34,15 @@ export interface OrderSubmit {
 }
 
 /** Order submission and failure handling (scenarios 58 to 61). Nothing is resent automatically. */
-export function useOrderSubmit({ slug, apiUrl, cart, onMenu, onPaused, onChoiceRejected }: UseOrderSubmitOptions): OrderSubmit {
+export function useOrderSubmit({
+  slug,
+  apiUrl,
+  cart,
+  onMenu,
+  onPaused,
+  onChoiceRejected,
+  onOutOfCoverage,
+}: UseOrderSubmitOptions): OrderSubmit {
   // A double tap or a double Enter must send a single request (scenario 60).
   const inFlight = useRef(false);
   const [submitting, setSubmitting] = useState(false);
@@ -74,6 +84,9 @@ export function useOrderSubmit({ slug, apiUrl, cart, onMenu, onPaused, onChoiceR
         if (!menu) setSubmitError(ORDER_SUBMIT_MESSAGES.retry);
         return;
       }
+      case "outOfCoverage":
+        onOutOfCoverage();
+        return;
       case "message":
         setSubmitError(action.message);
         return;

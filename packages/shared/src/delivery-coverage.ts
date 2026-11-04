@@ -3,7 +3,7 @@
  * functions with no geocoding and no DB: the API quotes with them when an order arrives and the
  * menu can run the same code to show the price before sending.
  */
-import type { DeliveryZone, LatLng, LatLngTuple } from "./delivery";
+import type { DeliveryZone, LatLng, LatLngTuple, PublicDeliveryQuote } from "./delivery";
 
 /** Mean Earth radius in meters (IUGG). */
 const EARTH_RADIUS_M = 6_371_008.8;
@@ -119,4 +119,10 @@ export function quoteDelivery({ zones, origin, point, subtotalCents }: QuoteDeli
     shippingCents: zoneShippingCents(zone, distanceM, subtotalCents),
     minOrderCents: zone.minOrderCents ?? null,
   };
+}
+
+/** The part of a quote the diner may see: no zone id, name or distance. */
+export function toPublicQuote(quote: DeliveryQuote): PublicDeliveryQuote {
+  if (!quote.covered) return { covered: false };
+  return { covered: true, shippingCents: quote.shippingCents, minOrderCents: quote.minOrderCents };
 }

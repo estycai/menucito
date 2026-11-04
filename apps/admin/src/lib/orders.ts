@@ -12,6 +12,7 @@ import {
   localDateKey,
   type ApiErrorBody,
   type Fulfillment,
+  type LatLng,
   type OrderDateField,
   type OrderDetail,
   type OrderStatus,
@@ -252,6 +253,11 @@ export function isInvalidTransitionError(err: unknown): boolean {
 /** A 422 from the export whose body says the range has too many orders (any other error is generic). */
 export function isExportTooLargeError(err: unknown): boolean {
   return hasErrorCode(err, "EXPORT_TOO_LARGE");
+}
+
+/** Google Maps search link of a point (opens the app on phones), for the courier. */
+export function googleMapsSearchUrl({ lat, lng }: LatLng): string {
+  return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
 }
 
 /** Error of a failed export response, carrying the `{error: {code}}` of its JSON body when there is one. */

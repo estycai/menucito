@@ -1,9 +1,11 @@
-import { and, desc, eq, gte, inArray, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, notExists, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
+  type AddressLabel,
   type Fulfillment,
   type OrderDateField,
+  type OrderDeliveryLocation,
   type OrderDetail,
   type OrderItem,
   type OrderItemOption,
@@ -14,6 +16,7 @@ import {
   type PaymentStatus,
 } from "@menucito/shared";
 import {
+  customerAddresses,
   customers,
   orderItems,
   orders,
@@ -25,6 +28,23 @@ import { translatingUniqueViolations } from "./errors";
 /** D1 caps bound parameters per statement at 100; keep `IN (...)` lists below it. */
 const ITEMS_QUERY_CHUNK = 90;
 
+/** Geocoded address of a delivery priced by zones, and the zone that priced it. */
+export interface InsertOrderDelivery {
+  /** Id of the `customer_addresses` row, used only if the customer never used this address before. */
+  addressId: string;
+  lat: number;
+  lng: number;
+  placeId: string | null;
+  formattedAddress: string;
+  locality: string | null;
+  unit: string | null;
+  betweenStreets: string | null;
+  label: AddressLabel | null;
+  zoneId: string;
+  zoneName: string;
+  distanceM: number;
+}
+
 export interface InsertOrderData {
   orderId: string;
   restaurantId: string;
@@ -33,6 +53,8 @@ export interface InsertOrderData {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string | null;
+  /** Set for delivery orders of stores in `zones` mode; the address is also saved for the customer. */
+  delivery: InsertOrderDelivery | null;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
   subtotalCents: number;
@@ -65,7 +87,8 @@ export interface ListOrdersFilter {
 
 export interface OrdersRepository {
   /**
-   * Inserts the customer (deduplicated by phone), the order and its items in one batch. Throws
+   * Inserts the customer (deduplicated by phone), the order and its items in one batch; a geocoded
+   * delivery address is also saved (or refreshed) among the customer's addresses. Throws
    * `UniqueViolationError` whose `columns` include `client_token` (token already used) or `number`
    * (a concurrent order took the number).
    */
@@ -116,6 +139,19 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     };
   }
 
+  function toDeliveryLocation(row: OrderDbRow): OrderDeliveryLocation | null {
+    if (row.deliveryLat === null || row.deliveryLng === null) return null;
+    return {
+      lat: row.deliveryLat,
+      lng: row.deliveryLng,
+      placeId: row.deliveryPlaceId,
+      unit: row.deliveryUnit,
+      betweenStreets: row.deliveryBetweenStreets,
+      zoneName: row.deliveryZoneName,
+      distanceM: row.deliveryDistanceM,
+    };
+  }
+
   function toOrderDetail(orderRow: OrderDbRow, itemRows: OrderItemDbRow[]): OrderDetail {
     return {
       id: orderRow.id,
@@ -127,6 +163,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       customerName: orderRow.customerName,
       customerPhone: orderRow.customerPhone,
       deliveryAddress: orderRow.deliveryAddress,
+      deliveryLocation: toDeliveryLocation(orderRow),
       notes: orderRow.notes,
       subtotalCents: orderRow.subtotalCents,
       shippingCents: orderRow.shippingCents,
@@ -218,6 +255,70 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     return and(...conditions);
   }
 
+  /**
+   * Upsert of the address among the customer's: the same place (or, without a place id, the same text
+   * and unit) is refreshed, anything else is added. `customer_addresses` has no unique key to upsert
+   * on, so it is an UPDATE plus an INSERT ... SELECT guarded by NOT EXISTS, both inside the order's
+   * batch (one transaction). The customer is found like the order finds it, by restaurant and phone.
+   */
+  function saveCustomerAddress(data: InsertOrderData, address: InsertOrderDelivery) {
+    const customerId = sql<string>`(SELECT id FROM customers WHERE restaurant_id = ${data.restaurantId} AND phone = ${data.customerPhone})`;
+    const sameAddress = address.placeId
+      ? eq(customerAddresses.placeId, address.placeId)
+      : and(eq(customerAddresses.formattedAddress, address.formattedAddress), sql`${customerAddresses.unit} IS ${address.unit}`);
+    const usedAt = data.createdAt;
+    const fields = {
+      formattedAddress: address.formattedAddress,
+      locality: address.locality,
+      lat: address.lat,
+      lng: address.lng,
+      placeId: address.placeId,
+      betweenStreets: address.betweenStreets,
+      unit: address.unit,
+    };
+
+    return [
+      db
+        .update(customerAddresses)
+        // An address used again without a label keeps the one it had.
+        .set({ ...fields, label: sql`COALESCE(${address.label}, ${customerAddresses.label})`, lastUsedAt: usedAt })
+        .where(and(eq(customerAddresses.customerId, customerId), sameAddress)),
+      db
+        .insert(customerAddresses)
+        .select(
+          db
+            .select({
+              id: sql<string>`${address.addressId}`.as("id"),
+              restaurantId: customers.restaurantId,
+              customerId: customers.id,
+              label: sql<string | null>`${address.label}`.as("label"),
+              formattedAddress: sql<string>`${address.formattedAddress}`.as("formatted_address"),
+              locality: sql<string | null>`${address.locality}`.as("locality"),
+              lat: sql<number>`${address.lat}`.as("lat"),
+              lng: sql<number>`${address.lng}`.as("lng"),
+              placeId: sql<string | null>`${address.placeId}`.as("place_id"),
+              betweenStreets: sql<string | null>`${address.betweenStreets}`.as("between_streets"),
+              unit: sql<string | null>`${address.unit}`.as("unit"),
+              createdAt: sql<Date>`${usedAt.getTime()}`.as("created_at"),
+              lastUsedAt: sql<Date>`${usedAt.getTime()}`.as("last_used_at"),
+            })
+            .from(customers)
+            .where(
+              and(
+                eq(customers.restaurantId, data.restaurantId),
+                eq(customers.phone, data.customerPhone),
+                notExists(
+                  db
+                    .select({ one: sql`1` })
+                    .from(customerAddresses)
+                    .where(and(eq(customerAddresses.customerId, customers.id), sameAddress)),
+                ),
+              ),
+            ),
+        ),
+    ];
+  }
+
   return {
     async insertOrder(data) {
       type BatchStatement = Parameters<typeof db.batch>[0][number];
@@ -248,6 +349,14 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           customerName: data.customerName,
           customerPhone: data.customerPhone,
           deliveryAddress: data.deliveryAddress,
+          deliveryLat: data.delivery?.lat ?? null,
+          deliveryLng: data.delivery?.lng ?? null,
+          deliveryPlaceId: data.delivery?.placeId ?? null,
+          deliveryUnit: data.delivery?.unit ?? null,
+          deliveryBetweenStreets: data.delivery?.betweenStreets ?? null,
+          deliveryZoneId: data.delivery?.zoneId ?? null,
+          deliveryZoneName: data.delivery?.zoneName ?? null,
+          deliveryDistanceM: data.delivery?.distanceM ?? null,
           subtotalCents: data.subtotalCents,
           shippingCents: data.shippingCents,
           discountCents: 0,
@@ -271,6 +380,8 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           }),
         );
       }
+
+      if (data.delivery) batchStatements.push(...saveCustomerAddress(data, data.delivery));
 
       await translatingUniqueViolations(() =>
         db.batch(batchStatements as [BatchStatement, ...BatchStatement[]]),

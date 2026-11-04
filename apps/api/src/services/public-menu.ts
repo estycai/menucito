@@ -2,6 +2,7 @@ import {
   DEFAULT_COLORS,
   DEFAULT_SETTINGS,
   checkSlug,
+  hasCoordinates,
   planLimitsFor,
   type PublicMenu,
   type PublicMenuCategory,
@@ -10,6 +11,7 @@ import {
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow } from "../db/schema";
 import { createCategoriesRepository, type CategoriesRepository } from "../repositories/categories";
+import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
 import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import { createProductsRepository, type ProductsRepository } from "../repositories/products";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
@@ -30,6 +32,7 @@ export interface PublicMenuDependencies {
   products: ProductsRepository;
   ingredients: IngredientsRepository;
   settings: SettingsRepository;
+  delivery: DeliveryRepository;
 }
 
 function toPublicProduct(row: ProductRow, ingredients: readonly IngredientRow[]): PublicMenuProduct {
@@ -61,6 +64,7 @@ export function createPublicMenuService({
   products,
   ingredients,
   settings,
+  delivery,
 }: PublicMenuDependencies) {
   return {
     /** Throws `MenuNotFoundError` for a malformed, reserved or unknown slug. */
@@ -73,11 +77,12 @@ export function createPublicMenuService({
       // Ingredients saved before a downgrade stay in the database but are never published on a plan
       // without customizable ingredients, so skip the query altogether.
       const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
-      const [categoryRows, productRows, ingredientRows, storeSettingsRaw] = await Promise.all([
+      const [categoryRows, productRows, ingredientRows, storeSettingsRaw, location] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
         withIngredients ? ingredients.listByRestaurant(restaurant.id) : Promise.resolve([]),
         settings.findSettings(restaurant.id),
+        delivery.findLocation(restaurant.id),
       ]);
 
       if (!storeSettingsRaw) {
@@ -122,6 +127,13 @@ export function createPublicMenuService({
           holderName: pm.method === "transfer" ? pm.holderName : null,
         }));
 
+      // Zones need the store's coordinates; a store without them keeps the flat price. The zones
+      // themselves are never published: the diner only gets quotes.
+      const zonesLocation =
+        restaurant.delivery && location?.deliveryMode === "zones" && hasCoordinates(location)
+          ? { lat: location.lat, lng: location.lng }
+          : null;
+
       return {
         restaurant: {
           name: restaurant.name,
@@ -138,6 +150,8 @@ export function createPublicMenuService({
           acceptingOrders: storeSettings.acceptingOrders,
           minOrderCents: storeSettings.minOrderCents,
           shippingCents: storeSettings.shippingCents,
+          deliveryMode: zonesLocation ? "zones" : "flat",
+          location: zonesLocation,
           paymentMethods: enabledPaymentMethods,
         },
         featured,
@@ -157,5 +171,6 @@ export function publicMenuServiceFor(db: D1Database): PublicMenuService {
     products: createProductsRepository(db),
     ingredients: createIngredientsRepository(db),
     settings: createSettingsRepository(db),
+    delivery: createDeliveryRepository(db),
   });
 }

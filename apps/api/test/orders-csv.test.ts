@@ -13,6 +13,7 @@ function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     customerName: "Juan",
     customerPhone: "5491155551234",
     deliveryAddress: null,
+    deliveryLocation: null,
     notes: null,
     subtotalCents: 900_000,
     shippingCents: 0,

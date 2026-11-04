@@ -11,13 +11,17 @@ import {
   formatArs,
   lineTotalCents,
   orderTotals,
+  type DeliveryMode,
   type Fulfillment,
+  type LatLng,
+  type OrderDelivery,
   type PaymentMethod,
   type PublicMenu,
   type PublicMenuPaymentMethod,
 } from "@menucito/shared";
 import { browserStorage } from "../lib/cart-store";
 import { toCatalog, type CatalogProduct } from "../lib/catalog";
+import { addressLines, deliveryPricing, type QuoteState } from "../lib/delivery-address";
 import { buildOrderRequest } from "../lib/order-api";
 import {
   EMPTY_ORDER_FORM,
@@ -30,7 +34,10 @@ import {
   type OrderFormValues,
 } from "../lib/order-form";
 import { useCart } from "../lib/use-cart";
+import { useDeliveryQuote } from "../lib/use-delivery-quote";
 import { useOrderSubmit } from "../lib/use-order-submit";
+import { AddressDialog } from "./AddressDialog";
+import { CoverageDialog } from "./CoverageDialog";
 import { OrderConfirmation } from "./OrderConfirmation";
 import { Stepper } from "./Stepper";
 
@@ -42,6 +49,8 @@ interface OrderDetailProps {
   acceptingOrders: boolean;
   minOrderCents: number | null;
   shippingCents: number;
+  deliveryMode: DeliveryMode;
+  location: LatLng | null;
   paymentMethods: PublicMenuPaymentMethod[];
   apiUrl: string;
 }
@@ -54,6 +63,8 @@ interface LiveStore {
   acceptingOrders: boolean;
   minOrderCents: number | null;
   shippingCents: number;
+  deliveryMode: DeliveryMode;
+  location: LatLng | null;
   paymentMethods: PublicMenuPaymentMethod[];
 }
 
@@ -66,6 +77,8 @@ function liveStoreFromMenu(menu: PublicMenu): LiveStore {
     acceptingOrders: restaurant.acceptingOrders,
     minOrderCents: restaurant.minOrderCents,
     shippingCents: restaurant.shippingCents,
+    deliveryMode: restaurant.deliveryMode,
+    location: restaurant.location,
     paymentMethods: restaurant.paymentMethods,
   };
 }
@@ -83,7 +96,10 @@ const FIELD_IDS: Record<OrderFormField, string> = {
 /** Order review, store policy validation, and submission with WhatsApp handoff. */
 export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps) {
   const [live, setLive] = useState<LiveStore>(initialStore);
-  const { delivery, takeaway, products, acceptingOrders, minOrderCents, shippingCents, paymentMethods } = live;
+  const { delivery, takeaway, products, acceptingOrders, minOrderCents, shippingCents, deliveryMode, location, paymentMethods } =
+    live;
+  // `zones`: the diner picks a geocoded address and the API quotes it; `flat`: a typed address.
+  const storeLocation = deliveryMode === "zones" ? location : null;
   const { state, store } = useCart(slug, initialStore.products);
   const priced = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
   const offered = useMemo(() => offeredFulfillments({ delivery, takeaway }), [delivery, takeaway]);
@@ -98,6 +114,10 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   const [restored, setRestored] = useState(false);
   const [touched, setTouched] = useState<ReadonlySet<OrderFormField>>(new Set());
   const [submitted, setSubmitted] = useState(false);
+  // Never persisted: the diner chooses the address on every visit.
+  const [deliveryAddress, setDeliveryAddress] = useState<OrderDelivery | null>(null);
+  const [addressOpen, setAddressOpen] = useState(false);
+  const [coverageOpen, setCoverageOpen] = useState(false);
 
   // Read the remembered form after hydration. Single available choices are preselected.
   useEffect(() => {
@@ -140,10 +160,24 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     onMenu: (menu) => setLive(liveStoreFromMenu(menu)),
     onPaused: () => setLive((current) => ({ ...current, acceptingOrders: false })),
     onChoiceRejected: resetChoice,
+    onOutOfCoverage: () => {
+      setCoverageOpen(true);
+      retryQuote();
+    },
   });
   const { submitting, submitError, successOrder, menuRefreshed } = orderSubmit;
 
-  const errors = getFormErrors(values, offered, offeredMethods);
+  const subtotalCents = cartTotalCents(state.lines, priced);
+  const zonesDelivery = storeLocation !== null && values.fulfillment === "delivery";
+  const { quote, retry: retryQuote } = useDeliveryQuote({
+    apiUrl,
+    slug,
+    point: deliveryAddress,
+    subtotalCents,
+    enabled: zonesDelivery,
+  });
+
+  const errors = getFormErrors(values, offered, offeredMethods, storeLocation ? { address: deliveryAddress } : undefined);
   const visibleError = (field: OrderFormField) => (submitted || touched.has(field) ? errors[field] : undefined);
   const describedBy = (field: OrderFormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
 
@@ -163,14 +197,20 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     );
   }
 
+  const pricing = deliveryPricing(storeLocation !== null, quote, { shippingCents, minOrderCents });
   const totals = orderTotals({
-    subtotalCents: cartTotalCents(state.lines, priced),
-    shippingCents,
+    subtotalCents,
+    shippingCents: pricing.shippingCents,
     // Until a fulfillment is picked, the total is shown without shipping.
     fulfillment: values.fulfillment === "delivery" ? "delivery" : "takeaway",
   });
-  const shortfall = minOrderShortfallCents(totals.subtotalCents, minOrderCents);
+  // A zone's minimum only applies to deliveries.
+  const effectiveMinCents = values.fulfillment === "delivery" ? pricing.minOrderCents : minOrderCents;
+  const shortfall = minOrderShortfallCents(totals.subtotalCents, effectiveMinCents);
   const isBelowMinOrder = shortfall !== null;
+  // Out of coverage the button only looks disabled: tapping it explains why (and offers a way out).
+  const outOfCoverage = zonesDelivery && pricing.covered === false;
+  const quoting = zonesDelivery && deliveryAddress !== null && quote.status === "loading";
 
   const submit = (event: Event) => {
     event.preventDefault();
@@ -184,9 +224,18 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
       return;
     }
 
-    if (!acceptingOrders || isBelowMinOrder) return;
+    if (outOfCoverage) {
+      setCoverageOpen(true);
+      return;
+    }
+    if (zonesDelivery && quote.status === "error") {
+      retryQuote();
+      return;
+    }
+    if (!acceptingOrders || isBelowMinOrder || quoting) return;
 
-    void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents));
+    const geocoded = zonesDelivery ? deliveryAddress : null;
+    void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents, geocoded));
   };
 
   return (
@@ -257,10 +306,15 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
           <dd>{formatArs(totals.subtotalCents)}</dd>
         </div>
         {values.fulfillment === "delivery" &&
-          (shippingCents > 0 ? (
+          (zonesDelivery && pricing.covered !== true ? (
             <div class="order-breakdown-row">
               <dt>Envío</dt>
-              <dd>{formatArs(shippingCents)}</dd>
+              <dd>{pendingShippingText(deliveryAddress !== null, quote)}</dd>
+            </div>
+          ) : pricing.shippingCents > 0 ? (
+            <div class="order-breakdown-row">
+              <dt>Envío</dt>
+              <dd>{formatArs(pricing.shippingCents)}</dd>
             </div>
           ) : (
             <div class="order-breakdown-row">
@@ -351,7 +405,17 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
           </fieldset>
         )}
 
-        {values.fulfillment === "delivery" && (
+        {values.fulfillment === "delivery" && storeLocation && (
+          <DeliveryAddressField
+            address={deliveryAddress}
+            quote={quote}
+            error={visibleError("address")}
+            onEdit={() => setAddressOpen(true)}
+            onRetryQuote={retryQuote}
+          />
+        )}
+
+        {values.fulfillment === "delivery" && !storeLocation && (
           <div class="field">
             <label for={FIELD_IDS.address}>Dirección</label>
             <input
@@ -423,9 +487,9 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         )}
 
         <div aria-live="polite" aria-atomic="true">
-          {shortfall !== null && minOrderCents !== null && (
+          {shortfall !== null && effectiveMinCents !== null && !outOfCoverage && (
             <p class="order-min-warning">
-              El pedido mínimo es {formatArs(minOrderCents)}. Te faltan {formatArs(shortfall)}.
+              El pedido mínimo es {formatArs(effectiveMinCents)}. Te faltan {formatArs(shortfall)}.
             </p>
           )}
         </div>
@@ -439,15 +503,140 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
         <button
           type="submit"
           class="primary-button"
-          disabled={submitting || !acceptingOrders || isBelowMinOrder}
+          disabled={submitting || !acceptingOrders || quoting || (isBelowMinOrder && !outOfCoverage)}
+          aria-disabled={outOfCoverage ? "true" : undefined}
+          aria-describedby={outOfCoverage ? COVERAGE_HINT_ID : undefined}
         >
-          {submitting ? "Enviando…" : !acceptingOrders ? "Recepción pausada" : "Enviar pedido"}
+          {submitting
+            ? "Enviando…"
+            : !acceptingOrders
+              ? "Recepción pausada"
+              : quoting
+                ? "Calculando envío…"
+                : "Enviar pedido"}
         </button>
+        {outOfCoverage && (
+          <p class="visually-hidden" id={COVERAGE_HINT_ID}>
+            Tu dirección está fuera de la zona de entrega
+          </p>
+        )}
         <p class="order-note">Al enviar, se abrirá WhatsApp con el detalle de tu pedido para coordinar con el local.</p>
       </form>
+
+      {addressOpen && storeLocation && (
+        <AddressDialog
+          apiUrl={apiUrl}
+          slug={slug}
+          origin={storeLocation}
+          initial={deliveryAddress}
+          onClose={() => setAddressOpen(false)}
+          onConfirm={(address) => {
+            setDeliveryAddress(address);
+            touch("address");
+            orderSubmit.clearError();
+          }}
+        />
+      )}
+
+      {coverageOpen && (
+        <CoverageDialog
+          canTakeaway={offered.includes("takeaway")}
+          onClose={() => setCoverageOpen(false)}
+          onTakeaway={() => {
+            change({ fulfillment: "takeaway" });
+            touch("fulfillment");
+            orderSubmit.clearError();
+          }}
+          onChangeAddress={() => setAddressOpen(true)}
+        />
+      )}
     </div>
   );
 }
+
+const COVERAGE_HINT_ID = "order-coverage-hint";
+
+/** The shipping row while the zone price is unknown. */
+function pendingShippingText(hasAddress: boolean, quote: QuoteState): string {
+  if (!hasAddress) return "Según tu dirección";
+  if (quote.status === "ready") return "Sin cobertura";
+  if (quote.status === "error") return "No disponible";
+  return "Calculando…";
+}
+
+interface DeliveryAddressFieldProps {
+  address: OrderDelivery | null;
+  quote: QuoteState;
+  error: string | undefined;
+  onEdit: () => void;
+  onRetryQuote: () => void;
+}
+
+/** The address card of stores in `zones` mode: empty with "Agregar", or the address and its coverage. */
+function DeliveryAddressField({ address, quote, error, onEdit, onRetryQuote }: DeliveryAddressFieldProps) {
+  const errorId = `${FIELD_IDS.address}-error`;
+  const lines = address ? addressLines(address) : null;
+  return (
+    <div class="field">
+      <div class={`address-card${error ? " address-card-invalid" : ""}`}>
+        {lines ? (
+          <span class="address-card-text">
+            <strong class="address-card-main">{lines.main}</strong>
+            {lines.secondary && <span class="address-card-secondary">{lines.secondary}</span>}
+            {address?.unit && <span class="address-card-secondary">{address.unit}</span>}
+            <CoverageBadge quote={quote} onRetry={onRetryQuote} />
+          </span>
+        ) : (
+          <span class="address-card-text">
+            <strong class="address-card-main">Dirección de entrega</strong>
+            <span class="address-card-secondary">Agregá dónde recibir tu pedido</span>
+          </span>
+        )}
+        <button
+          type="button"
+          class="text-button"
+          id={FIELD_IDS.address}
+          aria-label={address ? "Cambiar la dirección de entrega" : "Agregar la dirección de entrega"}
+          aria-describedby={error ? errorId : undefined}
+          onClick={onEdit}
+        >
+          {address ? "Cambiar" : "Agregar"}
+        </button>
+      </div>
+      <FieldError id={errorId} message={error} />
+    </div>
+  );
+}
+
+function CoverageBadge({ quote, onRetry }: { quote: QuoteState; onRetry: () => void }) {
+  if (quote.status === "ready") {
+    return quote.quote.covered ? (
+      <span class="coverage-badge coverage-badge-ok">
+        <span aria-hidden="true">●</span> Llega a tu dirección
+      </span>
+    ) : (
+      <span class="coverage-badge coverage-badge-out">
+        <span aria-hidden="true">●</span> Sin cobertura
+      </span>
+    );
+  }
+  if (quote.status === "error") {
+    return (
+      <span class="coverage-badge coverage-badge-out" role="alert">
+        No pudimos calcular el envío.{" "}
+        <button type="button" class="link-button" onClick={onRetry}>
+          Reintentar
+        </button>
+      </span>
+    );
+  }
+  return (
+    <span class="coverage-badge" role="status">
+      <span class="spinner" aria-hidden="true" /> Calculando envío…
+    </span>
+  );
+}
+
 
 function Notice({ onDismiss }: { onDismiss: () => void }) {
   return (

@@ -7,6 +7,7 @@ import {
   formatArs,
   formatLocalDateTime,
   nextStatus,
+  type OrderDeliveryLocation,
   type OrderDetail,
   type OrderStatus,
   type PaymentStatus,
@@ -17,7 +18,13 @@ import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { PaymentStatusBadge } from "@/components/orders/PaymentStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { isInvalidTransitionError, useChangeOrderPayment, useChangeOrderStatus, useOrder } from "@/lib/orders";
+import {
+  googleMapsSearchUrl,
+  isInvalidTransitionError,
+  useChangeOrderPayment,
+  useChangeOrderStatus,
+  useOrder,
+} from "@/lib/orders";
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 
@@ -210,7 +217,29 @@ function OrderCustomer({ order }: { order: OrderDetail }) {
       {order.fulfillment === "delivery" && order.deliveryAddress && (
         <span className="text-muted">Entrega: {order.deliveryAddress}</span>
       )}
+      {order.fulfillment === "delivery" && order.deliveryLocation && (
+        <OrderDeliveryLocationDetails location={order.deliveryLocation} />
+      )}
     </div>
+  );
+}
+
+/** What the diner pinned for a zones delivery: door details, the zone that priced it and the map. */
+function OrderDeliveryLocationDetails({ location }: { location: OrderDeliveryLocation }) {
+  return (
+    <>
+      {location.unit && <span className="text-muted">Piso/depto: {location.unit}</span>}
+      {location.betweenStreets && <span className="text-muted">Entre calles: {location.betweenStreets}</span>}
+      {location.zoneName && <span className="text-muted">Zona: {location.zoneName}</span>}
+      <a
+        href={googleMapsSearchUrl(location)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-link hover:underline"
+      >
+        Ver en Google Maps
+      </a>
+    </>
   );
 }
 

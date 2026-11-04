@@ -1,4 +1,5 @@
 import type { Ingredient } from "./catalog";
+import type { DeliveryMode, LatLng } from "./delivery";
 import type { PaymentMethod } from "./order";
 
 /**
@@ -59,8 +60,15 @@ export interface PublicMenuRestaurant {
   acceptingOrders: boolean;
   /** Minimum order in ARS cents, or `null` if none. */
   minOrderCents: number | null;
-  /** Shipping cost in ARS cents. */
+  /** Shipping cost in ARS cents (`flat` mode; in `zones` mode the address quote prices it). */
   shippingCents: number;
+  /**
+   * `flat`: the diner types the address and pays `shippingCents`. `zones`: the diner picks a geocoded
+   * address and the API quotes it (`POST .../delivery-quote`).
+   */
+  deliveryMode: DeliveryMode;
+  /** Where the store is, to center the address map; set only in `zones` mode. Never the zones. */
+  location: LatLng | null;
   /** Enabled payment methods. */
   paymentMethods: PublicMenuPaymentMethod[];
 }

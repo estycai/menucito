@@ -18,6 +18,8 @@ const menu: PublicMenu = {
     acceptingOrders: true,
     minOrderCents: null,
     shippingCents: 0,
+    deliveryMode: "flat",
+    location: null,
     paymentMethods: [{ method: "cash", alias: null, holderName: null }],
   },
   featured: null,

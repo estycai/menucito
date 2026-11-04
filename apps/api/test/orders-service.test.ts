@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type CreateOrderRequest, type OrderDetail } from "@menucito/shared";
 import type { ProductRow, RestaurantRow } from "../src/db/schema";
 import type { AppEnv } from "../src/env";
+import type { DeliveryRepository } from "../src/repositories/delivery";
 import { UniqueViolationError } from "../src/repositories/errors";
 import type { IngredientsRepository } from "../src/repositories/ingredients";
 import type { OrdersRepository } from "../src/repositories/orders";
@@ -32,6 +33,7 @@ const request: CreateOrderRequest = {
   paymentMethod: "cash",
   clientOrderId: "8f2c7a64-4f7e-4b55-9d3c-1a2b3c4d5e6f",
   expectedTotalCents: 100_000,
+  delivery: null,
 };
 
 const storedOrder: OrderDetail = {
@@ -44,6 +46,7 @@ const storedOrder: OrderDetail = {
   customerName: "Juan",
   customerPhone: "5491155551234",
   deliveryAddress: null,
+  deliveryLocation: null,
   notes: null,
   subtotalCents: 100_000,
   shippingCents: 0,
@@ -78,6 +81,7 @@ function serviceWith(outcomes: Array<OrderDetail | Error>, raced: OrderDetail | 
     orders,
     products: { list: async () => [product] } as unknown as ProductsRepository,
     ingredients: { listByRestaurant: async () => [] } as unknown as IngredientsRepository,
+    delivery: { findLocation: async () => null, listZones: async () => [] } as unknown as DeliveryRepository,
   });
   return { service, insertOrder };
 }

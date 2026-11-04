@@ -16,6 +16,7 @@ const sampleBody: CreateOrderRequest = {
   paymentMethod: "cash",
   clientOrderId: "10000000-0000-4000-8000-000000000001",
   expectedTotalCents: 500_000,
+  delivery: null,
 };
 
 const sampleSuccessResponse: CreateOrderResponse = {
@@ -112,8 +113,13 @@ describe("orderFailureAction (scenarios 60 and 61)", () => {
     ["BELOW_MINIMUM", { kind: "belowMinimum" }],
     ["PAYMENT_METHOD_NOT_ACCEPTED", { kind: "refreshPaymentMethods" }],
     ["FULFILLMENT_NOT_OFFERED", { kind: "refreshFulfillments" }],
+    ["DELIVERY_LOCATION_REQUIRED", { kind: "refreshMenu" }],
   ])("maps 409 %s", (code, action) => {
     expect(orderFailureAction({ status: 409, code })).toEqual(action);
+  });
+
+  it("maps 422 OUT_OF_COVERAGE to the coverage popup", () => {
+    expect(orderFailureAction({ status: 422, code: "OUT_OF_COVERAGE" })).toEqual({ kind: "outOfCoverage" });
   });
 
   it("maps 429 TOO_MANY_ORDERS to its message", () => {
@@ -184,7 +190,32 @@ describe("buildOrderRequest", () => {
       paymentMethod: "cash",
       expectedTotalCents: 123_000,
       items: [{ productId: "p1", quantity: 2, choices: { Queso: 2 } }],
+      delivery: null,
     });
+  });
+
+  it("sends the geocoded address instead of the typed one", () => {
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "ignored", payment: "cash" } as const;
+    const delivery = {
+      placeId: "ChIJ-1",
+      lat: -34.6,
+      lng: -58.4,
+      formattedAddress: "Av. Corrientes 1500, CABA",
+      locality: "Buenos Aires",
+      unit: "3B",
+      betweenStreets: null,
+      label: "home",
+    } as const;
+    const request = buildOrderRequest(values, lines, token, 100, delivery);
+    expect(request.customer.address).toBeNull();
+    expect(request.delivery).toEqual(delivery);
+    expect(request.delivery).not.toBe(delivery);
+  });
+
+  it("never sends a geocoded address with a takeaway order", () => {
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash" } as const;
+    const delivery = { placeId: null, lat: 0, lng: 0, formattedAddress: "x", locality: null, unit: null, betweenStreets: null, label: null };
+    expect(buildOrderRequest(values, lines, token, 100, delivery).delivery).toBeNull();
   });
 
   it("drops the address on takeaway orders", () => {

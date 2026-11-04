@@ -48,6 +48,8 @@ const menu = result.status === "ok" ? result.menu : null;
           acceptingOrders={menu.restaurant.acceptingOrders}
           minOrderCents={menu.restaurant.minOrderCents}
           shippingCents={menu.restaurant.shippingCents}
+          deliveryMode={menu.restaurant.deliveryMode}
+          location={menu.restaurant.location}
           paymentMethods={menu.restaurant.paymentMethods}
           apiUrl={apiUrl}
         />

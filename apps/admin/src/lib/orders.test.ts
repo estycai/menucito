@@ -11,6 +11,7 @@ import {
   filtersFromSearchParams,
   filtersToSearchParams,
   exportErrorFrom,
+  googleMapsSearchUrl,
   isExportTooLargeError,
   isInvalidTransitionError,
   isValidDrop,
@@ -273,5 +274,13 @@ describe("exportErrorFrom", () => {
     const err = await exportErrorFrom(new Response("<html>", { status: 502 }));
     expect(err.status).toBe(502);
     expect(err.code).toBe("UNKNOWN");
+  });
+});
+
+describe("googleMapsSearchUrl", () => {
+  it("links to a search of the coordinates", () => {
+    expect(googleMapsSearchUrl({ lat: -34.6037, lng: -58.3816 })).toBe(
+      "https://www.google.com/maps/search/?api=1&query=-34.6037,-58.3816",
+    );
   });
 });

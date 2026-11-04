@@ -57,6 +57,13 @@
       "when": 1793759454536,
       "tag": "0007_delivery_zones",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1793761086144,
+      "tag": "0008_rate_limits",
+      "breakpoints": true
     }
   ]
 }

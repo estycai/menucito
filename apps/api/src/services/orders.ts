@@ -9,6 +9,7 @@ import {
   localDayRange,
   orderTotals,
   planLimitsFor,
+  quoteDelivery,
   toPublicOrder,
   unitPriceCents,
   type CreateOrderRequest,
@@ -21,6 +22,7 @@ import {
   type StoreSettings,
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow, RestaurantRow } from "../db/schema";
+import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
 import { UniqueViolationError } from "../repositories/errors";
 import { createIngredientsRepository, type IngredientsRepository } from "../repositories/ingredients";
 import {
@@ -34,11 +36,13 @@ import { createRestaurantsRepository, type RestaurantsRepository } from "../repo
 import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
 import {
   BelowMinimumError,
+  DeliveryLocationRequiredError,
   ExportTooLargeError,
   FulfillmentNotOfferedError,
   InvalidTransitionError,
   OrderNotFoundError,
   OrderNumberConflictError,
+  OutOfCoverageError,
   PaymentMethodNotAcceptedError,
   PriceChangedError,
   ProductUnavailableError,
@@ -47,6 +51,7 @@ import {
   TooManyOrdersError,
   ValidationError,
 } from "./errors";
+import { deliversByZones } from "./delivery";
 import { ordersToCsv } from "./orders-csv";
 import { MenuNotFoundError } from "./public-menu";
 
@@ -59,8 +64,18 @@ export interface PublicOrdersDependencies {
   orders: OrdersRepository;
   products: ProductsRepository;
   ingredients: IngredientsRepository;
+  delivery: DeliveryRepository;
   now?: () => Date;
   generateId?: () => string;
+}
+
+/** How a delivery is priced and where it goes; takeaway orders get no shipping and no address. */
+interface DeliveryTerms {
+  shippingCents: number;
+  /** Minimum subtotal: the zone's when it has one, else the store's. */
+  minOrderCents: number | null;
+  deliveryAddress: string | null;
+  delivery: InsertOrderData["delivery"];
 }
 
 /** Response of a placed (or replayed) order: the public order, its WhatsApp link and the transfer details. */
@@ -170,9 +185,66 @@ export function createPublicOrdersService({
   orders,
   products,
   ingredients,
+  delivery,
   now = () => new Date(),
   generateId = () => crypto.randomUUID(),
 }: PublicOrdersDependencies) {
+  /**
+   * Shipping, minimum and address of the order. A store in `zones` mode quotes the geocoded address
+   * (`OUT_OF_COVERAGE` when no active zone covers it); a `flat` store charges its single price and
+   * keeps the typed address, taking the geocoded one only when there is none (a page opened while
+   * the store was still in `zones` mode).
+   */
+  async function deliveryTerms(
+    restaurant: RestaurantRow,
+    storeSettings: StoreSettings,
+    req: CreateOrderRequest,
+    subtotalCents: number,
+  ): Promise<DeliveryTerms> {
+    const flat: DeliveryTerms = {
+      shippingCents: storeSettings.shippingCents,
+      minOrderCents: storeSettings.minOrderCents,
+      deliveryAddress: null,
+      delivery: null,
+    };
+    if (req.fulfillment !== "delivery") return flat;
+
+    const location = await delivery.findLocation(restaurant.id);
+    if (!deliversByZones(restaurant, location)) {
+      return { ...flat, deliveryAddress: req.customer.address ?? req.delivery?.formattedAddress ?? null };
+    }
+
+    const address = req.delivery;
+    if (!address) throw new DeliveryLocationRequiredError();
+    const quote = quoteDelivery({
+      zones: await delivery.listZones(restaurant.id),
+      origin: { lat: location.lat, lng: location.lng },
+      point: { lat: address.lat, lng: address.lng },
+      subtotalCents,
+    });
+    if (!quote.covered) throw new OutOfCoverageError();
+
+    return {
+      shippingCents: quote.shippingCents,
+      minOrderCents: quote.minOrderCents ?? storeSettings.minOrderCents,
+      deliveryAddress: address.formattedAddress,
+      delivery: {
+        addressId: generateId(),
+        lat: address.lat,
+        lng: address.lng,
+        placeId: address.placeId,
+        formattedAddress: address.formattedAddress,
+        locality: address.locality,
+        unit: address.unit,
+        betweenStreets: address.betweenStreets,
+        label: address.label,
+        zoneId: quote.zoneId,
+        zoneName: quote.zoneName,
+        distanceM: quote.distanceM,
+      },
+    };
+  }
+
   /**
    * Inserts the order, retrying when its number collides with a concurrent order. A token collision
    * means a concurrent request with the same `clientOrderId` won: its order is returned as resent
@@ -264,22 +336,27 @@ export function createPublicOrdersService({
         generateId,
       });
 
-      // 9. Minimum order check (against the subtotal, not the total with shipping)
-      if (storeSettings.minOrderCents !== null && priced.subtotalCents < storeSettings.minOrderCents) {
+      // 9. Delivery terms: the flat price, or the quote of the address's zone (the diner's subtotal
+      // decides free shipping, so it goes after pricing)
+      const terms = await deliveryTerms(restaurant, storeSettings, req, priced.subtotalCents);
+
+      // 10. Minimum order check (against the subtotal, not the total with shipping); a zone's minimum
+      // replaces the store's
+      if (terms.minOrderCents !== null && priced.subtotalCents < terms.minOrderCents) {
         throw new BelowMinimumError();
       }
 
-      // 10. Total calculation and expected total check
+      // 11. Total calculation and expected total check
       const totals = orderTotals({
         subtotalCents: priced.subtotalCents,
-        shippingCents: storeSettings.shippingCents,
+        shippingCents: terms.shippingCents,
         fulfillment: req.fulfillment,
       });
       if (req.expectedTotalCents !== totals.totalCents) {
         throw new PriceChangedError();
       }
 
-      // 11. Write the order
+      // 12. Write the order
       const { order, resent } = await insertOrder({
         orderId: generateId(),
         restaurantId: restaurant.id,
@@ -287,7 +364,8 @@ export function createPublicOrdersService({
         customerId: generateId(),
         customerName: req.customer.name,
         customerPhone: req.customer.phone,
-        deliveryAddress: req.customer.address ?? null,
+        deliveryAddress: terms.deliveryAddress,
+        delivery: terms.delivery,
         fulfillment: req.fulfillment,
         paymentMethod: req.paymentMethod,
         ...totals,
@@ -295,7 +373,7 @@ export function createPublicOrdersService({
         items: priced.items,
       });
 
-      // 12. Build response
+      // 13. Build response
       return { status: resent ? 200 : 201, response: buildCreateOrderResponse(order, restaurant, storeSettings) };
     },
   };
@@ -310,6 +388,7 @@ export function publicOrdersServiceFor(db: D1Database): PublicOrdersService {
     orders: createOrdersRepository(db),
     products: createProductsRepository(db),
     ingredients: createIngredientsRepository(db),
+    delivery: createDeliveryRepository(db),
   });
 }
 

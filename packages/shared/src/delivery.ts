@@ -276,3 +276,83 @@ export interface PlaceResult {
   lat: number;
   lng: number;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Diner: the delivery address of an order, the public address search and the shipping quote.
+
+export const DELIVERY_UNIT_MAX_LENGTH = 60;
+export const BETWEEN_STREETS_MAX_LENGTH = 100;
+export const LOCALITY_MAX_LENGTH = 100;
+
+/** How each address label reads in the menu and the admin. */
+export const ADDRESS_LABEL_TEXT: Readonly<Record<AddressLabel, string>> = { home: "Casa", work: "Trabajo", other: "Otra" };
+
+export const DELIVERY_ADDRESS_MESSAGES = {
+  addressRequired: "Elegí la dirección de entrega",
+  addressTooLong: `La dirección puede tener hasta ${ADDRESS_MAX_LENGTH} caracteres`,
+  localityTooLong: `La localidad puede tener hasta ${LOCALITY_MAX_LENGTH} caracteres`,
+  unitTooLong: `El piso o depto puede tener hasta ${DELIVERY_UNIT_MAX_LENGTH} caracteres`,
+  betweenStreetsTooLong: `Las entrecalles pueden tener hasta ${BETWEEN_STREETS_MAX_LENGTH} caracteres`,
+  labelInvalid: "Etiqueta inválida",
+  subtotalInvalid: "El subtotal debe ser un número entero no negativo",
+} as const;
+
+/**
+ * The geocoded delivery address of an order (stores in `zones` mode): where to deliver, as the diner
+ * confirmed it on the map, plus the details the courier needs. `formattedAddress` is what the order
+ * shows as its address.
+ */
+export const orderDeliverySchema = z.object({
+  placeId: z
+    .string(LOCATION_MESSAGES.placeIdInvalid)
+    .regex(/^[A-Za-z0-9_-]{1,300}$/, LOCATION_MESSAGES.placeIdInvalid)
+    .nullish()
+    .transform((value) => value ?? null),
+  lat: latSchema,
+  lng: lngSchema,
+  formattedAddress: z
+    .string(DELIVERY_ADDRESS_MESSAGES.addressRequired)
+    .trim()
+    .min(1, DELIVERY_ADDRESS_MESSAGES.addressRequired)
+    .max(ADDRESS_MAX_LENGTH, DELIVERY_ADDRESS_MESSAGES.addressTooLong),
+  locality: optionalText(LOCALITY_MAX_LENGTH, DELIVERY_ADDRESS_MESSAGES.localityTooLong),
+  unit: optionalText(DELIVERY_UNIT_MAX_LENGTH, DELIVERY_ADDRESS_MESSAGES.unitTooLong),
+  betweenStreets: optionalText(BETWEEN_STREETS_MAX_LENGTH, DELIVERY_ADDRESS_MESSAGES.betweenStreetsTooLong),
+  label: z
+    .enum(ADDRESS_LABELS, DELIVERY_ADDRESS_MESSAGES.labelInvalid)
+    .nullish()
+    .transform((value) => value ?? null),
+});
+
+export type OrderDelivery = z.output<typeof orderDeliverySchema>;
+
+/** Query of `GET /api/public/menus/:slug/places/reverse`: the point under the map pin. */
+export const reverseGeocodeQuerySchema = z.object({
+  lat: z.coerce.number(DELIVERY_MESSAGES.latInvalid).pipe(latSchema),
+  lng: z.coerce.number(DELIVERY_MESSAGES.lngInvalid).pipe(lngSchema),
+});
+
+/** Body of `POST /api/public/menus/:slug/delivery-quote`. */
+export const deliveryQuoteRequestSchema = z.object({
+  lat: latSchema,
+  lng: lngSchema,
+  subtotalCents: z
+    .number(DELIVERY_ADDRESS_MESSAGES.subtotalInvalid)
+    .int(DELIVERY_ADDRESS_MESSAGES.subtotalInvalid)
+    .min(0, DELIVERY_ADDRESS_MESSAGES.subtotalInvalid),
+});
+
+export type DeliveryQuoteRequest = z.output<typeof deliveryQuoteRequestSchema>;
+
+/**
+ * What the diner learns about an address: whether the store delivers there and, if so, the shipping
+ * and the minimum order. Zones (names, shapes, ids) stay private to the store.
+ */
+export type PublicDeliveryQuote =
+  | { covered: false }
+  | {
+      covered: true;
+      shippingCents: number;
+      /** Minimum subtotal for this address; `null` means the store's general minimum applies. */
+      minOrderCents: number | null;
+    };

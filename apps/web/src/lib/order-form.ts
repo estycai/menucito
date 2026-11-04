@@ -1,4 +1,5 @@
 import {
+  DELIVERY_ADDRESS_MESSAGES,
   FULFILLMENTS,
   ORDER_ADDRESS_MAX_LENGTH,
   ORDER_MESSAGES,
@@ -7,6 +8,7 @@ import {
   PAYMENT_METHODS,
   normalizeArWhatsapp,
   type Fulfillment,
+  type OrderDelivery,
   type PaymentMethod,
 } from "@menucito/shared";
 import type { StorageLike } from "./cart-store";
@@ -24,7 +26,10 @@ export const EMPTY_ORDER_FORM: OrderFormValues = { name: "", phone: "", fulfillm
 
 export const ORDER_FORM_STORAGE_VERSION = 1;
 
-/** The form is remembered per restaurant, like the cart (the cart itself is never part of it). */
+/**
+ * The form is remembered per restaurant, like the cart (the cart itself is never part of it). The
+ * address never is: the diner types it every time (the store keeps the ones that ordered).
+ */
 export const orderFormStorageKey = (slug: string) => `menucito:order-form:${slug}`;
 
 const oneOf = <T extends string>(values: readonly T[], value: unknown): T | "" =>
@@ -51,7 +56,7 @@ export function readOrderForm(
       name: typeof data.name === "string" ? data.name.slice(0, ORDER_NAME_MAX_LENGTH) : "",
       phone: typeof data.phone === "string" ? data.phone.slice(0, 30) : "",
       fulfillment,
-      address: typeof data.address === "string" ? data.address.slice(0, ORDER_ADDRESS_MAX_LENGTH) : "",
+      address: "",
       payment,
     };
   } catch {
@@ -61,7 +66,8 @@ export function readOrderForm(
 
 export function writeOrderForm(storage: StorageLike | null, slug: string, values: OrderFormValues): void {
   try {
-    storage?.setItem(orderFormStorageKey(slug), JSON.stringify({ v: ORDER_FORM_STORAGE_VERSION, ...values }));
+    const { name, phone, fulfillment, payment } = values;
+    storage?.setItem(orderFormStorageKey(slug), JSON.stringify({ v: ORDER_FORM_STORAGE_VERSION, name, phone, fulfillment, payment }));
   } catch {
     // Storage is full or blocked: the form still works, it is just not remembered.
   }
@@ -81,11 +87,15 @@ export type OrderFormField = "name" | "phone" | "fulfillment" | "address" | "pay
 
 export type OrderFormErrors = Partial<Record<OrderFormField, string>>;
 
-/** Validates the form against what the restaurant offers; an empty object means it can be sent. */
+/**
+ * Validates the form against what the restaurant offers; an empty object means it can be sent. In
+ * `zones` mode pass the chosen geocoded address (or `null`): it replaces the typed one.
+ */
 export function getFormErrors(
   values: OrderFormValues,
   offered: readonly Fulfillment[],
   offeredMethods: readonly PaymentMethod[],
+  zones?: { address: OrderDelivery | null },
 ): OrderFormErrors {
   const errors: OrderFormErrors = {};
 
@@ -107,7 +117,9 @@ export function getFormErrors(
     errors.fulfillment = ORDER_MESSAGES.fulfillmentRequired;
   }
 
-  if (values.fulfillment === "delivery") {
+  if (values.fulfillment === "delivery" && zones) {
+    if (!zones.address) errors.address = DELIVERY_ADDRESS_MESSAGES.addressRequired;
+  } else if (values.fulfillment === "delivery") {
     const trimmedAddress = values.address.trim();
     if (!trimmedAddress) {
       errors.address = ORDER_MESSAGES.addressRequired;

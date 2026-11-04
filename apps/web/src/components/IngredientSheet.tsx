@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 import {
   MAX_LINE_QUANTITY,
   formatArs,
@@ -8,6 +8,7 @@ import {
   type PricedProduct,
   type Quantities,
 } from "@menucito/shared";
+import { useModalDialog } from "../lib/use-modal-dialog";
 import { Stepper } from "./Stepper";
 
 interface IngredientSheetProps {
@@ -28,18 +29,7 @@ export function IngredientSheet({ product, onClose, onConfirm }: IngredientSheet
   const [units, setUnits] = useState(1);
   const [refusal, setRefusal] = useState("");
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    if (!dialog.open) dialog.showModal();
-    const html = document.documentElement;
-    const previous = html.style.overflow;
-    html.style.overflow = "hidden";
-    return () => {
-      html.style.overflow = previous;
-      if (dialog.open) dialog.close();
-    };
-  }, []);
+  useModalDialog(dialogRef);
 
   const titleId = `sheet-title-${product.id}`;
   // Closing by hand notifies the parent right away instead of waiting for the `close` event, which the

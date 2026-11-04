@@ -9,6 +9,7 @@ import {
   type Fulfillment,
   type PaymentMethod,
 } from "./order";
+import { orderDeliverySchema } from "./delivery";
 import { normalizeArWhatsapp } from "./restaurant";
 import { isCalendarDateKey } from "./time";
 
@@ -177,11 +178,18 @@ export const createOrderRequestSchema = z
       .number()
       .int(ORDERS_MESSAGES.expectedTotalInvalid)
       .min(0, ORDERS_MESSAGES.expectedTotalInvalid),
+    /**
+     * The geocoded address, required by stores in `zones` mode (the service checks it, since the
+     * schema does not know the mode). `flat` stores ignore it and use `customer.address`.
+     */
+    delivery: orderDeliverySchema.nullish(),
   })
   .transform((val, ctx) => {
     if (val.fulfillment === "delivery") {
       const addr = val.customer.address?.trim() ?? "";
-      if (addr.length === 0) {
+      const delivery = val.delivery ?? null;
+      // A geocoded address stands in for the typed one.
+      if (addr.length === 0 && !delivery) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: ORDERS_MESSAGES.addressRequired,
@@ -193,8 +201,9 @@ export const createOrderRequestSchema = z
         ...val,
         customer: {
           ...val.customer,
-          address: addr,
+          address: addr || null,
         },
+        delivery,
       };
     } else {
       return {
@@ -203,6 +212,7 @@ export const createOrderRequestSchema = z
           ...val.customer,
           address: null,
         },
+        delivery: null,
       };
     }
   });
@@ -307,6 +317,23 @@ export interface OrderPaymentInfo {
   holderName: string | null;
 }
 
+/**
+ * Where a delivery order goes, as geocoded by the diner (stores in `zones` mode). Only the owner sees
+ * it: the public order carries just `deliveryAddress`.
+ */
+export interface OrderDeliveryLocation {
+  lat: number;
+  lng: number;
+  placeId: string | null;
+  /** Floor, apartment or any note about the door. */
+  unit: string | null;
+  betweenStreets: string | null;
+  /** Name of the zone that priced the shipping when the order was placed. */
+  zoneName: string | null;
+  /** Straight-line distance from the store, in meters. */
+  distanceM: number | null;
+}
+
 export interface OrderDetail {
   id: string;
   number: number;
@@ -317,6 +344,8 @@ export interface OrderDetail {
   customerName: string;
   customerPhone: string;
   deliveryAddress: string | null;
+  /** `null` for takeaway, `flat` stores and orders placed before delivery zones. */
+  deliveryLocation: OrderDeliveryLocation | null;
   notes: string | null;
   subtotalCents: number;
   shippingCents: number;

@@ -3,6 +3,7 @@ import type {
   CartLine,
   CreateOrderRequest,
   CreateOrderResponse,
+  OrderDelivery,
   PaymentMethod,
   PublicMenu,
 } from "@menucito/shared";
@@ -13,13 +14,15 @@ export const ORDER_SUBMIT_TIMEOUT_MS = 15000;
 
 /**
  * The request body for a validated form (see `getFormErrors`). Text is trimmed and takeaway orders
- * never carry an address, even when the diner typed one before switching.
+ * never carry an address, even when the diner typed one before switching. A geocoded `delivery`
+ * address (stores in `zones` mode) replaces the typed one.
  */
 export function buildOrderRequest(
   values: OrderFormValues,
   lines: ReadonlyArray<Pick<CartLine, "productId" | "quantity" | "choices">>,
   clientOrderId: string,
   expectedTotalCents: number,
+  delivery: OrderDelivery | null = null,
 ): CreateOrderRequest {
   const common = {
     clientOrderId,
@@ -29,9 +32,12 @@ export function buildOrderRequest(
   };
   const name = values.name.trim();
   const phone = values.phone.trim();
-  return values.fulfillment === "delivery"
-    ? { ...common, fulfillment: "delivery", customer: { name, phone, address: values.address.trim() } }
-    : { ...common, fulfillment: "takeaway", customer: { name, phone, address: null } };
+  if (values.fulfillment !== "delivery") {
+    return { ...common, fulfillment: "takeaway", customer: { name, phone, address: null }, delivery: null };
+  }
+  return delivery
+    ? { ...common, fulfillment: "delivery", customer: { name, phone, address: null }, delivery: { ...delivery } }
+    : { ...common, fulfillment: "delivery", customer: { name, phone, address: values.address.trim() }, delivery: null };
 }
 
 export type SubmitOrderResult =
@@ -113,14 +119,21 @@ export type OrderFailureAction =
   | { kind: "refreshPaymentMethods" }
   /** The chosen fulfillment is gone: refresh the fulfillments. */
   | { kind: "refreshFulfillments" }
+  /** No delivery zone covers the address: explain it and offer takeaway or another address. */
+  | { kind: "outOfCoverage" }
   /** Anything else: show this message (never the raw server or network error). */
   | { kind: "message"; message: string };
 
 export function orderFailureAction(failure: { status: number; code: string }): OrderFailureAction {
   switch (failure.code) {
+    // DELIVERY_LOCATION_REQUIRED: the store switched to zones while the page was open, so the fresh
+    // menu brings the address card.
     case "PRICE_CHANGED":
     case "PRODUCT_UNAVAILABLE":
+    case "DELIVERY_LOCATION_REQUIRED":
       return { kind: "refreshMenu" };
+    case "OUT_OF_COVERAGE":
+      return { kind: "outOfCoverage" };
     case "STORE_PAUSED":
       return { kind: "paused" };
     case "BELOW_MINIMUM":

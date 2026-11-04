@@ -389,6 +389,19 @@ export const orderItems = sqliteTable(
   (t) => [index("order_items_order_idx").on(t.orderId)],
 );
 
+// Fixed-window request counters of the public endpoints that cost money (address search). One row
+// per key (e.g. `places:<slug>:<ip>`); `window_start` is the epoch ms the current window began.
+// Rows of past windows are deleted as new requests arrive.
+export const rateLimits = sqliteTable(
+  "rate_limits",
+  {
+    key: text("key").primaryKey(),
+    windowStart: integer("window_start").notNull(),
+    count: integer("count").notNull(),
+  },
+  (t) => [index("rate_limits_window_start_idx").on(t.windowStart)],
+);
+
 export type CategoryRow = typeof categories.$inferSelect;
 export type NewCategoryRow = typeof categories.$inferInsert;
 export type ProductRow = typeof products.$inferSelect;
