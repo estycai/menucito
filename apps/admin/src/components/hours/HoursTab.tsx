@@ -398,9 +398,11 @@ function CopyDayMenu({ from, onCopy }: { from: Weekday; onCopy: (targets: Weekda
         >
           <p className="m-0 pb-1 text-xs font-semibold text-muted">Copiar a</p>
           {others.map((day) => (
-            <label key={day} className="flex min-h-10 cursor-pointer items-center gap-2.5">
+            <label key={day} htmlFor={`${panelId}-${day}`} className="flex min-h-10 cursor-pointer items-center gap-2.5">
               <input
+                id={`${panelId}-${day}`}
                 type="checkbox"
+                value={day}
                 checked={targets.has(day)}
                 onChange={(e) => toggle(day, e.target.checked)}
                 className="size-5 cursor-pointer rounded border-line accent-primary"

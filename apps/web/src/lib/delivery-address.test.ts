@@ -10,7 +10,9 @@ import {
   reversePlace,
   sameSpot,
   searchPlaces,
+  shouldRequoteOnReturn,
   toOrderDelivery,
+  QUOTE_REFRESH_ON_RETURN_MS,
 } from "./delivery-address";
 
 const API = "http://api.local";
@@ -58,6 +60,24 @@ describe("addressLines", () => {
       secondary: "Brandsen, Argentina",
     });
     expect(addressLines({ formattedAddress: "Calle 1", locality: null })).toEqual({ main: "Calle 1", secondary: "" });
+  });
+});
+
+describe("shouldRequoteOnReturn", () => {
+  const now = 1_000_000;
+
+  it("re-quotes an old quote when the page is visible again", () => {
+    expect(shouldRequoteOnReturn({ visible: true, active: true, quotedAt: now - QUOTE_REFRESH_ON_RETURN_MS, now })).toBe(true);
+    expect(shouldRequoteOnReturn({ visible: true, active: true, quotedAt: null, now })).toBe(true);
+  });
+
+  it("keeps a recent quote", () => {
+    expect(shouldRequoteOnReturn({ visible: true, active: true, quotedAt: now - 1_000, now })).toBe(false);
+  });
+
+  it("does nothing while hidden or without an address", () => {
+    expect(shouldRequoteOnReturn({ visible: false, active: true, quotedAt: null, now })).toBe(false);
+    expect(shouldRequoteOnReturn({ visible: true, active: false, quotedAt: null, now })).toBe(false);
   });
 });
 

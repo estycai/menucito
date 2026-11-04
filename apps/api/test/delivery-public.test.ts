@@ -335,6 +335,7 @@ describe("POST /api/public/menus/:slug/orders in zones mode", () => {
       delivery_place_id: "ChIJ-home",
       delivery_unit: "3B",
       delivery_between_streets: "Paraná y Montevideo",
+      delivery_label: "home",
       delivery_zone_id: zones[0]!.id,
       delivery_zone_name: "Centro",
     });
@@ -342,7 +343,13 @@ describe("POST /api/public/menus/:slug/orders in zones mode", () => {
 
     // The owner sees the location in the order detail.
     const detail = (await (await client.get(`/api/orders/${row.id}`)).json()) as OrderDetail;
-    expect(detail.deliveryLocation).toMatchObject({ ...NEAR, unit: "3B", betweenStreets: "Paraná y Montevideo", zoneName: "Centro" });
+    expect(detail.deliveryLocation).toMatchObject({
+      ...NEAR,
+      unit: "3B",
+      betweenStreets: "Paraná y Montevideo",
+      label: "home",
+      zoneName: "Centro",
+    });
 
     // And the map point in the order list.
     const list = (await (await client.get("/api/orders")).json()) as { orders: OrderSummary[] };

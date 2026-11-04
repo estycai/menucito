@@ -9,7 +9,7 @@ import {
   type Fulfillment,
   type PaymentMethod,
 } from "./order";
-import { orderDeliverySchema } from "./delivery";
+import { type AddressLabel, orderDeliverySchema } from "./delivery";
 import { normalizeArWhatsapp } from "./restaurant";
 import { isCalendarDateKey } from "./time";
 
@@ -333,6 +333,8 @@ export interface OrderDeliveryLocation {
   /** Floor, apartment or any note about the door. */
   unit: string | null;
   betweenStreets: string | null;
+  /** How the diner tagged the address (Casa, Trabajo, Otra). */
+  label: AddressLabel | null;
   /** Name of the zone that priced the shipping when the order was placed. */
   zoneName: string | null;
   /** Straight-line distance from the store, in meters. */

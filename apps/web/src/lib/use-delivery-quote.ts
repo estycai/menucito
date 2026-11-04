@@ -1,6 +1,6 @@
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 import type { LatLng } from "@menucito/shared";
-import { fetchDeliveryQuote, type QuoteState } from "./delivery-address";
+import { fetchDeliveryQuote, shouldRequoteOnReturn, type QuoteState } from "./delivery-address";
 
 /** Wait after the last cart change before quoting again, so a few taps on a stepper make one call. */
 const QUOTE_DEBOUNCE_MS = 300;
@@ -16,7 +16,8 @@ export interface UseDeliveryQuoteOptions {
 
 /**
  * Quote of the confirmed address, refreshed whenever the address or the subtotal changes (free
- * shipping and the zone minimum depend on it). Older answers never overwrite a newer one.
+ * shipping and the zone minimum depend on it), on `retry()` (also used when the same address is
+ * confirmed again) and when the diner comes back to the page. Older answers never overwrite a newer one.
  */
 export function useDeliveryQuote({ apiUrl, slug, point, subtotalCents, enabled }: UseDeliveryQuoteOptions): {
   quote: QuoteState;
@@ -24,15 +25,19 @@ export function useDeliveryQuote({ apiUrl, slug, point, subtotalCents, enabled }
 } {
   const [quote, setQuote] = useState<QuoteState>({ status: "idle" });
   const [attempt, setAttempt] = useState(0);
+  const quotedAt = useRef<number | null>(null);
   const lat = point?.lat;
   const lng = point?.lng;
+  const active = enabled && lat !== undefined && lng !== undefined;
 
   useEffect(() => {
     if (!enabled || lat === undefined || lng === undefined) {
+      quotedAt.current = null;
       setQuote({ status: "idle" });
       return;
     }
     setQuote({ status: "loading" });
+    quotedAt.current = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       const result = await fetchDeliveryQuote(apiUrl, slug, { lat, lng, subtotalCents }, { signal: controller.signal });
@@ -44,6 +49,19 @@ export function useDeliveryQuote({ apiUrl, slug, point, subtotalCents, enabled }
       controller.abort();
     };
   }, [apiUrl, slug, lat, lng, subtotalCents, enabled, attempt]);
+
+  // The store may change its zones while the tab is in the background.
+  useEffect(() => {
+    if (!active) return;
+    const onVisibilityChange = () => {
+      const visible = document.visibilityState === "visible";
+      if (shouldRequoteOnReturn({ visible, active, quotedAt: quotedAt.current, now: Date.now() })) {
+        setAttempt((n) => n + 1);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [active]);
 
   return { quote, retry: () => setAttempt((n) => n + 1) };
 }

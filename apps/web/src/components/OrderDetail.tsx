@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import {
+  ADDRESS_LABEL_TEXT,
   CART_MESSAGES,
   FULFILLMENT_LABELS,
   MAX_LINE_QUANTITY,
@@ -567,6 +568,8 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
           onClose={() => setAddressOpen(false)}
           onConfirm={(address) => {
             setDeliveryAddress(address);
+            // Same pin, new quote: the store may have changed its zones since the last one.
+            retryQuote();
             touch("address");
             orderSubmit.clearError();
           }}
@@ -611,13 +614,17 @@ interface DeliveryAddressFieldProps {
 function DeliveryAddressField({ address, quote, error, onEdit, onRetryQuote }: DeliveryAddressFieldProps) {
   const errorId = `${FIELD_IDS.address}-error`;
   const lines = address ? addressLines(address) : null;
+  // The diner's tag ("Casa", "Trabajo", "Otra") reads before the locality.
+  const secondary = [address?.label ? ADDRESS_LABEL_TEXT[address.label] : "", lines?.secondary ?? ""]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <div class="field">
       <div class={`address-card${error ? " address-card-invalid" : ""}`}>
         {lines ? (
           <span class="address-card-text">
             <strong class="address-card-main">{lines.main}</strong>
-            {lines.secondary && <span class="address-card-secondary">{lines.secondary}</span>}
+            {secondary && <span class="address-card-secondary">{secondary}</span>}
             {address?.unit && <span class="address-card-secondary">{address.unit}</span>}
             <CoverageBadge quote={quote} onRetry={onRetryQuote} />
           </span>

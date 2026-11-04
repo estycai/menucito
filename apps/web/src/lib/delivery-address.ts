@@ -153,6 +153,30 @@ export function addressLines(address: Pick<OrderDelivery, "formattedAddress" | "
   return { main, secondary: address.locality ?? rest.filter(Boolean).join(", ") };
 }
 
+/** A quote younger than this is not refreshed when the diner comes back to the page. */
+export const QUOTE_REFRESH_ON_RETURN_MS = 30_000;
+
+/**
+ * Whether coming back to the page (tab visible again) should quote the address again: the store may
+ * have changed its zones meanwhile. Only an active quote that is old enough is refreshed.
+ */
+export function shouldRequoteOnReturn({
+  visible,
+  active,
+  quotedAt,
+  now,
+}: {
+  visible: boolean;
+  /** There is a confirmed address to quote. */
+  active: boolean;
+  /** When the current quote was requested (ms), `null` if none yet. */
+  quotedAt: number | null;
+  now: number;
+}): boolean {
+  if (!visible || !active) return false;
+  return quotedAt === null || now - quotedAt >= QUOTE_REFRESH_ON_RETURN_MS;
+}
+
 export interface AddressDetailsInput {
   label: AddressLabel | null;
   betweenStreets: string;

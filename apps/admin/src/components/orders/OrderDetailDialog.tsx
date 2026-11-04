@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
 import {
+  ADDRESS_LABEL_TEXT,
   FULFILLMENT_LABELS,
   ORDER_STATUS_LABELS,
   PAYMENT_LABELS,
@@ -228,6 +229,7 @@ function OrderCustomer({ order }: { order: OrderDetail }) {
 function OrderDeliveryLocationDetails({ location }: { location: OrderDeliveryLocation }) {
   return (
     <>
+      {location.label && <span className="text-muted">Etiqueta: {ADDRESS_LABEL_TEXT[location.label]}</span>}
       {location.unit && <span className="text-muted">Piso/depto: {location.unit}</span>}
       {location.betweenStreets && <span className="text-muted">Entre calles: {location.betweenStreets}</span>}
       {location.zoneName && <span className="text-muted">Zona: {location.zoneName}</span>}

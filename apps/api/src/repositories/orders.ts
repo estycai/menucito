@@ -147,6 +147,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       placeId: row.deliveryPlaceId,
       unit: row.deliveryUnit,
       betweenStreets: row.deliveryBetweenStreets,
+      label: row.deliveryLabel as AddressLabel | null,
       zoneName: row.deliveryZoneName,
       distanceM: row.deliveryDistanceM,
     };
@@ -354,6 +355,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           deliveryPlaceId: data.delivery?.placeId ?? null,
           deliveryUnit: data.delivery?.unit ?? null,
           deliveryBetweenStreets: data.delivery?.betweenStreets ?? null,
+          deliveryLabel: data.delivery?.label ?? null,
           deliveryZoneId: data.delivery?.zoneId ?? null,
           deliveryZoneName: data.delivery?.zoneName ?? null,
           deliveryDistanceM: data.delivery?.distanceM ?? null,

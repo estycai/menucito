@@ -372,6 +372,8 @@ export const orders = sqliteTable(
     deliveryPlaceId: text("delivery_place_id"),
     deliveryUnit: text("delivery_unit"),
     deliveryBetweenStreets: text("delivery_between_streets"),
+    // Diner's tag for the address: `home`, `work` or `other`.
+    deliveryLabel: text("delivery_label"),
     deliveryZoneId: text("delivery_zone_id").references(() => deliveryZones.id, { onDelete: "set null" }),
     deliveryZoneName: text("delivery_zone_name"),
     deliveryDistanceM: integer("delivery_distance_m"),

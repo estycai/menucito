@@ -75,6 +75,8 @@ export function ZoneListCard({
                   </label>
                   <button
                     type="button"
+                    // Keeps the visible text in the name (label-in-name) and says what the button does.
+                    aria-label={`${expanded ? "Cerrar" : "Editar"} ${name} - ${zonePriceLabel(draft)}`}
                     aria-expanded={expanded}
                     onClick={() => onExpand(expanded ? null : draft.key)}
                     className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-[10px] px-2 text-left hover:bg-bg focus-visible:outline-2 focus-visible:outline-primary"
