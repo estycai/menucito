@@ -5,6 +5,7 @@ import {
   type DeliveryZone,
   type DeliveryZoneList,
   type OrderDetail,
+  type OrderSummary,
   type Product,
   type PublicMenu,
   type Restaurant,
@@ -342,6 +343,10 @@ describe("POST /api/public/menus/:slug/orders in zones mode", () => {
     // The owner sees the location in the order detail.
     const detail = (await (await client.get(`/api/orders/${row.id}`)).json()) as OrderDetail;
     expect(detail.deliveryLocation).toMatchObject({ ...NEAR, unit: "3B", betweenStreets: "Paraná y Montevideo", zoneName: "Centro" });
+
+    // And the map point in the order list.
+    const list = (await (await client.get("/api/orders")).json()) as { orders: OrderSummary[] };
+    expect(list.orders[0]!.deliveryLocation).toEqual({ ...NEAR, zoneName: "Centro" });
   });
 
   it("prices per km in the ring and gives free shipping from the zone's threshold", async () => {

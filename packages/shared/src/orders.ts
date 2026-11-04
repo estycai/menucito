@@ -310,7 +310,12 @@ export interface OrderSummary {
   totalCents: number;
   itemCount: number;
   createdAt: number;
+  /** Map point of a geocoded delivery order (the orders map); `null` like the detail's `deliveryLocation`. */
+  deliveryLocation: OrderMapPoint | null;
 }
+
+/** The part of `OrderDeliveryLocation` the owner's order list carries. */
+export type OrderMapPoint = Pick<OrderDeliveryLocation, "lat" | "lng" | "zoneName">;
 
 export interface OrderPaymentInfo {
   alias: string | null;

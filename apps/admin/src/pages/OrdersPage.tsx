@@ -5,6 +5,7 @@ import { ActiveOrdersBoard } from "@/components/orders/ActiveOrdersBoard";
 import { HistoryOrdersTable } from "@/components/orders/HistoryOrdersTable";
 import { OrderDetailDialog } from "@/components/orders/OrderDetailDialog";
 import { OrderFiltersBar } from "@/components/orders/OrderFiltersBar";
+import { OrdersMapView } from "@/components/orders/OrdersMapView";
 import { Button } from "@/components/ui/button";
 import {
   ACTIVE_ORDERS_FILTERS,
@@ -16,6 +17,7 @@ import {
   useOrdersHistory,
   type OrderFilters,
 } from "@/lib/orders";
+import { ORDERS_MAP_VIEW, ORDERS_VIEW_PARAM } from "@/lib/orders-map";
 import { publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { useOrdersExport } from "@/lib/use-orders-export";
@@ -33,6 +35,8 @@ export function OrdersPage() {
   // History filters live in the URL so they survive a reload and can be shared.
   const [searchParams, setSearchParams] = useSearchParams();
   const historyFilters = filtersFromSearchParams(searchParams);
+  // "Activos" shows the board or, with `?vista=mapa`, the map.
+  const showMap = tab === "active" && searchParams.get(ORDERS_VIEW_PARAM) === ORDERS_MAP_VIEW;
 
   const activeQuery = useOrders(ACTIVE_ORDERS_FILTERS);
   const deliveredQuery = useOrders(DELIVERED_TODAY_FILTERS);
@@ -71,6 +75,23 @@ export function OrdersPage() {
     void deliveredQuery.refetch();
   }
 
+  function handleViewChange(map: boolean) {
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        if (map) next.set(ORDERS_VIEW_PARAM, ORDERS_MAP_VIEW);
+        else next.delete(ORDERS_VIEW_PARAM);
+        return next;
+      },
+      { replace: true },
+    );
+  }
+
+  function handleShowHistory() {
+    handleViewChange(false);
+    setTab("history");
+  }
+
   function handleShowDeliveredHistory() {
     setSearchParams(filtersToSearchParams(DELIVERED_TODAY_HISTORY_FILTERS));
     setTab("history");
@@ -81,7 +102,9 @@ export function OrdersPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="m-0 font-display text-[28px] font-extrabold sm:text-[32px]">Pedidos</h1>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {tab === "active" && !hasNoOrdersEver && <ViewToggle showMap={showMap} onChange={handleViewChange} />}
+
           {tab === "history" && (
             <Button
               type="button"
@@ -131,12 +154,25 @@ export function OrdersPage() {
             <TabButton selected={tab === "active"} onSelect={() => setTab("active")}>
               Activos {activeOrders && activeOrders.length > 0 && `(${activeOrders.length})`}
             </TabButton>
-            <TabButton selected={tab === "history"} onSelect={() => setTab("history")}>
+            <TabButton selected={tab === "history"} onSelect={handleShowHistory}>
               Historial
             </TabButton>
           </div>
 
-          {tab === "active" && (
+          {showMap && (
+            <OrdersMapView
+              orders={activeOrders}
+              deliveredOrders={deliveredQuery.data?.orders}
+              isLoading={activeQuery.isLoading}
+              isError={activeQuery.isError}
+              deliveredError={deliveredQuery.isError}
+              isRefetching={activeQuery.isRefetching || deliveredQuery.isRefetching}
+              onRefresh={refreshBoard}
+              onSelectOrder={setSelectedOrderId}
+            />
+          )}
+
+          {tab === "active" && !showMap && (
             <ActiveOrdersBoard
               orders={activeOrders}
               deliveredOrders={deliveredQuery.data?.orders}
@@ -200,5 +236,28 @@ function TabButton({
     >
       {children}
     </button>
+  );
+}
+
+/** "Tablero / Mapa" switch of the "Activos" tab. */
+function ViewToggle({ showMap, onChange }: { showMap: boolean; onChange: (map: boolean) => void }) {
+  const option = (map: boolean, label: string) => (
+    <button
+      type="button"
+      aria-pressed={showMap === map}
+      onClick={() => onChange(map)}
+      className={cn(
+        "min-h-11 cursor-pointer rounded-lg px-4 text-sm font-bold transition-colors focus-visible:outline-2 focus-visible:outline-primary",
+        showMap === map ? "bg-white text-ink shadow-sm" : "text-muted hover:text-ink",
+      )}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div role="group" aria-label="Vista de pedidos activos" className="flex rounded-xl bg-tab p-1">
+      {option(false, "Tablero")}
+      {option(true, "Mapa")}
+    </div>
   );
 }

@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import type { LatLng, LatLngTuple } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { GOOGLE_MAPS_KEY } from "@/lib/config";
-import { loadMaps, type MapsLibraries } from "@/lib/google-maps";
+import { useMapsLibraries, type MapsLibraries } from "@/lib/google-maps";
 import { circlePath, type ZoneDraft } from "@/lib/zone-form";
 
 /** Where the map starts when the store has no location yet (Obelisco, Buenos Aires). */
@@ -32,20 +32,7 @@ export function ZonesMap(props: ZonesMapProps) {
 }
 
 function LoadedMap(props: ZonesMapProps) {
-  const [libs, setLibs] = useState<MapsLibraries | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadMaps().then(
-      (loaded) => !cancelled && setLibs(loaded),
-      () => !cancelled && setFailed(true),
-    );
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
+  const { libs, failed } = useMapsLibraries();
   if (failed) return <Notice tone="error">No pudimos cargar el mapa. Revisá tu conexión y recargá la página.</Notice>;
   if (!libs) {
     return <div className="h-[360px] animate-pulse rounded-xl bg-tab lg:h-[560px]" aria-label="Cargando mapa" role="status" />;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { importLibrary, setOptions } from "@googlemaps/js-api-loader";
 import { GOOGLE_MAPS_KEY } from "./config";
 
@@ -28,4 +29,23 @@ export function loadMaps(): Promise<MapsLibraries> {
       });
   }
   return loading;
+}
+
+/** Loads the Maps libraries for a mounted map: `libs` once ready, `failed` if the script did not load. */
+export function useMapsLibraries(): { libs: MapsLibraries | null; failed: boolean } {
+  const [libs, setLibs] = useState<MapsLibraries | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadMaps().then(
+      (loaded) => !cancelled && setLibs(loaded),
+      () => !cancelled && setFailed(true),
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return { libs, failed };
 }

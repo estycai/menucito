@@ -451,6 +451,10 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         totalCents: order.totalCents,
         itemCount: Number(itemCount),
         createdAt: order.createdAt.getTime(),
+        deliveryLocation:
+          order.deliveryLat === null || order.deliveryLng === null
+            ? null
+            : { lat: order.deliveryLat, lng: order.deliveryLng, zoneName: order.deliveryZoneName },
       }));
 
       const last = sliced[sliced.length - 1];

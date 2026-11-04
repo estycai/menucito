@@ -123,6 +123,7 @@ describe("Owner Orders API (scenarios 31-38)", () => {
     expect(data.orders[0]!.totalCents).toBe(900_000);
     expect(data.orders[0]!.customerName).toBe("Juan");
     expect(data.orders[0]!.customerPhone).toBe("5491155551234");
+    expect(data.orders[0]!.deliveryLocation).toBeNull();
     expect(data.nextBefore).toBeNull();
 
     // Paginate with limit=2
