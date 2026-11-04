@@ -1483,6 +1483,8 @@ button:disabled {
 
 .label-chip {
   padding: 0 18px;
+  /* Buttons do not inherit the text color: without it they stay black on dark menus. */
+  color: var(--color-ink);
 }
 
 .label-chip[aria-pressed="true"] {
