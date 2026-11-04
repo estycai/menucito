@@ -12,10 +12,11 @@ import {
 import { normalizeArWhatsapp } from "./restaurant";
 import { isCalendarDateKey } from "./time";
 
-export const ORDER_STATUSES = ["new", "preparing", "ready", "delivered", "cancelled"] as const;
+export const ORDER_STATUSES = ["new", "preparing", "ready", "sent", "delivered", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
-export const ACTIVE_ORDER_STATUSES = ["new", "preparing", "ready"] as const;
+/** Statuses of an order that has not finished yet; `sent` is still on its way to the customer. */
+export const ACTIVE_ORDER_STATUSES = ["new", "preparing", "ready", "sent"] as const;
 export type ActiveOrderStatus = (typeof ACTIVE_ORDER_STATUSES)[number];
 
 export const PAYMENT_STATUSES = ["pending", "paid"] as const;
@@ -25,6 +26,7 @@ export const ORDER_STATUS_LABELS: Readonly<Record<OrderStatus, string>> = {
   new: "Nuevo",
   preparing: "En preparación",
   ready: "Listo",
+  sent: "Enviado",
   delivered: "Entregado",
   cancelled: "Cancelado",
 };
@@ -34,29 +36,33 @@ export const PAYMENT_STATUS_LABELS: Readonly<Record<PaymentStatus, string>> = {
   paid: "Pagado",
 };
 
-const ALLOWED_TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
-  new: ["preparing", "ready", "delivered", "cancelled"],
-  preparing: ["ready", "delivered", "cancelled"],
-  ready: ["delivered", "cancelled"],
-  delivered: [],
-  cancelled: [],
+/** Forward pipeline of each fulfillment: a takeaway order is never sent, it goes from ready to delivered. */
+const STATUS_PIPELINES: Record<Fulfillment, readonly OrderStatus[]> = {
+  delivery: ["new", "preparing", "ready", "sent", "delivered"],
+  takeaway: ["new", "preparing", "ready", "delivered"],
 };
 
-export function canTransition(from: OrderStatus, to: OrderStatus): boolean {
-  return Boolean(ALLOWED_TRANSITIONS[from]?.includes(to));
+/**
+ * Whether an order of the given fulfillment may move from `from` to `to`: forward along its
+ * pipeline (skipping steps is allowed) or to `cancelled` while active. `delivered` and
+ * `cancelled` are final.
+ */
+export function canTransition(from: OrderStatus, to: OrderStatus, fulfillment: Fulfillment): boolean {
+  // Every active status may be cancelled, `sent` included (the courier did not find the customer).
+  if (to === "cancelled") return (ACTIVE_ORDER_STATUSES as readonly OrderStatus[]).includes(from);
+  const pipeline = STATUS_PIPELINES[fulfillment];
+  const fromIndex = pipeline.indexOf(from);
+  const toIndex = pipeline.indexOf(to);
+  return fromIndex !== -1 && toIndex !== -1 && toIndex > fromIndex;
 }
 
-export function nextStatus(from: OrderStatus): OrderStatus | null {
-  switch (from) {
-    case "new":
-      return "preparing";
-    case "preparing":
-      return "ready";
-    case "ready":
-      return "delivered";
-    default:
-      return null;
-  }
+/** The next step of the order's pipeline, or `null` from a final status. */
+export function nextStatus(from: OrderStatus, fulfillment: Fulfillment): OrderStatus | null {
+  const pipeline = STATUS_PIPELINES[fulfillment];
+  const index = pipeline.indexOf(from);
+  // -1 (cancelled or unknown) yields null too: `delivered` is the last step of every pipeline.
+  if (index === -1) return null;
+  return pipeline[index + 1] ?? null;
 }
 
 export interface OrderTotalsInput {
@@ -206,12 +212,21 @@ export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 /** Most orders one CSV export may contain; a larger result asks the owner to narrow the dates. */
 export const ORDER_EXPORT_MAX = 5000;
 
-/** Status filter of the owner's order list: a single status, or `active` (new, preparing or ready). */
+/** Status filter of the owner's order list: a single status, or `active` (new, preparing, ready or sent). */
 export const ORDER_STATUS_FILTERS = [...ORDER_STATUSES, "active"] as const;
 export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
 
+/**
+ * Timestamp that `from` and `to` filter on: when the order was created (default; history and CSV)
+ * or last updated. "Entregados" of the board uses `updated` as an approximation of the delivery
+ * time: there is no `delivered_at` column, so a later change (the payment) also moves it.
+ */
+export const ORDER_DATE_FIELDS = ["created", "updated"] as const;
+export type OrderDateField = (typeof ORDER_DATE_FIELDS)[number];
+
 export const ORDER_FILTER_MESSAGES = {
   statusInvalid: "Estado inválido",
+  dateFieldInvalid: "Campo de fecha inválido",
   fulfillmentInvalid: "Modalidad inválida",
   paymentMethodInvalid: "Forma de pago inválida",
   paymentStatusInvalid: "Estado de pago inválido",
@@ -242,6 +257,7 @@ export const orderFiltersQuerySchema = z
     paymentStatus: optionalParam(z.enum(PAYMENT_STATUSES, ORDER_FILTER_MESSAGES.paymentStatusInvalid)),
     from: dateKeyParam(ORDER_FILTER_MESSAGES.fromInvalid),
     to: dateKeyParam(ORDER_FILTER_MESSAGES.toInvalid),
+    dateField: optionalParam(z.enum(ORDER_DATE_FIELDS, ORDER_FILTER_MESSAGES.dateFieldInvalid)),
     limit: positiveIntParam(ORDER_FILTER_MESSAGES.limitInvalid),
     before: positiveIntParam(ORDER_FILTER_MESSAGES.beforeInvalid),
   })

@@ -4,6 +4,9 @@ import {
   ORDER_LINE_QUANTITY_MAX,
   ORDER_MAX_LINES,
   ORDER_STATUSES,
+  ORDER_STATUS_FILTERS,
+  ORDER_STATUS_LABELS,
+  ACTIVE_ORDER_STATUSES,
   buildOrderMessage,
   canTransition,
   createOrderRequestSchema,
@@ -47,42 +50,86 @@ describe("Scenario 1: orderTotals", () => {
 
 describe("Scenario 2: canTransition", () => {
   it("allows valid forward transitions and cancellations, rejects backward and terminal moves", () => {
-    // Valid transitions
-    expect(canTransition("new", "preparing")).toBe(true);
-    expect(canTransition("new", "ready")).toBe(true);
-    expect(canTransition("new", "delivered")).toBe(true);
-    expect(canTransition("new", "cancelled")).toBe(true);
+    for (const fulfillment of ["delivery", "takeaway"] as const) {
+      // Valid transitions
+      expect(canTransition("new", "preparing", fulfillment)).toBe(true);
+      expect(canTransition("new", "ready", fulfillment)).toBe(true);
+      expect(canTransition("new", "delivered", fulfillment)).toBe(true);
+      expect(canTransition("new", "cancelled", fulfillment)).toBe(true);
 
-    expect(canTransition("preparing", "ready")).toBe(true);
-    expect(canTransition("preparing", "delivered")).toBe(true);
-    expect(canTransition("preparing", "cancelled")).toBe(true);
+      expect(canTransition("preparing", "ready", fulfillment)).toBe(true);
+      expect(canTransition("preparing", "delivered", fulfillment)).toBe(true);
+      expect(canTransition("preparing", "cancelled", fulfillment)).toBe(true);
 
-    expect(canTransition("ready", "delivered")).toBe(true);
-    expect(canTransition("ready", "cancelled")).toBe(true);
+      expect(canTransition("ready", "delivered", fulfillment)).toBe(true);
+      expect(canTransition("ready", "cancelled", fulfillment)).toBe(true);
 
-    // Rejects backward moves
-    expect(canTransition("preparing", "new")).toBe(false);
-    expect(canTransition("ready", "new")).toBe(false);
-    expect(canTransition("ready", "preparing")).toBe(false);
-    expect(canTransition("delivered", "ready")).toBe(false);
-    expect(canTransition("delivered", "new")).toBe(false);
+      // Rejects backward moves
+      expect(canTransition("preparing", "new", fulfillment)).toBe(false);
+      expect(canTransition("ready", "new", fulfillment)).toBe(false);
+      expect(canTransition("ready", "preparing", fulfillment)).toBe(false);
+      expect(canTransition("delivered", "ready", fulfillment)).toBe(false);
+      expect(canTransition("delivered", "new", fulfillment)).toBe(false);
 
-    // Terminal states cannot transition anywhere
-    for (const status of ORDER_STATUSES) {
-      expect(canTransition("delivered", status)).toBe(false);
-      expect(canTransition("cancelled", status)).toBe(false);
+      // Terminal states cannot transition anywhere
+      for (const status of ORDER_STATUSES) {
+        expect(canTransition("delivered", status, fulfillment)).toBe(false);
+        expect(canTransition("cancelled", status, fulfillment)).toBe(false);
+      }
+
+      // Unknown status
+      expect(canTransition("new", "unknown" as OrderStatus, fulfillment)).toBe(false);
     }
-
-    // Unknown status
-    expect(canTransition("new", "unknown" as OrderStatus)).toBe(false);
   });
 
   it("nextStatus steps through the pipeline", () => {
-    expect(nextStatus("new")).toBe("preparing");
-    expect(nextStatus("preparing")).toBe("ready");
-    expect(nextStatus("ready")).toBe("delivered");
-    expect(nextStatus("delivered")).toBeNull();
-    expect(nextStatus("cancelled")).toBeNull();
+    for (const fulfillment of ["delivery", "takeaway"] as const) {
+      expect(nextStatus("new", fulfillment)).toBe("preparing");
+      expect(nextStatus("preparing", fulfillment)).toBe("ready");
+      expect(nextStatus("delivered", fulfillment)).toBeNull();
+      expect(nextStatus("cancelled", fulfillment)).toBeNull();
+    }
+  });
+});
+
+describe("11b scenario 7: the sent status", () => {
+  it("lists sent between ready and delivered, as an active status labelled Enviado", () => {
+    expect(ORDER_STATUSES).toEqual(["new", "preparing", "ready", "sent", "delivered", "cancelled"]);
+    expect(ACTIVE_ORDER_STATUSES).toEqual(["new", "preparing", "ready", "sent"]);
+    expect(ORDER_STATUS_LABELS.sent).toBe("Enviado");
+    expect(ORDER_STATUS_FILTERS).toContain("sent");
+  });
+});
+
+describe("11b scenario 8: canTransition depends on the fulfillment", () => {
+  it("lets a delivery order move forward through sent, skipping steps, and be cancelled while sent", () => {
+    expect(canTransition("new", "sent", "delivery")).toBe(true);
+    expect(canTransition("preparing", "sent", "delivery")).toBe(true);
+    expect(canTransition("ready", "sent", "delivery")).toBe(true);
+    expect(canTransition("sent", "delivered", "delivery")).toBe(true);
+    expect(canTransition("sent", "cancelled", "delivery")).toBe(true);
+  });
+
+  it("rejects moving back from sent and leaving final statuses", () => {
+    expect(canTransition("sent", "ready", "delivery")).toBe(false);
+    expect(canTransition("sent", "new", "delivery")).toBe(false);
+    expect(canTransition("sent", "sent", "delivery")).toBe(false);
+    expect(canTransition("delivered", "sent", "delivery")).toBe(false);
+    expect(canTransition("cancelled", "sent", "delivery")).toBe(false);
+  });
+
+  it("never sends a takeaway order", () => {
+    for (const from of ORDER_STATUSES) {
+      expect(canTransition(from, "sent", "takeaway")).toBe(false);
+    }
+  });
+});
+
+describe("11b scenario 9: nextStatus depends on the fulfillment", () => {
+  it("goes from ready to sent with delivery and to delivered with takeaway", () => {
+    expect(nextStatus("ready", "delivery")).toBe("sent");
+    expect(nextStatus("ready", "takeaway")).toBe("delivered");
+    expect(nextStatus("sent", "delivery")).toBe("delivered");
   });
 });
 

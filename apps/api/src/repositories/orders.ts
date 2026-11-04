@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
   type Fulfillment,
+  type OrderDateField,
   type OrderDetail,
   type OrderItem,
   type OrderItemOption,
@@ -58,6 +59,8 @@ export interface ListOrdersFilter {
   paymentStatus?: PaymentStatus;
   fromMs?: number;
   toMs?: number;
+  /** Column `fromMs`/`toMs` apply to; `created` when absent. */
+  dateField?: OrderDateField;
 }
 
 export interface OrdersRepository {
@@ -202,12 +205,14 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       conditions.push(eq(orders.paymentStatus, filter.paymentStatus));
     }
 
+    const dateColumn = filter.dateField === "updated" ? orders.updatedAt : orders.createdAt;
+
     if (filter.fromMs !== undefined) {
-      conditions.push(gte(orders.createdAt, new Date(filter.fromMs)));
+      conditions.push(gte(dateColumn, new Date(filter.fromMs)));
     }
 
     if (filter.toMs !== undefined) {
-      conditions.push(lt(orders.createdAt, new Date(filter.toMs)));
+      conditions.push(lt(dateColumn, new Date(filter.toMs)));
     }
 
     return and(...conditions);

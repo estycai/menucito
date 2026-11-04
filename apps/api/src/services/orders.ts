@@ -359,7 +359,7 @@ export function createOwnerOrdersService({
 
       if (current.status === targetStatus) return current;
 
-      if (!canTransition(current.status, targetStatus)) {
+      if (!canTransition(current.status, targetStatus, current.fulfillment)) {
         throw new InvalidTransitionError();
       }
 
