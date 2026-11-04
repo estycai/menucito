@@ -193,6 +193,9 @@ importers:
       '@dnd-kit/core':
         specifier: ^6.3.1
         version: 6.3.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      '@googlemaps/js-api-loader':
+        specifier: 2.1.3
+        version: 2.1.3
       '@hookform/resolvers':
         specifier: ^6.0.1
         version: 6.0.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)
@@ -242,6 +245,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.3.5(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))
+      '@types/google.maps':
+        specifier: 3.66.7
+        version: 3.66.7
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -1360,6 +1366,9 @@ packages:
     resolution: {integrity: sha512-IkO+/KEUvwbVpiURZg+P7zF74z5Jxe0UgJxVni+RtoHQ6IZieXaO02kmadomap/q+l6bc/jdPGGqTjhuZnuz1Q==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
+  '@googlemaps/js-api-loader@2.1.3':
+    resolution: {integrity: sha512-1t6umwRufEGzIPjHPjPeuuY1dCal0zU2bZeomkf4OA0MprFdlKCnXY3zeFkzDaCvKjwbFubeapm61P5+EbrAoA==}
+
   '@hookform/resolvers@6.0.1':
     resolution: {integrity: sha512-Qj/4Ge0MMU5VtVtz2lnBiuaBQNTIR27jejpE1fYvADbx2tqae0vpnJnqgep7LAVHHpMXlrebjL9+V2zkZ7qZfA==}
     peerDependencies:
@@ -2080,6 +2089,12 @@ packages:
 
   '@types/estree@1.0.9':
     resolution: {integrity: sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==}
+
+  '@types/google.maps@3.66.7':
+    resolution: {integrity: sha512-4EhLRkBtF5TMBAifddMeK+tn5MS6Sa6cMwrg4TbQiPlV4nU9IbKwHJ5csBfnpykNmXwqy+a9y0/38ZezOwtxmg==}
+
+  '@types/google.maps@3.66.9':
+    resolution: {integrity: sha512-6OmfZjuSMDG5oTzW6f2JM1by1rUrdCMBxtru2OJXfX44N3DqQSh8lEgwZbrHjoswYiapRf30vUCHjTs9sKDJdQ==}
 
   '@types/hast@3.0.5':
     resolution: {integrity: sha512-rp/ezSWaD1m44dPKICGhiskI13nVr7qTloFwDa/IYkhhf5nzwP+zIQcIJh3WIFSBOy/H1PzB40jPjMDksN4F+g==}
@@ -5117,6 +5132,10 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@googlemaps/js-api-loader@2.1.3':
+    dependencies:
+      '@types/google.maps': 3.66.9
+
   '@hookform/resolvers@6.0.1(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.91.0(@types/react@19.3.0)(react@19.3.1))(zod@4.6.7)':
     dependencies:
       '@standard-schema/utils': 0.3.0
@@ -5623,6 +5642,10 @@ snapshots:
       '@types/estree': 1.0.9
 
   '@types/estree@1.0.9': {}
+
+  '@types/google.maps@3.66.7': {}
+
+  '@types/google.maps@3.66.9': {}
 
   '@types/hast@3.0.5':
     dependencies:

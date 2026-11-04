@@ -4,13 +4,8 @@ import { DEFAULT_COLORS } from "@menucito/shared";
 import { AppearanceForm } from "@/components/AppearanceForm";
 import { MenuPreview } from "@/components/MenuPreview";
 import { PageTabs } from "@/components/PageTabs";
-import {
-  MinOrderCard,
-  PaymentMethodsCard,
-  ReceptionCard,
-  ShippingCostCard,
-  StoreSettingsGate,
-} from "@/components/StoreSettingsCards";
+import { MinOrderCard, PaymentMethodsCard, ReceptionCard, StoreSettingsGate } from "@/components/StoreSettingsCards";
+import { DeliveryZonesTab } from "@/components/zones/DeliveryZonesTab";
 import type { AppearanceDraft } from "@/lib/appearance";
 import { LOCAL_TABS, localTabPath } from "@/lib/local-tabs";
 import { useMyRestaurant } from "@/lib/restaurant";
@@ -91,11 +86,10 @@ export function LocalPaymentsTab() {
   );
 }
 
-/** "Zonas de entrega": for now only the fixed shipping cost. */
+/**
+ * "Zonas de entrega": the store address, the delivery mode and either the fixed shipping cost or the
+ * zones, next to the map. The Maps script loads only when this tab opens.
+ */
 export function LocalZonesTab() {
-  return (
-    <div className="flex max-w-[720px] flex-col gap-5">
-      <StoreSettingsGate>{(settings) => <ShippingCostCard settings={settings} />}</StoreSettingsGate>
-    </div>
-  );
+  return <DeliveryZonesTab />;
 }

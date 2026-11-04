@@ -97,3 +97,18 @@ export class OrderNumberConflictError extends DomainError {
     super(message);
   }
 }
+
+/** The address search is not available (no Google key, quota, outage); the owner can retry later. */
+export class MapsUnavailableError extends DomainError {
+  readonly code = "MAPS_UNAVAILABLE";
+  constructor(message = "La búsqueda de direcciones no está disponible. Probá de nuevo en unos minutos.") {
+    super(message);
+  }
+}
+
+export class PlaceNotFoundError extends DomainError {
+  readonly code = "PLACE_NOT_FOUND";
+  constructor(message = "No encontramos esa dirección") {
+    super(message);
+  }
+}

@@ -11,3 +11,5 @@ EMAIL_FROM=onboarding@resend.dev
 # Never set it in wrangler.jsonc or in a deployed environment.
 ALLOW_PLAN_SWITCH=true
 WEB_ORIGINS=http://localhost:4321
+# Server key for Places API (New) + Geocoding v3 (store address search). Leave empty to disable it.
+GOOGLE_MAPS_SERVER_KEY=

@@ -13,6 +13,11 @@ export interface Env {
    * Never set in `wrangler.jsonc`: it is off in every deployed environment unless added on purpose.
    */
   ALLOW_PLAN_SWITCH?: string;
+  /**
+   * Server key for Places API (New) and Geocoding v3. Without it the address search answers 503
+   * `MAPS_UNAVAILABLE`. Keep it restricted to those APIs (never the browser key).
+   */
+  GOOGLE_MAPS_SERVER_KEY?: string;
   /** Comma-separated list of allowed origins for public CORS. */
   WEB_ORIGINS?: string;
 }

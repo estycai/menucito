@@ -23,6 +23,7 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   CATEGORY_NOT_FOUND: 404,
   PRODUCT_NOT_FOUND: 404,
   ORDER_NOT_FOUND: 404,
+  PLACE_NOT_FOUND: 404,
   SLUG_TAKEN: 409,
   ALREADY_HAS_RESTAURANT: 409,
   CATEGORY_NAME_TAKEN: 409,
@@ -41,6 +42,7 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   EXPORT_TOO_LARGE: 422,
   TOO_MANY_ORDERS: 429,
   ORDER_NUMBER_CONFLICT: 503,
+  MAPS_UNAVAILABLE: 503,
 };
 
 export function statusFor(error: DomainError): ContentfulStatusCode {

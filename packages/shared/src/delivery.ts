@@ -141,3 +141,138 @@ export type DeliveryZone = DeliveryZoneInput & {
   active: boolean;
   sort: number;
 };
+
+// ---------------------------------------------------------------------------------------------
+// Admin: store location, the zone list and the address search.
+
+export const ADDRESS_MAX_LENGTH = 200;
+export const ADDRESS_NOTES_MAX_LENGTH = 200;
+export const PLACE_ID_MAX_LENGTH = 300;
+/** Largest zone list a store can save at once. */
+export const MAX_DELIVERY_ZONES = 20;
+export const PLACE_QUERY_MAX_LENGTH = 200;
+
+export const LOCATION_MESSAGES = {
+  addressTooLong: `La dirección puede tener hasta ${ADDRESS_MAX_LENGTH} caracteres`,
+  addressNotesTooLong: `Las instrucciones pueden tener hasta ${ADDRESS_NOTES_MAX_LENGTH} caracteres`,
+  locationIncomplete: "La dirección, la latitud y la longitud van juntas",
+  zonesNeedLocation: "Guardá la dirección del local antes de usar zonas",
+  modeInvalid: "Modo de envío inválido",
+  tooManyZones: `Podés tener hasta ${MAX_DELIVERY_ZONES} zonas`,
+  zoneIdInvalid: "Identificador de zona inválido",
+  placeQueryRequired: "Escribí una dirección para buscar",
+  placeQueryTooLong: `La búsqueda puede tener hasta ${PLACE_QUERY_MAX_LENGTH} caracteres`,
+  placeIdInvalid: "Identificador de lugar inválido",
+  sessionInvalid: "Sesión de búsqueda inválida",
+} as const;
+
+/** Trimmed text where a missing or empty value means "none" (`null`). */
+const optionalText = (max: number, message: string) =>
+  z
+    .string()
+    .trim()
+    .max(max, message)
+    .nullish()
+    .transform((value) => (value ? value : null));
+
+/**
+ * Body of `PUT /api/restaurants/me/location` and what `GET` answers: the delivery mode and where the
+ * store is. `address`, `lat` and `lng` are all set or all `null`; `zones` needs them set, because
+ * radius and ring zones are measured from the store.
+ */
+export const storeLocationSchema = z
+  .object({
+    deliveryMode: z.enum(DELIVERY_MODES, LOCATION_MESSAGES.modeInvalid),
+    address: optionalText(ADDRESS_MAX_LENGTH, LOCATION_MESSAGES.addressTooLong),
+    addressNotes: optionalText(ADDRESS_NOTES_MAX_LENGTH, LOCATION_MESSAGES.addressNotesTooLong),
+    lat: latSchema.nullish().transform((value) => value ?? null),
+    lng: lngSchema.nullish().transform((value) => value ?? null),
+    placeId: optionalText(PLACE_ID_MAX_LENGTH, LOCATION_MESSAGES.placeIdInvalid),
+  })
+  .superRefine((location, ctx) => {
+    const parts = [location.address, location.lat, location.lng];
+    const set = parts.filter((part) => part !== null).length;
+    if (set !== 0 && set !== parts.length) {
+      ctx.addIssue({ code: "custom", message: LOCATION_MESSAGES.locationIncomplete, path: ["address"] });
+    } else if (location.deliveryMode === "zones" && set === 0) {
+      ctx.addIssue({ code: "custom", message: LOCATION_MESSAGES.zonesNeedLocation, path: ["deliveryMode"] });
+    }
+  });
+
+export type StoreLocation = z.output<typeof storeLocationSchema>;
+
+/** Whether `location` has the coordinates zones are measured from. */
+export function hasCoordinates(location: StoreLocation): location is StoreLocation & LatLng & { address: string } {
+  return location.lat !== null && location.lng !== null && location.address !== null;
+}
+
+/**
+ * One zone of `PUT /api/restaurants/me/delivery-zones`: the editable fields plus `active` and, for a
+ * zone that already exists, its `id`. An unknown `id` creates a new zone.
+ */
+export const deliveryZoneUpsertSchema = z.intersection(
+  deliveryZoneInputSchema,
+  z.object({
+    id: z.string().min(1, LOCATION_MESSAGES.zoneIdInvalid).max(64, LOCATION_MESSAGES.zoneIdInvalid).optional(),
+    active: z.boolean(),
+  }),
+);
+
+export type DeliveryZoneUpsert = z.output<typeof deliveryZoneUpsertSchema>;
+
+/**
+ * Body of `PUT /api/restaurants/me/delivery-zones`: the whole list, in priority order (`sort` is the
+ * index). Zones missing from it are deleted.
+ */
+export const replaceDeliveryZonesSchema = z.object({
+  zones: z.array(deliveryZoneUpsertSchema).max(MAX_DELIVERY_ZONES, LOCATION_MESSAGES.tooManyZones),
+});
+
+export type ReplaceDeliveryZonesInput = z.output<typeof replaceDeliveryZonesSchema>;
+
+/** What `GET`/`PUT /api/restaurants/me/delivery-zones` answer. */
+export interface DeliveryZoneList {
+  zones: DeliveryZone[];
+}
+
+/** Google session tokens are client-generated UUIDs; anything URL-safe and short is accepted. */
+const sessionTokenSchema = z
+  .string(LOCATION_MESSAGES.sessionInvalid)
+  .regex(/^[A-Za-z0-9_-]{8,64}$/, LOCATION_MESSAGES.sessionInvalid);
+
+/** Query of `GET /api/restaurants/me/places/search`. */
+export const placeSearchQuerySchema = z.object({
+  q: z
+    .string(LOCATION_MESSAGES.placeQueryRequired)
+    .trim()
+    .min(1, LOCATION_MESSAGES.placeQueryRequired)
+    .max(PLACE_QUERY_MAX_LENGTH, LOCATION_MESSAGES.placeQueryTooLong),
+  session: sessionTokenSchema,
+});
+
+/** Query of `GET /api/restaurants/me/places/:placeId`. */
+export const placeDetailsQuerySchema = z.object({ session: sessionTokenSchema });
+
+/** Google place ids are URL-safe base64-ish strings. */
+export const placeIdSchema = z
+  .string(LOCATION_MESSAGES.placeIdInvalid)
+  .regex(/^[A-Za-z0-9_-]{1,300}$/, LOCATION_MESSAGES.placeIdInvalid);
+
+/** One address suggestion while typing. */
+export interface PlaceSuggestion {
+  placeId: string;
+  /** Street and number, e.g. "Av. Corrientes 1234". */
+  mainText: string;
+  /** The rest, e.g. "CABA, Argentina". */
+  secondaryText: string;
+}
+
+/** A resolved address with its coordinates. */
+export interface PlaceResult {
+  placeId: string;
+  formattedAddress: string;
+  /** City (or partido when Google has no locality), `null` when unknown. */
+  locality: string | null;
+  lat: number;
+  lng: number;
+}

@@ -4,16 +4,30 @@ import {
   LOGO_MAX_BYTES,
   changePlanSchema,
   createRestaurantSchema,
+  placeDetailsQuerySchema,
+  placeIdSchema,
+  placeSearchQuerySchema,
+  replaceDeliveryZonesSchema,
+  storeLocationSchema,
   updateAppearanceSchema,
   updateSettingsSchema,
 } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requireSession } from "../middleware/require-session";
 import { coverServiceFor } from "../services/covers";
+import { deliveryServiceFor } from "../services/delivery";
 import { logoServiceFor } from "../services/logos";
+import { placesServiceFor } from "../services/places";
 import { restaurantsServiceFor } from "../services/restaurants";
 import { settingsServiceFor } from "../services/settings";
-import { domainErrorHandler, parseJsonBody, readUploadedFile, uploadBodyLimit } from "./http";
+import {
+  domainErrorHandler,
+  errorResponse,
+  parseJsonBody,
+  parseQuery,
+  readUploadedFile,
+  uploadBodyLimit,
+} from "./http";
 
 export const restaurantsRoutes = new Hono<AppEnv>()
   .use("*", requireSession)
@@ -58,6 +72,42 @@ export const restaurantsRoutes = new Hono<AppEnv>()
     const body = await parseJsonBody(c, updateSettingsSchema);
     if ("response" in body) return body.response;
     return c.json(await settingsServiceFor(c.env.DB).updateSettings(c.get("userId"), body.data));
+  })
+
+  // Delivery: the store location (and mode) and its zones. `/location` is the source of truth of the mode.
+  .get("/me/location", async (c) => {
+    return c.json(await deliveryServiceFor(c.env.DB).getLocation(c.get("userId")));
+  })
+
+  .put("/me/location", async (c) => {
+    const body = await parseJsonBody(c, storeLocationSchema);
+    if ("response" in body) return body.response;
+    return c.json(await deliveryServiceFor(c.env.DB).updateLocation(c.get("userId"), body.data));
+  })
+
+  .get("/me/delivery-zones", async (c) => {
+    return c.json(await deliveryServiceFor(c.env.DB).listZones(c.get("userId")));
+  })
+
+  .put("/me/delivery-zones", async (c) => {
+    const body = await parseJsonBody(c, replaceDeliveryZonesSchema);
+    if ("response" in body) return body.response;
+    return c.json(await deliveryServiceFor(c.env.DB).replaceZones(c.get("userId"), body.data));
+  })
+
+  // Address search of the store (Google Places). `session` groups the calls of one search for billing.
+  .get("/me/places/search", async (c) => {
+    const query = parseQuery(c, placeSearchQuerySchema);
+    if ("response" in query) return query.response;
+    return c.json(await placesServiceFor(c.env).search(c.get("userId"), query.data.q, query.data.session));
+  })
+
+  .get("/me/places/:placeId", async (c) => {
+    const placeId = placeIdSchema.safeParse(c.req.param("placeId"));
+    if (!placeId.success) return errorResponse(c, 422, "VALIDATION_ERROR", `placeId: ${placeId.error.issues[0]?.message}`);
+    const query = parseQuery(c, placeDetailsQuerySchema);
+    if ("response" in query) return query.response;
+    return c.json(await placesServiceFor(c.env).details(c.get("userId"), placeId.data, query.data.session));
   })
 
   .put("/me/logo", uploadBodyLimit("logo", LOGO_MAX_BYTES), async (c) => {
