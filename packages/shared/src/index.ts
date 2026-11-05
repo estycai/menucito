@@ -7,6 +7,7 @@ export * from "./hours";
 export * from "./media";
 export * from "./order";
 export * from "./orders";
+export * from "./permissions";
 export * from "./plans";
 export * from "./public-menu";
 export * from "./restaurant";

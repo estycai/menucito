@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { Access } from "./permissions";
 import { PLAN_IDS } from "./plans";
 import { normalizeHexColor } from "./theme";
 
@@ -193,6 +194,11 @@ export interface Restaurant {
   updatedAt: string;
 }
 
+/** Restaurant of `GET /api/restaurants/me`: the usual restaurant plus what the signed-in member can do. */
+export interface MyRestaurant extends Restaurant {
+  access: Access;
+}
+
 export type SlugUnavailableReason = SlugProblem | "taken";
 
 export interface SlugAvailability {
@@ -202,5 +208,12 @@ export interface SlugAvailability {
 
 /** Error body returned by the REST API. */
 export interface ApiErrorBody {
-  error: { code: string; message: string };
+  error: {
+    code: string;
+    message: string;
+    /** On 403 `FORBIDDEN`: the permission key the request needed. */
+    permission?: string;
+    /** On 409 `ROLE_IN_USE`: how many members still have the role. */
+    memberCount?: number;
+  };
 }
