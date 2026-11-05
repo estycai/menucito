@@ -79,7 +79,7 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 
 | Method and path | Response |
 | --- | --- |
-| `GET /api/restaurants/me` | 200 restaurant, 404 `RESTAURANT_NOT_FOUND` if the user has none |
+| `GET /api/restaurants/me` | 200 restaurant plus `access: {memberId, isOwner, active, role: {id, name, active}, permissions}` (normalized keys; every key of the catalog for the owner; `[]` for a deactivated member or an inactive role, which still get a 200 so the admin can show the right screen), 404 `RESTAURANT_NOT_FOUND` if the user has no restaurant and is not a member of one |
 | `GET /api/restaurants/slug-available?slug=` | 200 `{available, reason?: "invalid" | "reserved" | "taken"}` |
 | `POST /api/restaurants` | body `{name, slug, whatsapp, delivery, takeaway}`; 201 restaurant, 409 `SLUG_TAKEN` / `ALREADY_HAS_RESTAURANT`, 422 `VALIDATION_ERROR` |
 | `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
@@ -112,12 +112,55 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `PUT /api/products/:id/ingredients` | body `{ingredients: [{name, includedQty, minQty, maxQty, extraPriceCents}]}` (the whole ordered list; it replaces the saved one in one batch, `[]` clears it); 200 `{ingredients}`, 403 `PLAN_FEATURE` (plan without `customIngredients`), 404 `PRODUCT_NOT_FOUND`, 422 `VALIDATION_ERROR` |
 | `PUT /api/products/:id/photo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{imageUrl}`, 403 `PLAN_LIMIT`, 404, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE` |
 | `DELETE /api/products/:id/photo` | 204 (also when there is no photo), 404 |
+| `GET /api/members` | Owner only. Query `page`, `limit` (default 20), `courier=true`, `active=true`. 200 `{members: Member[], page, limit, total}`: first name, last name, email, phone (E.164), role, `isCourier`, `isOwner`, `active`; the owner first, then by name |
+| `POST /api/members` | Owner only. Body `{firstName, lastName, email, password (8-128), roleId, phone?, isCourier?}`. Creates the account with a verified email and a credential password; no email is sent. 201 member (never the password), 409 `EMAIL_IN_USE` (the email exists in any account), 422 `VALIDATION_ERROR` (also a `roleId` of another restaurant, inactive, or the system role) |
+| `PATCH /api/members/:id` | Owner only. Body with any of `{firstName, lastName, phone, roleId, isCourier}`; an `email` or `password` key is rejected. 200 member, 404 `MEMBER_NOT_FOUND`, 409 `OWNER_IMMUTABLE` (changing the owner's role), 422 |
+| `PATCH /api/members/:id/active` | Owner only. Body `{active}`. Deactivating deletes the member's sessions. 200 member, 404, 409 `OWNER_IMMUTABLE` |
+| `PUT /api/members/:id/password` | Owner only. Body `{password}`. Replaces the credential and deletes every session of that user. 204, 404, 409 `OWNER_IMMUTABLE`, 422 |
+| `DELETE /api/members/:id` | Owner only. Deletes the member and the account (sessions and credentials with it); the email can be reused. 204, 404, 409 `OWNER_IMMUTABLE` |
+| `GET /api/roles` | Owner only. 200 `{roles: Role[]}` with `{id, name, isSystem, active, memberCount, permissions}`; the system role first (its `permissions` is `[]`: the owner check grants everything), then by name |
+| `POST /api/roles` | Owner only. Body `{name (1-40), permissions}`; unknown keys are dropped, a sub-permission without its section key is rejected. 201 role, 409 `ROLE_NAME_TAKEN` (case-insensitive, per restaurant), 422 |
+| `PATCH /api/roles/:id` | Owner only. Body with any of `{name, permissions, active}`; the permissions are replaced as a whole in one D1 batch and take effect on the member's next request. 200 role, 404 `ROLE_NOT_FOUND`, 409 `SYSTEM_ROLE` / `ROLE_NAME_TAKEN`, 422 |
+| `DELETE /api/roles/:id` | Owner only. 204, 404, 409 `SYSTEM_ROLE`, 409 `ROLE_IN_USE` with `error.memberCount` |
 
 Product: `{id, categoryId, name, description, priceCents, imageUrl, available, ingredients, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado". `ingredients` is the ordered list of customizable ingredients (`[]` when none), returned on every plan by `GET /api/categories` and `GET /api/products/:id`.
 
 Ingredient: `{name, includedQty, minQty, maxQty, extraPriceCents}`. `extraPriceCents` is charged for each unit above `includedQty`. Rules (shared Zod schema, enforced by the API and the admin form): name 1-40 characters and unique inside the product ignoring case, quantities are integers 0-99, `maxQty >= 1`, `minQty <= includedQty <= maxQty`, extra price is zero or more, at most 20 per product. Ingredients are deleted with their product. This change only covers saving them in the admin; ordering them from the public menu and the price calculation come with the public menu.
 
-All `/api/restaurants/*`, `/api/categories/*` and `/api/products/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+All `/api/restaurants/*`, `/api/categories/*`, `/api/products/*`, `/api/orders/*`, `/api/members/*` and `/api/roles/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. Besides the codes listed per endpoint, any of them can answer the access errors of "Users and roles" below. The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+
+### Users and roles
+
+A restaurant can have several people with access. Everyone is a member (`restaurant_members`, one restaurant per user); the owner (`restaurants.owner_id`) is a member too, with the system role "Dueño". The middleware `requireMember` (`apps/api/src/middleware/require-member.ts`) resolves the member, the restaurant and the effective permissions from the session on every request, so a role change shows up on the next request without signing in again. Each route of the owner's API declares one guard (`requirePermission(key)`, `requireOwner` or `allowAnyMember`); `test/route-guards.test.ts` fails when a registered route declares none.
+
+Permissions are text keys `<section>.<action>`, defined in `packages/shared/src/permissions.ts` (adding one needs no migration; a stored key that left the catalog is ignored). Each section has a `.view` key and its sub-permissions only count with the section checked:
+
+| Section | Keys |
+| --- | --- |
+| Resumen | `summary.view` |
+| Pedidos | `orders.view`, `orders.status` (change status, cancel), `orders.payment` (mark paid or pending), `orders.export` (CSV) |
+| Mi menú | `menu.view`, `menu.edit` |
+| Mi local | `store.view`, `store.edit` (data, appearance, hours, delivery, payments, pause; also the `/me/places/*` lookups) |
+| Link y QR | `qr.view` |
+| Estadísticas | `stats.view` |
+
+Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given.
+
+New error codes (body `{"error": {"code", "message", ...}}`):
+
+| Code | Status | When |
+| --- | --- | --- |
+| `FORBIDDEN` | 403 | The member lacks the permission; the body carries `error.permission` with the missing key |
+| `MEMBER_INACTIVE` | 403 | The owner deactivated the user |
+| `OWNER_ONLY` | 403 | A member who is not the owner called an owner-only route |
+| `MEMBER_NOT_FOUND`, `ROLE_NOT_FOUND` | 404 | Unknown id, or one of another restaurant |
+| `EMAIL_IN_USE` | 409 | The email already has an account (any restaurant, any sign-up method) |
+| `OWNER_IMMUTABLE` | 409 | Role, active flag, password or deletion of the owner's member |
+| `SYSTEM_ROLE` | 409 | Editing, deactivating or deleting the "Dueño" role |
+| `ROLE_IN_USE` | 409 | Deleting a role with members; the body carries `error.memberCount` |
+| `ROLE_NAME_TAKEN` | 409 | Another role of the restaurant has that name (case-insensitive) |
+
+A user who is already a member also gets 409 `ALREADY_HAS_RESTAURANT` on `POST /api/restaurants`. Accounts created by the owner go through `apps/api/src/auth-admin.ts` (Better Auth's internal adapter): verified email, hashed password, no email sent. API error messages are in Spanish.
 
 ### Logo and media (R2)
 
@@ -157,7 +200,7 @@ After pulling schema changes, apply new migrations locally: `pnpm --filter @menu
 
 ### Admin panel routes and shell
 
-Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/components/shell`), a layout route under `RequireAuth` and `RequireRestaurant`: a 240px sidebar from 1024px, and a top bar with a drawer (native modal `<dialog>`) below it. Both render the same `NavPanel` (restaurant logo or initials, name, plan, sections and "Cerrar sesión"). Navigation items and route matching live in `apps/admin/src/lib/nav.ts`.
+Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/components/shell`), a layout route under `RequireAuth` and `RequireRestaurant`: a 240px sidebar from 1024px, and a top bar with a drawer (native modal `<dialog>`) below it. Both render the same `NavPanel` (restaurant logo or initials, name, plan, sections and "Cerrar sesión"). Navigation items and route matching live in `apps/admin/src/lib/nav.ts`; the menu and the routes are filtered by the member's permissions (`RequirePermission`, with the "No tenés acceso" and deactivated-user screens), and actions the member cannot perform are hidden.
 
 | Route | Section |
 | --- | --- |
@@ -165,6 +208,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/pedidos` | Pedidos (tablero con columnas activas, historial con filtros de fecha/estado/pago, detalle, acciones y exportación CSV) |
 | `/menu`, `/menu/products/new`, `/menu/products/:id` | Mi menú |
 | `/local` | Mi local |
+| `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
 | `/qr`, `/estadisticas` | Link y QR, Estadísticas: "Próximamente" placeholders |
 
