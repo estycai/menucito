@@ -7,6 +7,9 @@ import {
   ORDER_STATUS_FILTERS,
   ORDER_STATUS_LABELS,
   ACTIVE_ORDER_STATUSES,
+  TIP_MAX_CENTS,
+  TIP_MESSAGES,
+  TIP_PERCENTAGES,
   buildOrderMessage,
   canTransition,
   createOrderRequestSchema,
@@ -14,6 +17,7 @@ import {
   nextStatus,
   orderFiltersQuerySchema,
   orderTotals,
+  tipFromPercent,
   type OrderStatus,
 } from "./orders";
 import {
@@ -31,20 +35,140 @@ describe("Scenario 1: orderTotals", () => {
     expect(orderTotals({ subtotalCents: 500000, shippingCents: 150000, fulfillment: "delivery" })).toEqual({
       subtotalCents: 500000,
       shippingCents: 150000,
+      tipCents: 0,
       totalCents: 650000,
     });
 
     expect(orderTotals({ subtotalCents: 500000, shippingCents: 150000, fulfillment: "takeaway" })).toEqual({
       subtotalCents: 500000,
       shippingCents: 0,
+      tipCents: 0,
       totalCents: 500000,
     });
 
     expect(orderTotals({ subtotalCents: 500000, shippingCents: 0, fulfillment: "delivery" })).toEqual({
       subtotalCents: 500000,
       shippingCents: 0,
+      tipCents: 0,
       totalCents: 500000,
     });
+  });
+});
+
+describe("13 scenario 1: TIP_PERCENTAGES", () => {
+  it("offers 4, 8, 10 and 14 percent", () => {
+    expect(TIP_PERCENTAGES).toEqual([4, 8, 10, 14]);
+  });
+});
+
+describe("13 scenario 2: tipFromPercent", () => {
+  it("rounds the percentage of the subtotal to whole pesos", () => {
+    // 10% of 1.234.500 cents = 123.450 cents, rounded to 123.500 (1234.5 pesos).
+    expect(tipFromPercent(1_234_500, 10)).toBe(123_500);
+    expect(tipFromPercent(1_000_000, 4)).toBe(40_000);
+    expect(tipFromPercent(1_000_000, 8)).toBe(80_000);
+    expect(tipFromPercent(1_000_000, 14)).toBe(140_000);
+    // Always a whole number of pesos.
+    for (const percent of TIP_PERCENTAGES) {
+      expect(tipFromPercent(333_333, percent) % 100).toBe(0);
+    }
+  });
+});
+
+describe("13 scenario 3: orderTotals with a tip", () => {
+  it("adds the tip to the total and zeroes it on takeaway orders", () => {
+    expect(orderTotals({ subtotalCents: 1_000_000, shippingCents: 100_000, tipCents: 80_000, fulfillment: "delivery" })).toEqual({
+      subtotalCents: 1_000_000,
+      shippingCents: 100_000,
+      tipCents: 80_000,
+      totalCents: 1_180_000,
+    });
+
+    expect(orderTotals({ subtotalCents: 1_000_000, shippingCents: 100_000, tipCents: 80_000, fulfillment: "takeaway" })).toEqual({
+      subtotalCents: 1_000_000,
+      shippingCents: 0,
+      tipCents: 0,
+      totalCents: 1_000_000,
+    });
+  });
+});
+
+describe("13 scenario 4: createOrderRequestSchema with a tip", () => {
+  const baseOrder = {
+    items: [{ productId: "prod-1", quantity: 1 }],
+    customer: { name: "Juan Pérez", phone: "11 5555-1234", address: "Av. Siempre Viva 742" },
+    fulfillment: "delivery",
+    paymentMethod: "transfer",
+    clientOrderId: "123e4567-e89b-12d3-a456-426614174000",
+    expectedTotalCents: 1_080_000,
+  };
+
+  it("is optional and defaults to 0", () => {
+    const parsed = createOrderRequestSchema.parse(baseOrder);
+    expect(parsed.tipCents).toBe(0);
+    expect(createOrderRequestSchema.parse({ ...baseOrder, tipCents: 80_000 }).tipCents).toBe(80_000);
+  });
+
+  it.each([
+    ["negative", -100],
+    ["decimal", 80_050],
+    ["not a multiple of 100", 80_123],
+    ["above the cap", TIP_MAX_CENTS + 100],
+  ])("rejects a %s tip", (_label, tipCents) => {
+    expect(createOrderRequestSchema.safeParse({ ...baseOrder, tipCents }).success).toBe(false);
+  });
+
+  it.each([
+    ["takeaway", { fulfillment: "takeaway", customer: { name: "Ana", phone: "11 5555-1234", address: "" } }],
+    ["cash", { paymentMethod: "cash" }],
+  ])("rejects a tip on %s", (_label, overrides) => {
+    const result = createOrderRequestSchema.safeParse({ ...baseOrder, ...overrides, tipCents: 80_000 });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0]?.message).toBe(TIP_MESSAGES.onlyDeliveryTransfer);
+      expect(result.error.issues[0]?.path).toEqual(["tipCents"]);
+    }
+  });
+
+  it("accepts a zero tip on takeaway and cash", () => {
+    expect(
+      createOrderRequestSchema.safeParse({
+        ...baseOrder,
+        fulfillment: "takeaway",
+        paymentMethod: "cash",
+        customer: { name: "Ana", phone: "11 5555-1234", address: "" },
+        tipCents: 0,
+      }).success,
+    ).toBe(true);
+  });
+});
+
+describe("13 scenario 5: buildOrderMessage with a tip", () => {
+  const order = {
+    number: 12,
+    subtotalCents: 1_000_000,
+    shippingCents: 100_000,
+    tipCents: 80_000,
+    totalCents: 1_180_000,
+    fulfillment: "delivery" as const,
+    paymentMethod: "transfer" as const,
+    customerName: "Juan",
+    customerPhone: "5491155551234",
+    deliveryAddress: "Av. Siempre Viva 742",
+    items: [{ quantity: 1, name: "Pizza", unitPriceCents: 1_000_000 }],
+  };
+
+  it("adds the courier tip line before the total", () => {
+    const message = buildOrderMessage(order);
+    const tipIndex = message.indexOf("Propina para el repartidor: $800");
+    const totalIndex = message.indexOf("Total: $11.800");
+    expect(tipIndex).toBeGreaterThan(-1);
+    expect(totalIndex).toBeGreaterThan(tipIndex);
+  });
+
+  it("does not show the line without a tip", () => {
+    expect(buildOrderMessage({ ...order, tipCents: 0 })).not.toContain("Propina");
+    expect(buildOrderMessage({ ...order, tipCents: undefined })).not.toContain("Propina");
   });
 });
 

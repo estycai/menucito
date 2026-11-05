@@ -66,25 +66,54 @@ export function nextStatus(from: OrderStatus, fulfillment: Fulfillment): OrderSt
   return pipeline[index + 1] ?? null;
 }
 
+/** Tip percentages the diner may pick; the amount is calculated over the products subtotal. */
+export const TIP_PERCENTAGES = [4, 8, 10, 14] as const;
+
+/** Cap of a custom tip, in ARS cents ($50.000). */
+export const TIP_MAX_CENTS = 5_000_000;
+
+export const TIP_MESSAGES = {
+  onlyDeliveryTransfer: "La propina solo se puede dejar en pedidos con envío pagados por transferencia.",
+  invalidAmount: "La propina tiene que ser un monto entero en pesos, de $0 a $50.000",
+} as const;
+
+/**
+ * Tip of `percent` over the products subtotal, rounded to whole pesos (a multiple of 100 cents).
+ * The diner picks a percentage but only the amount travels to the API.
+ */
+export function tipFromPercent(subtotalCents: number, percent: number): number {
+  return Math.round((subtotalCents * percent) / 10_000) * 100;
+}
+
+/** A tip only exists on delivery orders paid by transfer (decision 1). */
+export function canHaveTip(fulfillment: Fulfillment, paymentMethod: PaymentMethod): boolean {
+  return fulfillment === "delivery" && paymentMethod === "transfer";
+}
+
 export interface OrderTotalsInput {
   subtotalCents: number;
   shippingCents: number;
+  tipCents?: number;
   fulfillment: Fulfillment;
 }
 
 export interface OrderTotals {
   subtotalCents: number;
   shippingCents: number;
+  tipCents: number;
   totalCents: number;
 }
 
 export function orderTotals(input: OrderTotalsInput): OrderTotals {
   const subtotal = Math.round(input.subtotalCents);
   const shipping = input.fulfillment === "delivery" ? Math.max(0, Math.round(input.shippingCents)) : 0;
+  // A takeaway order has neither shipping nor courier, so no tip either.
+  const tip = input.fulfillment === "delivery" ? Math.max(0, Math.round(input.tipCents ?? 0)) : 0;
   return {
     subtotalCents: subtotal,
     shippingCents: shipping,
-    totalCents: subtotal + shipping,
+    tipCents: tip,
+    totalCents: subtotal + shipping + tip,
   };
 }
 
@@ -179,12 +208,33 @@ export const createOrderRequestSchema = z
       .int(ORDERS_MESSAGES.expectedTotalInvalid)
       .min(0, ORDERS_MESSAGES.expectedTotalInvalid),
     /**
+     * Courier tip in ARS cents, already rounded to whole pesos by the diner's front. Optional; `0`
+     * when absent. Only valid on a delivery order paid by transfer (`canHaveTip`).
+     */
+    tipCents: z
+      .number(TIP_MESSAGES.invalidAmount)
+      .int(TIP_MESSAGES.invalidAmount)
+      .min(0, TIP_MESSAGES.invalidAmount)
+      .max(TIP_MAX_CENTS, TIP_MESSAGES.invalidAmount)
+      .multipleOf(100, TIP_MESSAGES.invalidAmount)
+      .optional()
+      .default(0),
+    /**
      * The geocoded address, required by stores in `zones` mode (the service checks it, since the
      * schema does not know the mode). `flat` stores ignore it and use `customer.address`.
      */
     delivery: orderDeliverySchema.nullish(),
   })
   .transform((val, ctx) => {
+    // No client HTTP is trusted: a tip on takeaway or cash is rejected even if the front never sent it.
+    if (val.tipCents > 0 && !canHaveTip(val.fulfillment, val.paymentMethod)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: TIP_MESSAGES.onlyDeliveryTransfer,
+        path: ["tipCents"],
+      });
+      return z.NEVER;
+    }
     if (val.fulfillment === "delivery") {
       const addr = val.customer.address?.trim() ?? "";
       const delivery = val.delivery ?? null;
@@ -219,6 +269,12 @@ export const createOrderRequestSchema = z
 
 export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
 
+/**
+ * What a client sends: `tipCents` may be absent (the schema defaults it to 0). The web front omits it
+ * on cash and takeaway orders, so the tip never travels outside a delivery paid by transfer.
+ */
+export type CreateOrderRequestInput = z.input<typeof createOrderRequestSchema>;
+
 /** Most orders one CSV export may contain; a larger result asks the owner to narrow the dates. */
 export const ORDER_EXPORT_MAX = 5000;
 
@@ -227,11 +283,10 @@ export const ORDER_STATUS_FILTERS = [...ORDER_STATUSES, "active"] as const;
 export type OrderStatusFilter = (typeof ORDER_STATUS_FILTERS)[number];
 
 /**
- * Timestamp that `from` and `to` filter on: when the order was created (default; history and CSV)
- * or last updated. "Entregados" of the board uses `updated` as an approximation of the delivery
- * time: there is no `delivered_at` column, so a later change (the payment) also moves it.
+ * Timestamp that `from` and `to` filter on: when the order was created (default; history and CSV),
+ * when it was last updated, or when it was delivered. "Entregados" of the board uses `delivered`.
  */
-export const ORDER_DATE_FIELDS = ["created", "updated"] as const;
+export const ORDER_DATE_FIELDS = ["created", "updated", "delivered"] as const;
 export type OrderDateField = (typeof ORDER_DATE_FIELDS)[number];
 
 export const ORDER_FILTER_MESSAGES = {
@@ -279,6 +334,61 @@ export const orderFiltersQuerySchema = z
 
 export type OrderFiltersQuery = z.infer<typeof orderFiltersQuerySchema>;
 
+export const COURIER_MESSAGES = {
+  assignRequired: "Elegí un repartidor",
+  invalidCourier: "Elegí un repartidor de tu local",
+} as const;
+
+/** Body of `POST /api/orders/:id/assign`. */
+export const assignCourierSchema = z.object({
+  courierMemberId: z
+    .string(COURIER_MESSAGES.assignRequired)
+    .trim()
+    .min(1, COURIER_MESSAGES.assignRequired),
+});
+
+export type AssignCourierInput = z.infer<typeof assignCourierSchema>;
+
+const dateRangeFields = {
+  from: dateKeyParam(ORDER_FILTER_MESSAGES.fromInvalid),
+  to: dateKeyParam(ORDER_FILTER_MESSAGES.toInvalid),
+};
+
+const inDateOrder = (query: { from?: string; to?: string }) => !query.from || !query.to || query.from <= query.to;
+
+/** Query of the summaries: local calendar days, both inclusive; absent means "today". */
+export const dateRangeQuerySchema = z
+  .object(dateRangeFields)
+  .refine(inDateOrder, { message: ORDER_FILTER_MESSAGES.rangeInvalid, path: ["to"] });
+
+export type DateRangeQuery = z.infer<typeof dateRangeQuerySchema>;
+
+/**
+ * Status filter of the courier summary: delivered orders (by `delivered_at`), orders on the way
+ * (`sent`, by `sent_at`) or both. Cancelled orders never count.
+ */
+export const COURIER_SUMMARY_STATUSES = ["delivered", "sent", "all"] as const;
+export type CourierSummaryStatus = (typeof COURIER_SUMMARY_STATUSES)[number];
+
+export const COURIER_SUMMARY_STATUS_LABELS: Record<CourierSummaryStatus, string> = {
+  delivered: "Entregados",
+  sent: "En camino",
+  all: "Todos",
+};
+
+/** Query of the courier summary: the range, a status and an optional courier of the local. */
+export const courierSummaryQuerySchema = z
+  .object({
+    ...dateRangeFields,
+    status: optionalParam(z.enum(COURIER_SUMMARY_STATUSES, "Elegí un estado: entregados, en camino o todos")).default(
+      "delivered",
+    ),
+    courierMemberId: optionalParam(z.string(COURIER_MESSAGES.invalidCourier).min(1, COURIER_MESSAGES.invalidCourier)),
+  })
+  .refine(inDateOrder, { message: ORDER_FILTER_MESSAGES.rangeInvalid, path: ["to"] });
+
+export type CourierSummaryQuery = z.infer<typeof courierSummaryQuerySchema>;
+
 export interface OrderItemOption {
   name: string;
   quantity: number;
@@ -298,6 +408,13 @@ export interface OrderItem {
   notes: string | null;
 }
 
+/** Courier of an order as the owner and the courier himself see it. */
+export interface OrderCourier {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface OrderSummary {
   id: string;
   number: number;
@@ -310,6 +427,8 @@ export interface OrderSummary {
   totalCents: number;
   itemCount: number;
   createdAt: number;
+  /** Assigned courier, or `null` when the order has none (takeaway, not sent yet or older orders). */
+  courier: OrderCourier | null;
   /** Map point of a geocoded delivery order (the orders map); `null` like the detail's `deliveryLocation`. */
   deliveryLocation: OrderMapPoint | null;
 }
@@ -357,11 +476,84 @@ export interface OrderDetail {
   subtotalCents: number;
   shippingCents: number;
   discountCents: number;
+  /** Courier tip, kept apart from the subtotal and the shipping; `0` when there is none. */
+  tipCents: number;
   totalCents: number;
   items: OrderItem[];
   createdAt: number;
   updatedAt: number;
+  /** Courier who took the order; `null` for takeaway, not sent yet and orders older than 0012. */
+  courier: OrderCourier | null;
+  /** Exact time the order went out, or `null` when it never did. */
+  sentAt: number | null;
+  /** Exact time the order was delivered, or `null` when it was not. */
+  deliveredAt: number | null;
   payment?: OrderPaymentInfo | null;
+}
+
+/** One order of "Mis repartos": what the courier needs to deliver it. */
+export interface CourierDelivery {
+  id: string;
+  number: number;
+  customerName: string;
+  customerPhone: string;
+  deliveryAddress: string | null;
+  deliveryLocation: OrderDeliveryLocation | null;
+  notes: string | null;
+  paymentMethod: PaymentMethod;
+  totalCents: number;
+  shippingCents: number;
+  tipCents: number;
+  sentAt: number | null;
+}
+
+/** Totals of the orders a courier delivered in a range. */
+export interface DeliverySummary {
+  from: string;
+  to: string;
+  delivered: number;
+  shippingCents: number;
+  tipCents: number;
+}
+
+/** Active courier of the local, with the orders it currently has on the way. */
+export interface CourierOption {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  /** Orders currently `sent` assigned to this courier. */
+  inProgressOrders: number;
+}
+
+/** Courier of the local in the filter of "Repartidores": there even when the range has no deliveries. */
+export interface CourierFilterOption {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  active: boolean;
+}
+
+/** One row of the courier summary: a courier of the local, or "Sin repartidor" (`memberId: null`). */
+export interface CourierSummaryRow {
+  memberId: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  /** `null` for "Sin repartidor"; `false` for a courier the owner deactivated (the design's "Inactivo"). */
+  active: boolean | null;
+  delivered: number;
+  /** Orders still on the way (`sent`); always 0 with the "delivered" status filter. */
+  inProgress: number;
+  shippingCents: number;
+  tipCents: number;
+}
+
+export interface CourierSummary {
+  from: string;
+  to: string;
+  /** Every courier of the local (active or not): the options of the page's filter (scenario 48). */
+  couriers: CourierFilterOption[];
+  rows: CourierSummaryRow[];
+  totals: Pick<CourierSummaryRow, "delivered" | "inProgress" | "shippingCents" | "tipCents">;
 }
 
 /** Item of the order as the customer sees it: no ids, no internal fields. */
@@ -384,6 +576,8 @@ export interface PublicOrder {
   subtotalCents: number;
   shippingCents: number;
   discountCents: number;
+  /** Courier tip of the order; `0` when the diner left none. */
+  tipCents: number;
   totalCents: number;
 }
 
@@ -404,6 +598,7 @@ export function toPublicOrder(order: OrderDetail): PublicOrder {
     subtotalCents: order.subtotalCents,
     shippingCents: order.shippingCents,
     discountCents: order.discountCents,
+    tipCents: order.tipCents,
     totalCents: order.totalCents,
   };
 }
@@ -448,6 +643,7 @@ export function buildOrderMessage(
     number: number;
     subtotalCents: number;
     shippingCents: number;
+    tipCents?: number;
     totalCents: number;
     fulfillment: Fulfillment;
     paymentMethod: PaymentMethod;
@@ -478,6 +674,9 @@ export function buildOrderMessage(
   if (order.fulfillment === "delivery") {
     const shippingText = order.shippingCents > 0 ? formatArs(order.shippingCents) : "Envío gratis";
     lines.push(`Envío: ${shippingText}`);
+  }
+  if (order.tipCents && order.tipCents > 0) {
+    lines.push(`Propina para el repartidor: ${formatArs(order.tipCents)}`);
   }
   lines.push(`Total: ${formatArs(order.totalCents)}`);
   lines.push("");

@@ -30,8 +30,10 @@ export const PERMISSION_SECTIONS = [
       { key: "orders.status", label: "Cambiar estado y cancelar" },
       { key: "orders.payment", label: "Marcar pagado o pendiente" },
       { key: "orders.export", label: "Exportar a CSV" },
+      { key: "orders.assign", label: "Asignar repartidor" },
     ],
   },
+  { key: "couriers.view", label: "Repartidores", subpermissions: [] },
   {
     key: "menu.view",
     label: "Mi menú",
@@ -108,6 +110,8 @@ export function validatePermissions(keys: readonly string[]): PermissionProblem 
 export interface Access {
   memberId: string;
   isOwner: boolean;
+  /** `true` when the member is marked as a courier (`is_courier`). */
+  isCourier: boolean;
   /** `false` when the owner deactivated the user. */
   active: boolean;
   role: { id: string; name: string; active: boolean };

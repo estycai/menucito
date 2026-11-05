@@ -25,7 +25,8 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       PERMISSION_SECTIONS.map((section) => [section.key, section.label, section.subpermissions.map((sub) => sub.key)]),
     ).toEqual([
       ["summary.view", "Resumen", []],
-      ["orders.view", "Pedidos", ["orders.status", "orders.payment", "orders.export"]],
+      ["orders.view", "Pedidos", ["orders.status", "orders.payment", "orders.export", "orders.assign"]],
+      ["couriers.view", "Repartidores", []],
       ["menu.view", "Mi menú", ["menu.edit"]],
       ["store.view", "Mi local", ["store.edit"]],
       ["qr.view", "Link y QR", []],
@@ -46,6 +47,20 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       expect(section.key).toBe(`${prefix}.view`);
       for (const sub of section.subpermissions) expect(sub.key.startsWith(`${prefix}.`)).toBe(true);
     }
+  });
+});
+
+describe("13 scenario 6: catalog additions", () => {
+  it("adds orders.assign under Pedidos and a Repartidores section after it", () => {
+    const orders = PERMISSION_SECTIONS.find((section) => section.key === "orders.view");
+    expect(orders?.subpermissions.map((sub) => sub.key)).toContain("orders.assign");
+    expect(orders?.subpermissions.find((sub) => sub.key === "orders.assign")?.label).toBe("Asignar repartidor");
+
+    const keys = PERMISSION_SECTIONS.map((section) => section.key);
+    const couriersIndex = keys.indexOf("couriers.view");
+    expect(couriersIndex).toBeGreaterThan(keys.indexOf("orders.view"));
+    expect(couriersIndex).toBeLessThan(keys.indexOf("menu.view"));
+    expect(PERMISSION_SECTIONS[couriersIndex]?.label).toBe("Repartidores");
   });
 });
 
@@ -84,6 +99,7 @@ describe("hasPermission (scenario 4)", () => {
   const member = (overrides: Partial<Access> = {}): Access => ({
     memberId: "m1",
     isOwner: false,
+    isCourier: false,
     active: true,
     role: { id: "r1", name: "Cajero", active: true },
     permissions: ["orders.view", "orders.payment"],

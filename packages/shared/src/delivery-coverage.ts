@@ -126,3 +126,38 @@ export function toPublicQuote(quote: DeliveryQuote): PublicDeliveryQuote {
   if (!quote.covered) return { covered: false };
   return { covered: true, shippingCents: quote.shippingCents, minOrderCents: quote.minOrderCents };
 }
+
+/** A stop of a courier route: coordinates when the address was geocoded. */
+export interface OrderStop {
+  lat: number | null;
+  lng: number | null;
+}
+
+/**
+ * Orders `stops` for a courier route: starts with the stop closest to the store, then keeps taking
+ * the closest to the previous one, and leaves the stops without coordinates at the end in their
+ * input order. Without a store location there is nothing to optimize, so the input order is kept.
+ */
+export function orderStopsByProximity<T extends OrderStop>(store: LatLng | null, stops: readonly T[]): T[] {
+  if (!store) return [...stops];
+  const located = stops.filter((stop) => stop.lat !== null && stop.lng !== null);
+  const withoutLocation = stops.filter((stop) => stop.lat === null || stop.lng === null);
+  const ordered: T[] = [];
+  const remaining = [...located];
+  let origin: LatLng = store;
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    for (const [index, stop] of remaining.entries()) {
+      const distance = distanceMeters(origin, { lat: stop.lat!, lng: stop.lng! });
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = index;
+      }
+    }
+    const [next] = remaining.splice(bestIndex, 1);
+    ordered.push(next!);
+    origin = { lat: next!.lat!, lng: next!.lng! };
+  }
+  return [...ordered, ...withoutLocation];
+}

@@ -5,7 +5,7 @@ import {
   orderDeliverySchema,
   reverseGeocodeQuerySchema,
 } from "./delivery";
-import { toPublicQuote } from "./delivery-coverage";
+import { toPublicQuote, orderStopsByProximity } from "./delivery-coverage";
 import { createOrderRequestSchema } from "./orders";
 
 const delivery = {
@@ -99,5 +99,24 @@ describe("public quote inputs", () => {
     expect(
       toPublicQuote({ covered: true, zoneId: "z1", zoneName: "Centro", distanceM: 900, shippingCents: 500, minOrderCents: null }),
     ).toEqual({ covered: true, shippingCents: 500, minOrderCents: null });
+  });
+});
+
+describe("13 scenario 29b: orderStopsByProximity", () => {
+  const stop = (id: string, lat: number | null, lng: number | null) => ({ id, lat, lng });
+
+  it("starts at the nearest to the store and follows the nearest to the previous stop", () => {
+    const stops = [stop("A", 0, 0.02), stop("B", 0, 0.01), stop("C", 0, 0.03)];
+    expect(orderStopsByProximity({ lat: 0, lng: 0 }, stops).map((s) => s.id)).toEqual(["B", "A", "C"]);
+  });
+
+  it("leaves the stops without coordinates at the end, in their input order", () => {
+    const stops = [stop("A", 0, 0.02), stop("no-1", null, null), stop("B", 0, 0.01), stop("no-2", 0, null)];
+    expect(orderStopsByProximity({ lat: 0, lng: 0 }, stops).map((s) => s.id)).toEqual(["B", "A", "no-1", "no-2"]);
+  });
+
+  it("keeps the input order when the store has no coordinates", () => {
+    const stops = [stop("A", 0, 0.02), stop("B", 0, 0.01), stop("no", null, null)];
+    expect(orderStopsByProximity(null, stops).map((s) => s.id)).toEqual(["A", "B", "no"]);
   });
 });
