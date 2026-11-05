@@ -5,41 +5,33 @@ import {
   type StoreSettings,
   type UpdateSettingsInput,
 } from "@menucito/shared";
-import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
 import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
-import { RestaurantNotFoundError, ValidationError } from "./errors";
+import { ValidationError } from "./errors";
 
 export interface SettingsService {
-  getSettings(ownerId: string): Promise<StoreSettings>;
-  updateSettings(ownerId: string, changes: UpdateSettingsInput): Promise<StoreSettings>;
+  getSettings(restaurantId: string): Promise<StoreSettings>;
+  updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettings>;
 }
 
 export function createSettingsService(
-  restaurantsRepo: RestaurantsRepository,
   settingsRepo: SettingsRepository,
   now: () => Date = () => new Date(),
 ): SettingsService {
   return {
-    async getSettings(ownerId: string): Promise<StoreSettings> {
-      const restaurant = await restaurantsRepo.findByOwner(ownerId);
-      if (!restaurant) throw new RestaurantNotFoundError();
-
-      const settings = await settingsRepo.findSettings(restaurant.id);
+    async getSettings(restaurantId: string): Promise<StoreSettings> {
+      const settings = await settingsRepo.findSettings(restaurantId);
       if (!settings) {
-        console.warn(`[settings] restaurant ${restaurant.id} missing settings row, using safe defaults`);
+        console.warn(`[settings] restaurant ${restaurantId} missing settings row, using safe defaults`);
         return DEFAULT_SETTINGS;
       }
 
       return settings;
     },
 
-    async updateSettings(ownerId: string, changes: UpdateSettingsInput): Promise<StoreSettings> {
-      const restaurant = await restaurantsRepo.findByOwner(ownerId);
-      if (!restaurant) throw new RestaurantNotFoundError();
-
-      let current = await settingsRepo.findSettings(restaurant.id);
+    async updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettings> {
+      let current = await settingsRepo.findSettings(restaurantId);
       if (!current) {
-        console.warn(`[settings] restaurant ${restaurant.id} missing settings row on update, using safe defaults`);
+        console.warn(`[settings] restaurant ${restaurantId} missing settings row on update, using safe defaults`);
         current = DEFAULT_SETTINGS;
       }
 
@@ -79,11 +71,11 @@ export function createSettingsService(
         throw new ValidationError(problem.message);
       }
 
-      return settingsRepo.upsertSettings(restaurant.id, resulting, now());
+      return settingsRepo.upsertSettings(restaurantId, resulting, now());
     },
   };
 }
 
 export function settingsServiceFor(db: D1Database): SettingsService {
-  return createSettingsService(createRestaurantsRepository(db), createSettingsRepository(db));
+  return createSettingsService(createSettingsRepository(db));
 }

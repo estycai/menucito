@@ -2,7 +2,9 @@ import {
   checkSlug,
   normalizeArWhatsapp,
   planLimitsFor,
+  type Access,
   type CreateRestaurantInput,
+  type MyRestaurant,
   type PlanId,
   type PlanLimits,
   type Restaurant,
@@ -10,6 +12,7 @@ import {
   type UpdateAppearanceInput,
 } from "@menucito/shared";
 import type { RestaurantRow } from "../db/schema";
+import type { MemberContext } from "../env";
 import {
   UniqueViolationError,
   createRestaurantsRepository,
@@ -66,16 +69,24 @@ export function createRestaurantsService(
   limitsFor: (plan: string) => PlanLimits = planLimitsFor,
 ) {
   return {
-    /** The restaurant owned by `ownerId`. Throws `RestaurantNotFoundError` when there is none. */
-    async getMine(ownerId: string): Promise<Restaurant> {
-      const row = await repository.findByOwner(ownerId);
+    /** The member's restaurant with what the member can do in it (`access`). */
+    async getMine(member: MemberContext): Promise<MyRestaurant> {
+      const row = await repository.findById(member.restaurantId);
       if (!row) throw new RestaurantNotFoundError();
-      return toRestaurant(row);
+      const access: Access = {
+        memberId: member.memberId,
+        isOwner: member.isOwner,
+        active: member.active,
+        role: member.role,
+        // An inactive member keeps no permissions in what the admin sees, whatever its role says.
+        permissions: member.active ? [...member.permissions] : [],
+      };
+      return { ...toRestaurant(row), access };
     },
 
     /** Colors need the `customColors` plan feature (403 even for `null`). */
-    async updateAppearance(ownerId: string, input: UpdateAppearanceInput): Promise<Restaurant> {
-      const current = await repository.findByOwner(ownerId);
+    async updateAppearance(restaurantId: string, input: UpdateAppearanceInput): Promise<Restaurant> {
+      const current = await repository.findById(restaurantId);
       if (!current) throw new RestaurantNotFoundError();
 
       if (input.bgColor !== undefined || input.primaryColor !== undefined) {
@@ -101,9 +112,9 @@ export function createRestaurantsService(
      * is refused with `PlanSwitchDisabledError` unless `options.enabled`. Choosing the current plan is a
      * no-op. Products are never touched: a downgrade only affects the creation limit.
      */
-    async changePlan(ownerId: string, plan: PlanId, options: { enabled: boolean }): Promise<Restaurant> {
+    async changePlan(restaurantId: string, plan: PlanId, options: { enabled: boolean }): Promise<Restaurant> {
       if (!options.enabled) throw new PlanSwitchDisabledError();
-      const current = await repository.findByOwner(ownerId);
+      const current = await repository.findById(restaurantId);
       if (!current) throw new RestaurantNotFoundError();
       if (current.plan === plan) return toRestaurant(current);
       const updated = await repository.updatePlan(current.id, plan, new Date());
@@ -120,7 +131,10 @@ export function createRestaurantsService(
       const whatsapp = normalizeArWhatsapp(input.whatsapp);
       if (!whatsapp) throw new InvalidRestaurantError("Invalid WhatsApp number");
 
-      if (await repository.findByOwner(ownerId)) throw new AlreadyHasRestaurantError();
+      // A user who is a member of any restaurant (as owner or staff) cannot open another one.
+      if ((await repository.findByOwner(ownerId)) || (await repository.isMember(ownerId))) {
+        throw new AlreadyHasRestaurantError();
+      }
 
       const now = new Date();
       try {

@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { z } from "zod";
 import { ORDER_STATUSES, PAYMENT_STATUSES, orderFiltersQuerySchema } from "@menucito/shared";
 import type { AppEnv } from "../env";
+import { requirePermission, requireMember } from "../middleware/require-member";
 import { requireSession } from "../middleware/require-session";
 import { ordersServiceFor } from "../services/orders";
 import { domainErrorHandler, parseJsonBody, parseQuery } from "./http";
@@ -15,46 +16,46 @@ const updateOrderPaymentSchema = z.object({
 });
 
 export const ordersRoutes = new Hono<AppEnv>()
-  .use("*", requireSession)
+  .use("*", requireSession, requireMember)
 
-  .get("/", async (c) => {
+  .get("/", requirePermission("orders.view"), async (c) => {
     const query = parseQuery(c, orderFiltersQuerySchema);
     if ("response" in query) return query.response;
-    const result = await ordersServiceFor(c.env.DB).list(c.get("userId"), query.data);
+    const result = await ordersServiceFor(c.env.DB).list(c.get("member").restaurantId, query.data);
     return c.json(result);
   })
 
   // Declared BEFORE /:id to prevent matching "export" as an ID
-  .get("/export", async (c) => {
+  .get("/export", requirePermission("orders.export"), async (c) => {
     const query = parseQuery(c, orderFiltersQuerySchema);
     if ("response" in query) return query.response;
-    const { csv, filename } = await ordersServiceFor(c.env.DB).exportCsv(c.get("userId"), query.data);
+    const { csv, filename } = await ordersServiceFor(c.env.DB).exportCsv(c.get("member").restaurantId, query.data);
     c.header("Content-Type", "text/csv; charset=utf-8");
     c.header("Content-Disposition", `attachment; filename="${filename}"`);
     return c.body(csv);
   })
 
-  .get("/:id", async (c) => {
-    const order = await ordersServiceFor(c.env.DB).getDetail(c.get("userId"), c.req.param("id"));
+  .get("/:id", requirePermission("orders.view"), async (c) => {
+    const order = await ordersServiceFor(c.env.DB).getDetail(c.get("member").restaurantId, c.req.param("id"));
     return c.json(order);
   })
 
-  .patch("/:id/status", async (c) => {
+  .patch("/:id/status", requirePermission("orders.status"), async (c) => {
     const body = await parseJsonBody(c, updateOrderStatusSchema);
     if ("response" in body) return body.response;
     const order = await ordersServiceFor(c.env.DB).updateStatus(
-      c.get("userId"),
+      c.get("member").restaurantId,
       c.req.param("id"),
       body.data.status,
     );
     return c.json(order);
   })
 
-  .patch("/:id/payment", async (c) => {
+  .patch("/:id/payment", requirePermission("orders.payment"), async (c) => {
     const body = await parseJsonBody(c, updateOrderPaymentSchema);
     if ("response" in body) return body.response;
     const order = await ordersServiceFor(c.env.DB).updatePayment(
-      c.get("userId"),
+      c.get("member").restaurantId,
       c.req.param("id"),
       body.data.paymentStatus,
     );

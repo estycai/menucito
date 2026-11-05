@@ -113,7 +113,7 @@ export interface CatalogDependencies {
 
 /**
  * Menu catalog of the owner's restaurant: categories, products, plan limits and product photos.
- * The tenant is always the restaurant owned by `ownerId` (from the session); every repository call
+ * The tenant is always the member's restaurant, `restaurantId` (from the session, resolved by `requireMember`); every repository call
  * is scoped by its id, so a foreign or unknown id is a 404, never a 403.
  */
 export function createCatalogService({
@@ -126,8 +126,8 @@ export function createCatalogService({
 }: CatalogDependencies) {
   const deleteQuietly = (imageUrl: string | null) => deleteMediaQuietly(storage, imageUrl, "catalog");
 
-  async function restaurantOf(ownerId: string) {
-    const restaurant = await restaurants.findByOwner(ownerId);
+  async function restaurantOf(restaurantId: string) {
+    const restaurant = await restaurants.findById(restaurantId);
     if (!restaurant) throw new RestaurantNotFoundError();
     return restaurant;
   }
@@ -156,8 +156,8 @@ export function createCatalogService({
      * Every category with its products (both ordered by position), each with its ingredients
      * (one extra query for the whole restaurant), and the plan usage.
      */
-    async getCatalog(ownerId: string): Promise<Catalog> {
-      const restaurant = await restaurantOf(ownerId);
+    async getCatalog(restaurantId: string): Promise<Catalog> {
+      const restaurant = await restaurantOf(restaurantId);
       const [categoryRows, productRows, ingredientRows] = await Promise.all([
         categories.list(restaurant.id),
         products.list(restaurant.id),
@@ -182,8 +182,8 @@ export function createCatalogService({
     },
 
     /** Creates a category at the end of the list. `name` must already be validated (trimmed). */
-    async createCategory(ownerId: string, name: string): Promise<Category> {
-      const restaurant = await restaurantOf(ownerId);
+    async createCategory(restaurantId: string, name: string): Promise<Category> {
+      const restaurant = await restaurantOf(restaurantId);
       const now = new Date();
       const row = await categories
         .insert({
@@ -198,8 +198,8 @@ export function createCatalogService({
       return toCategory(row);
     },
 
-    async renameCategory(ownerId: string, id: string, name: string): Promise<Category> {
-      const restaurant = await restaurantOf(ownerId);
+    async renameCategory(restaurantId: string, id: string, name: string): Promise<Category> {
+      const restaurant = await restaurantOf(restaurantId);
       const row = await categories.rename(restaurant.id, id, name, new Date()).catch(translateNameTaken);
       if (!row) throw new CategoryNotFoundError();
       return toCategory(row);
@@ -209,8 +209,8 @@ export function createCatalogService({
      * Deletes an empty category. A category with products is never deleted (409): cascading would
      * silently destroy many products and their photos with one click.
      */
-    async deleteCategory(ownerId: string, id: string): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async deleteCategory(restaurantId: string, id: string): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       await categoryOf(restaurant.id, id);
       if ((await products.countByCategory(restaurant.id, id)) > 0) throw new CategoryNotEmptyError();
       try {
@@ -227,30 +227,30 @@ export function createCatalogService({
      * with `featured: false`, unmarks it. Unmarking a category that is not the featured one changes
      * nothing. Not a plan feature.
      */
-    async setCategoryFeatured(ownerId: string, id: string, featured: boolean): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async setCategoryFeatured(restaurantId: string, id: string, featured: boolean): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       await categoryOf(restaurant.id, id);
       if (featured) await categories.setFeatured(restaurant.id, id, new Date());
       else await categories.clearFeatured(restaurant.id, id, new Date());
     },
 
     /** Rewrites the category order. `ids` must be exactly the restaurant's categories. */
-    async reorderCategories(ownerId: string, ids: readonly string[]): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async reorderCategories(restaurantId: string, ids: readonly string[]): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       assertSameSet(ids, await categories.list(restaurant.id));
       await categories.reorder(restaurant.id, ids, new Date());
     },
 
     /** Rewrites the product order of a category. `ids` must be exactly its products. */
-    async reorderProducts(ownerId: string, categoryId: string, ids: readonly string[]): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async reorderProducts(restaurantId: string, categoryId: string, ids: readonly string[]): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       await categoryOf(restaurant.id, categoryId);
       assertSameSet(ids, await products.listByCategory(restaurant.id, categoryId));
       await products.reorder(restaurant.id, categoryId, ids, new Date());
     },
 
-    async getProduct(ownerId: string, id: string): Promise<Product> {
-      const restaurant = await restaurantOf(ownerId);
+    async getProduct(restaurantId: string, id: string): Promise<Product> {
+      const restaurant = await restaurantOf(restaurantId);
       const product = await productOf(restaurant.id, id);
       return toProduct(product, await ingredients.listByProduct(product.id));
     },
@@ -261,8 +261,8 @@ export function createCatalogService({
      * Known gap: the limit is checked with a count before the insert, so two concurrent creates
      * can exceed it by one. Acceptable for a soft commercial limit.
      */
-    async createProduct(ownerId: string, input: CreateProductInput): Promise<Product> {
-      const restaurant = await restaurantOf(ownerId);
+    async createProduct(restaurantId: string, input: CreateProductInput): Promise<Product> {
+      const restaurant = await restaurantOf(restaurantId);
       await categoryOf(restaurant.id, input.categoryId);
 
       const { maxProducts } = limitsFor(restaurant.plan);
@@ -287,8 +287,8 @@ export function createCatalogService({
     },
 
     /** Partial update. Changing the category moves the product to the end of the new one. */
-    async updateProduct(ownerId: string, id: string, input: UpdateProductInput): Promise<Product> {
-      const restaurant = await restaurantOf(ownerId);
+    async updateProduct(restaurantId: string, id: string, input: UpdateProductInput): Promise<Product> {
+      const restaurant = await restaurantOf(restaurantId);
       const current = await productOf(restaurant.id, id);
 
       const changes: ProductChanges = { ...input };
@@ -308,8 +308,8 @@ export function createCatalogService({
      * keeps the saved list (it just cannot be changed until the plan includes the feature again).
      * `list` must already be validated (`replaceIngredientsSchema`).
      */
-    async replaceIngredients(ownerId: string, id: string, list: readonly Ingredient[]): Promise<Ingredient[]> {
-      const restaurant = await restaurantOf(ownerId);
+    async replaceIngredients(restaurantId: string, id: string, list: readonly Ingredient[]): Promise<Ingredient[]> {
+      const restaurant = await restaurantOf(restaurantId);
       const product = await productOf(restaurant.id, id);
       if (!limitsFor(restaurant.plan).customIngredients) {
         throw new PlanFeatureError("Customizable ingredients are not included in your plan");
@@ -327,8 +327,8 @@ export function createCatalogService({
     },
 
     /** Deletes the product (its ingredients go with it), then its photo (best effort). */
-    async deleteProduct(ownerId: string, id: string): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async deleteProduct(restaurantId: string, id: string): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       const deleted = await products.delete(restaurant.id, id);
       if (!deleted) throw new ProductNotFoundError();
       await deleteQuietly(deleted.imageUrl);
@@ -338,9 +338,9 @@ export function createCatalogService({
      * Stores a new product photo and replaces the previous one. Same order as the logo: write the
      * new object, point the product at it, then delete the old object (logged, not raised).
      */
-    async uploadProductPhoto(ownerId: string, id: string, upload: ImageUpload): Promise<ProductPhotoUploadResult> {
+    async uploadProductPhoto(restaurantId: string, id: string, upload: ImageUpload): Promise<ProductPhotoUploadResult> {
       assertWebpUpload(upload, "photo", PRODUCT_PHOTO_MAX_BYTES);
-      const restaurant = await restaurantOf(ownerId);
+      const restaurant = await restaurantOf(restaurantId);
       const product = await productOf(restaurant.id, id);
       if (!limitsFor(restaurant.plan).productPhotos) {
         throw new PlanLimitError("Product photos are not included in your plan");
@@ -369,8 +369,8 @@ export function createCatalogService({
     },
 
     /** Removes the photo (no-op when there is none; allowed on every plan). */
-    async removeProductPhoto(ownerId: string, id: string): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async removeProductPhoto(restaurantId: string, id: string): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       const product = await productOf(restaurant.id, id);
       if (!product.imageUrl) return;
       await products.updateImageUrl(restaurant.id, id, null, new Date());

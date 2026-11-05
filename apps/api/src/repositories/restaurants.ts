@@ -1,11 +1,14 @@
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import type { PlanId } from "@menucito/shared";
+import { OWNER_ROLE_NAME, type PlanId } from "@menucito/shared";
 import {
   restaurantAppearance,
+  restaurantMembers,
   restaurantPaymentMethods,
   restaurantSettings,
   restaurants,
+  roles,
+  user,
   type AppearanceRow,
   type NewRestaurantRow,
   type RestaurantRow,
@@ -26,11 +29,15 @@ export interface AppearanceChanges {
  * `RestaurantRow`, so callers never see where a field is stored.
  */
 export interface RestaurantsRepository {
+  /** Only for onboarding (creating the restaurant); every other lookup goes through the member's `restaurantId`. */
   findByOwner(ownerId: string): Promise<RestaurantRow | null>;
+  findById(id: string): Promise<RestaurantRow | null>;
+  /** Whether the user is already a member (owner or staff) of some restaurant. */
+  isMember(userId: string): Promise<boolean>;
   findBySlug(slug: string): Promise<RestaurantRow | null>;
   /**
-   * Inserts a restaurant, its appearance row, its settings row, and default payment methods in one
-   * D1 batch, so neither exists without the others. Throws `UniqueViolationError` on duplicated `slug` or `owner_id`.
+   * Inserts a restaurant, its appearance row, its settings row, default payment methods, the system
+   * "Dueño" role and the owner's member row in one D1 batch, so none exists without the others. Throws `UniqueViolationError` on duplicated `slug` or `owner_id`.
    */
   insert(row: NewRestaurantRow): Promise<RestaurantRow>;
   /** Sets (or clears, with `null`) the logo of the restaurant `id`. Returns the updated row, or `null` if missing. */
@@ -67,6 +74,16 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
     };
   }
 
+  /** Name of the owner for the member row: first word is the first name, the rest the last name. */
+  async function ownerNameParts(ownerId: string): Promise<{ firstName: string; lastName: string }> {
+    const found = await db.select({ name: user.name, email: user.email }).from(user).where(eq(user.id, ownerId)).get();
+    const fullName = (found?.name.trim() || found?.email) ?? "";
+    const space = fullName.indexOf(" ");
+    return space === -1
+      ? { firstName: fullName, lastName: "" }
+      : { firstName: fullName.slice(0, space), lastName: fullName.slice(space + 1).trim() };
+  }
+
   async function findById(id: string): Promise<RestaurantRow | null> {
     const found = await selectMerged().where(eq(restaurants.id, id)).get();
     return found ? merge(found.restaurant, found.appearance) : null;
@@ -93,15 +110,48 @@ export function createRestaurantsRepository(d1: D1Database): RestaurantsReposito
       return found ? merge(found.restaurant, found.appearance) : null;
     },
 
+    findById,
+
+    async isMember(userId) {
+      const found = await db
+        .select({ id: restaurantMembers.id })
+        .from(restaurantMembers)
+        .where(eq(restaurantMembers.userId, userId))
+        .get();
+      return found !== undefined;
+    },
+
     async findBySlug(slug) {
       const found = await selectMerged().where(eq(restaurants.slug, slug)).get();
       return found ? merge(found.restaurant, found.appearance) : null;
     },
 
     async insert(row) {
+      const owner = await ownerNameParts(row.ownerId);
+      const roleId = crypto.randomUUID();
       await translatingUniqueViolations(() =>
         db.batch([
           db.insert(restaurants).values(row),
+          db.insert(roles).values({
+            id: roleId,
+            restaurantId: row.id,
+            name: OWNER_ROLE_NAME,
+            isSystem: true,
+            active: true,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          }),
+          db.insert(restaurantMembers).values({
+            id: crypto.randomUUID(),
+            restaurantId: row.id,
+            userId: row.ownerId,
+            roleId,
+            firstName: owner.firstName,
+            lastName: owner.lastName,
+            isOwner: true,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+          }),
           db.insert(restaurantAppearance).values({ restaurantId: row.id, updatedAt: row.updatedAt }),
           db.insert(restaurantSettings).values({ restaurantId: row.id, updatedAt: row.updatedAt }),
           db.insert(restaurantPaymentMethods).values({

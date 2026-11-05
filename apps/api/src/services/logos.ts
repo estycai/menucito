@@ -14,8 +14,8 @@ export type LogoUpload = ImageUpload;
 export function createLogoService(repository: RestaurantsRepository, storage: MediaStorage) {
   const deleteQuietly = (logoUrl: string | null) => deleteMediaQuietly(storage, logoUrl, "logos");
 
-  async function restaurantOf(ownerId: string) {
-    const restaurant = await repository.findByOwner(ownerId);
+  async function restaurantOf(restaurantId: string) {
+    const restaurant = await repository.findById(restaurantId);
     if (!restaurant) throw new RestaurantNotFoundError();
     return restaurant;
   }
@@ -25,9 +25,9 @@ export function createLogoService(repository: RestaurantsRepository, storage: Me
      * Stores a new logo and replaces the previous one. Order: write the new object, point the
      * restaurant at it, then delete the old object (a failed delete is logged, not raised).
      */
-    async uploadLogo(ownerId: string, upload: LogoUpload): Promise<LogoUploadResult> {
+    async uploadLogo(restaurantId: string, upload: LogoUpload): Promise<LogoUploadResult> {
       assertWebpUpload(upload, "logo", LOGO_MAX_BYTES);
-      const restaurant = await restaurantOf(ownerId);
+      const restaurant = await restaurantOf(restaurantId);
 
       // Random name per upload, so cached copies of an older logo never go stale.
       const key = `logos/${restaurant.id}/${crypto.randomUUID()}.webp`;
@@ -46,8 +46,8 @@ export function createLogoService(repository: RestaurantsRepository, storage: Me
     },
 
     /** Removes the logo (no-op when there is none). The object is deleted after the database update. */
-    async removeLogo(ownerId: string): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async removeLogo(restaurantId: string): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       if (!restaurant.logoUrl) return;
       await repository.updateLogoUrl(restaurant.id, null, new Date());
       await deleteQuietly(restaurant.logoUrl);

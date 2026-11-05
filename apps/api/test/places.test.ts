@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaceResult, PlaceSuggestion, Restaurant, StoreLocation } from "@menucito/shared";
 import { Client, captureEmails } from "./helpers";
-import type { RestaurantRow } from "../src/db/schema";
 import { GoogleMapsError, googleMapsClient, type PlacesClient } from "../src/google-maps";
 import type { DeliveryRepository } from "../src/repositories/delivery";
-import type { RestaurantsRepository } from "../src/repositories/restaurants";
-import { MapsUnavailableError, PlaceNotFoundError, RestaurantNotFoundError } from "../src/services/errors";
+import { MapsUnavailableError, PlaceNotFoundError } from "../src/services/errors";
 import { createPlacesService } from "../src/services/places";
 
 const KEY = "test-maps-key";
@@ -167,8 +165,6 @@ describe("googleMapsClient", () => {
 });
 
 describe("createPlacesService", () => {
-  const restaurant = { id: "r1" } as RestaurantRow;
-  const restaurantsRepo = { findByOwner: async (ownerId: string) => (ownerId === "owner" ? restaurant : null) } as RestaurantsRepository;
 
   function deliveryRepo(location: StoreLocation | null) {
     return { findLocation: async () => location } as unknown as DeliveryRepository;
@@ -196,26 +192,20 @@ describe("createPlacesService", () => {
 
   it("biases the search to the store when it has a location", async () => {
     const client = fakeClient();
-    await createPlacesService(restaurantsRepo, deliveryRepo(located), client).search("owner", "corr", SESSION);
+    await createPlacesService(deliveryRepo(located), client).search("r1", "corr", SESSION);
     expect(client.lastBias).toEqual({ lat: -34.6, lng: -58.4 });
   });
 
   it("searches without bias when the store has no location", async () => {
     const client = fakeClient();
-    await createPlacesService(restaurantsRepo, deliveryRepo(null), client).search("owner", "corr", SESSION);
+    await createPlacesService(deliveryRepo(null), client).search("r1", "corr", SESSION);
     expect(client.lastBias).toBeUndefined();
-  });
-
-  it("requires a restaurant", async () => {
-    const service = createPlacesService(restaurantsRepo, deliveryRepo(null), fakeClient());
-    await expect(service.details("stranger", "p1", SESSION)).rejects.toBeInstanceOf(RestaurantNotFoundError);
   });
 
   it("translates Google failures into domain errors", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const failing = (reason: "not_found" | "upstream" | "not_configured") =>
       createPlacesService(
-        restaurantsRepo,
         deliveryRepo(null),
         fakeClient({
           placeDetails: async () => {

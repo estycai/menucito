@@ -14,8 +14,8 @@ export type CoverUpload = ImageUpload;
 export function createCoverService(repository: RestaurantsRepository, storage: MediaStorage) {
   const deleteQuietly = (coverUrl: string | null) => deleteMediaQuietly(storage, coverUrl, "covers");
 
-  async function restaurantOf(ownerId: string) {
-    const restaurant = await repository.findByOwner(ownerId);
+  async function restaurantOf(restaurantId: string) {
+    const restaurant = await repository.findById(restaurantId);
     if (!restaurant) throw new RestaurantNotFoundError();
     return restaurant;
   }
@@ -25,9 +25,9 @@ export function createCoverService(repository: RestaurantsRepository, storage: M
      * Stores a new cover and replaces the previous one. Order: write the new object, point the
      * restaurant at it, then delete the old object (a failed delete is logged, not raised).
      */
-    async uploadCover(ownerId: string, upload: CoverUpload): Promise<CoverUploadResult> {
+    async uploadCover(restaurantId: string, upload: CoverUpload): Promise<CoverUploadResult> {
       assertWebpUpload(upload, "cover", COVER_MAX_BYTES);
-      const restaurant = await restaurantOf(ownerId);
+      const restaurant = await restaurantOf(restaurantId);
 
       // Random name per upload, so cached copies of an older cover never go stale.
       const key = `covers/${restaurant.id}/${crypto.randomUUID()}.webp`;
@@ -46,8 +46,8 @@ export function createCoverService(repository: RestaurantsRepository, storage: M
     },
 
     /** Removes the cover (no-op when there is none). The object is deleted after the database update. */
-    async removeCover(ownerId: string): Promise<void> {
-      const restaurant = await restaurantOf(ownerId);
+    async removeCover(restaurantId: string): Promise<void> {
+      const restaurant = await restaurantOf(restaurantId);
       if (!restaurant.coverUrl) return;
       await repository.updateCoverUrl(restaurant.id, null, new Date());
       await deleteQuietly(restaurant.coverUrl);

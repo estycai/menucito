@@ -3,10 +3,12 @@ import { createAuth } from "./auth";
 import type { AppEnv } from "./env";
 import { categoriesRoutes } from "./routes/categories";
 import { mediaRoutes } from "./routes/media";
+import { membersRoutes } from "./routes/members";
 import { ordersRoutes } from "./routes/orders";
 import { productsRoutes } from "./routes/products";
 import { publicRoutes } from "./routes/public";
 import { restaurantsRoutes } from "./routes/restaurants";
+import { rolesRoutes } from "./routes/roles";
 
 const app = new Hono<AppEnv>();
 
@@ -28,6 +30,8 @@ app.route("/api/categories", categoriesRoutes);
 app.route("/api/products", productsRoutes);
 app.route("/api/media", mediaRoutes);
 app.route("/api/orders", ordersRoutes);
+app.route("/api/members", membersRoutes);
+app.route("/api/roles", rolesRoutes);
 app.route("/api/public", publicRoutes);
 
 export default app;

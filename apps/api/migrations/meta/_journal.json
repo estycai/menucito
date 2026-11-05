@@ -78,6 +78,13 @@
       "when": 1793803593060,
       "tag": "0010_order_delivery_label",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "6",
+      "when": 1793827234726,
+      "tag": "0011_members_and_roles",
+      "breakpoints": true
     }
   ]
 }

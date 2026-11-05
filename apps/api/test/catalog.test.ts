@@ -517,7 +517,7 @@ describe("plan limits", () => {
     const category = await createCategory(client, "Hamburguesas");
     const product = await createProduct(client, category.id);
     const imageUrl = await photoOf(client, product.id);
-    const userId = (await client.session())?.user as unknown as { id: string };
+    const restaurantId = ((await (await client.get("/api/restaurants/me")).json()) as { id: string }).id;
 
     const service = createCatalogService({
       restaurants: createRestaurantsRepository(env.DB),
@@ -528,10 +528,10 @@ describe("plan limits", () => {
       limitsFor: () => ({ maxProducts: null, productPhotos: false, customIngredients: false, customColors: false }),
     });
     const upload = { bytes: webpBytes().buffer as ArrayBuffer, contentType: "image/webp" };
-    await expect(service.uploadProductPhoto(userId.id, product.id, upload)).rejects.toBeInstanceOf(PlanLimitError);
+    await expect(service.uploadProductPhoto(restaurantId, product.id, upload)).rejects.toBeInstanceOf(PlanLimitError);
     expect((await getProduct(client, product.id)).imageUrl).toBe(imageUrl);
 
-    await service.removeProductPhoto(userId.id, product.id);
+    await service.removeProductPhoto(restaurantId, product.id);
     expect((await getProduct(client, product.id)).imageUrl).toBeNull();
     expect(await env.MEDIA.head(keyOf(imageUrl))).toBeNull();
   });
@@ -613,7 +613,7 @@ describe("catalog service photo ordering (no R2)", () => {
 
   function service(storage: MediaStorage, updateImageUrl: ProductsRepository["updateImageUrl"]) {
     return createCatalogService({
-      restaurants: { findByOwner: async () => restaurant } as never,
+      restaurants: { findById: async () => restaurant } as never,
       categories: {} as never,
       products: { find: async () => product, updateImageUrl } as unknown as ProductsRepository,
       ingredients: {} as never,
@@ -633,14 +633,14 @@ describe("catalog service photo ordering (no R2)", () => {
     await service(storage, async () => {
       calls.push("db");
       return product;
-    }).uploadProductPhoto("u1", "p1", upload);
+    }).uploadProductPhoto("r1", "p1", upload);
     expect(calls).toEqual(["put new", "db", "delete products/r1/old.webp"]);
   });
 
   it("removes the new object when the database update fails", async () => {
     const storage = { put: vi.fn(async () => undefined), get: async () => null, delete: vi.fn(async () => undefined) };
     const failing = service(storage, async () => Promise.reject(new Error("D1 down")));
-    await expect(failing.uploadProductPhoto("u1", "p1", upload)).rejects.toThrow("D1 down");
+    await expect(failing.uploadProductPhoto("r1", "p1", upload)).rejects.toThrow("D1 down");
     const [putKey] = storage.put.mock.calls[0] as unknown as [string];
     expect(storage.delete).toHaveBeenCalledWith(putKey);
     expect(storage.delete).not.toHaveBeenCalledWith("products/r1/old.webp");
@@ -811,7 +811,7 @@ describe("PUT /api/products/:id/ingredients (scenarios 4, 6, 7)", () => {
     const { client } = await proOwner();
     const category = await createCategory(client, "Hamburguesas");
     const product = await createProduct(client, category.id);
-    const userId = ((await client.session())?.user as unknown as { id: string }).id;
+    const restaurantId = ((await (await client.get("/api/restaurants/me")).json()) as { id: string }).id;
     const service = createCatalogService({
       restaurants: createRestaurantsRepository(env.DB),
       categories: createCategoriesRepository(env.DB),
@@ -820,7 +820,7 @@ describe("PUT /api/products/:id/ingredients (scenarios 4, 6, 7)", () => {
       storage: createMediaStorage(env.MEDIA),
       limitsFor: () => ({ maxProducts: null, productPhotos: true, customIngredients: false, customColors: false }),
     });
-    await expect(service.replaceIngredients(userId, product.id, [ingredient("Bacon")])).rejects.toBeInstanceOf(PlanFeatureError);
+    await expect(service.replaceIngredients(restaurantId, product.id, [ingredient("Bacon")])).rejects.toBeInstanceOf(PlanFeatureError);
     expect(await ingredientNames(client, product.id)).toEqual([]);
   });
 });

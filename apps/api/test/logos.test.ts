@@ -209,6 +209,8 @@ describe("logo service (no database)", () => {
   function fakes(overrides: Partial<MediaStorage> = {}) {
     const repository = {
       findByOwner: async () => row,
+      findById: async () => row,
+      isMember: async () => false,
       findBySlug: async () => null,
       insert: async () => row,
       updateLogoUrl: vi.fn(async () => row),
@@ -230,7 +232,7 @@ describe("logo service (no database)", () => {
   it("does not fail the upload when deleting the old object fails (it logs instead)", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const { repository, storage } = fakes({ delete: async () => Promise.reject(new Error("R2 down")) });
-    const result = await createLogoService(repository, storage).uploadLogo("u1", upload);
+    const result = await createLogoService(repository, storage).uploadLogo("r1", upload);
     expect(result.logoUrl).toMatch(/^\/api\/media\/logos\/r1\/.+\.webp$/);
     expect(error).toHaveBeenCalled();
     error.mockRestore();
@@ -246,14 +248,14 @@ describe("logo service (no database)", () => {
       calls.push("db");
       return row;
     });
-    await createLogoService(repository, storage).uploadLogo("u1", upload);
+    await createLogoService(repository, storage).uploadLogo("r1", upload);
     expect(calls).toEqual(["put new", "db", "delete logos/r1/old.webp"]);
   });
 
   it("removes the new object when the database update fails", async () => {
     const { repository, storage } = fakes();
     repository.updateLogoUrl.mockRejectedValue(new Error("D1 down"));
-    await expect(createLogoService(repository, storage).uploadLogo("u1", upload)).rejects.toThrow("D1 down");
+    await expect(createLogoService(repository, storage).uploadLogo("r1", upload)).rejects.toThrow("D1 down");
     const [putKey] = vi.mocked(storage.put).mock.calls[0] ?? [];
     expect(storage.delete).toHaveBeenCalledWith(putKey);
   });

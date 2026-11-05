@@ -1,6 +1,8 @@
 /** Base class for business rule violations; routes translate them to HTTP responses by `code`. */
 export abstract class DomainError extends Error {
   abstract readonly code: string;
+  /** Extra fields for the error body (e.g. how many members block a role deletion). */
+  readonly details?: Readonly<Record<string, unknown>>;
 }
 
 export class RestaurantNotFoundError extends DomainError {
@@ -149,6 +151,60 @@ export class DeliveryLocationRequiredError extends DomainError {
 export class RateLimitedError extends DomainError {
   readonly code = "RATE_LIMITED";
   constructor(message = "Hiciste muchas búsquedas seguidas. Probá de nuevo en unos minutos.") {
+    super(message);
+  }
+}
+
+export class MemberNotFoundError extends DomainError {
+  readonly code = "MEMBER_NOT_FOUND";
+  constructor(message = "Usuario no encontrado") {
+    super(message);
+  }
+}
+
+export class RoleNotFoundError extends DomainError {
+  readonly code = "ROLE_NOT_FOUND";
+  constructor(message = "Rol no encontrado") {
+    super(message);
+  }
+}
+
+/** The email already has an account (of another local, an owner, or someone who signed up alone). */
+export class EmailInUseError extends DomainError {
+  readonly code = "EMAIL_IN_USE";
+  constructor(message = "Ya hay una cuenta con ese email.") {
+    super(message);
+  }
+}
+
+/** The owner's member cannot change role, be deactivated, get a new password or be deleted. */
+export class OwnerImmutableError extends DomainError {
+  readonly code = "OWNER_IMMUTABLE";
+  constructor(message = "No se puede hacer esto con el dueño del local") {
+    super(message);
+  }
+}
+
+/** The system role ("Dueño") cannot be edited, deactivated or deleted. */
+export class SystemRoleError extends DomainError {
+  readonly code = "SYSTEM_ROLE";
+  constructor(message = "El rol Dueño es del sistema y no se puede modificar") {
+    super(message);
+  }
+}
+
+export class RoleInUseError extends DomainError {
+  readonly code = "ROLE_IN_USE";
+  readonly details: { memberCount: number };
+  constructor(memberCount: number) {
+    super(`El rol tiene ${memberCount} ${memberCount === 1 ? "usuario" : "usuarios"}. Asignales otro rol antes de eliminarlo.`);
+    this.details = { memberCount };
+  }
+}
+
+export class RoleNameTakenError extends DomainError {
+  readonly code = "ROLE_NAME_TAKEN";
+  constructor(message = "Ya hay un rol con ese nombre") {
     super(message);
   }
 }

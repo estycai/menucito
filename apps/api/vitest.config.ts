@@ -23,6 +23,8 @@ export default defineConfig(async () => {
       }),
     ],
     test: {
+      // Password hashing (scrypt) is slow under parallel workers, and the access tests sign in many accounts.
+      testTimeout: 30_000,
       setupFiles: ["./test/apply-migrations.ts"],
     },
   };

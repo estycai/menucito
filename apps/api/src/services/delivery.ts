@@ -14,7 +14,7 @@ import {
 import type { RestaurantRow } from "../db/schema";
 import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
-import { DeliveryZonesDisabledError, RestaurantNotFoundError } from "./errors";
+import { DeliveryZonesDisabledError } from "./errors";
 import { MenuNotFoundError } from "./public-menu";
 
 /** Location of a store that never set one (and of one missing its settings row). */
@@ -28,44 +28,33 @@ const NO_LOCATION: StoreLocation = {
 };
 
 export interface DeliveryService {
-  getLocation(ownerId: string): Promise<StoreLocation>;
+  getLocation(restaurantId: string): Promise<StoreLocation>;
   /** Replaces the location and mode (validated by the route's schema). */
-  updateLocation(ownerId: string, location: StoreLocation): Promise<StoreLocation>;
-  listZones(ownerId: string): Promise<DeliveryZoneList>;
+  updateLocation(restaurantId: string, location: StoreLocation): Promise<StoreLocation>;
+  listZones(restaurantId: string): Promise<DeliveryZoneList>;
   /** Makes `input.zones` the full list, in that order. */
-  replaceZones(ownerId: string, input: ReplaceDeliveryZonesInput): Promise<DeliveryZoneList>;
+  replaceZones(restaurantId: string, input: ReplaceDeliveryZonesInput): Promise<DeliveryZoneList>;
 }
 
 export function createDeliveryService(
-  restaurantsRepo: RestaurantsRepository,
   deliveryRepo: DeliveryRepository,
   now: () => Date = () => new Date(),
   generateId: () => string = () => crypto.randomUUID(),
 ): DeliveryService {
-  async function restaurantIdOf(ownerId: string): Promise<string> {
-    const restaurant = await restaurantsRepo.findByOwner(ownerId);
-    if (!restaurant) throw new RestaurantNotFoundError();
-    return restaurant.id;
-  }
-
   return {
-    async getLocation(ownerId) {
-      const restaurantId = await restaurantIdOf(ownerId);
+    async getLocation(restaurantId) {
       return (await deliveryRepo.findLocation(restaurantId)) ?? NO_LOCATION;
     },
 
-    async updateLocation(ownerId, location) {
-      const restaurantId = await restaurantIdOf(ownerId);
+    async updateLocation(restaurantId, location) {
       return deliveryRepo.upsertLocation(restaurantId, location, now());
     },
 
-    async listZones(ownerId) {
-      const restaurantId = await restaurantIdOf(ownerId);
+    async listZones(restaurantId) {
       return { zones: await deliveryRepo.listZones(restaurantId) };
     },
 
-    async replaceZones(ownerId, input) {
-      const restaurantId = await restaurantIdOf(ownerId);
+    async replaceZones(restaurantId, input) {
       const existingIds = new Set((await deliveryRepo.listZones(restaurantId)).map((zone) => zone.id));
 
       // An id is kept only when it is one of this store's zones and not repeated in the list;
@@ -83,7 +72,7 @@ export function createDeliveryService(
 }
 
 export function deliveryServiceFor(db: D1Database): DeliveryService {
-  return createDeliveryService(createRestaurantsRepository(db), createDeliveryRepository(db));
+  return createDeliveryService(createDeliveryRepository(db));
 }
 
 /** Whether a store prices delivery by zones: it delivers, chose `zones` and has its coordinates. */

@@ -1,32 +1,22 @@
 import type { HoursList, ReplaceHoursInput } from "@menucito/shared";
 import { createHoursRepository, type HoursRepository, type StoredHoursSlot } from "../repositories/hours";
-import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
-import { RestaurantNotFoundError } from "./errors";
 
 export interface HoursService {
-  getHours(ownerId: string): Promise<HoursList>;
+  getHours(restaurantId: string): Promise<HoursList>;
   /** Makes `input.slots` the whole week (validated by the route's schema); a day's order is kept. */
-  replaceHours(ownerId: string, input: ReplaceHoursInput): Promise<HoursList>;
+  replaceHours(restaurantId: string, input: ReplaceHoursInput): Promise<HoursList>;
 }
 
 export function createHoursService(
-  restaurantsRepo: RestaurantsRepository,
   hoursRepo: HoursRepository,
   generateId: () => string = () => crypto.randomUUID(),
 ): HoursService {
-  async function restaurantIdOf(ownerId: string): Promise<string> {
-    const restaurant = await restaurantsRepo.findByOwner(ownerId);
-    if (!restaurant) throw new RestaurantNotFoundError();
-    return restaurant.id;
-  }
-
   return {
-    async getHours(ownerId) {
-      return { slots: await hoursRepo.listSlots(await restaurantIdOf(ownerId)) };
+    async getHours(restaurantId) {
+      return { slots: await hoursRepo.listSlots(restaurantId) };
     },
 
-    async replaceHours(ownerId, input) {
-      const restaurantId = await restaurantIdOf(ownerId);
+    async replaceHours(restaurantId, input) {
       // `sort` is the slot's position among the slots of its own weekday, in array order.
       const perDay = new Map<number, number>();
       const slots = input.slots.map((slot): StoredHoursSlot => {
@@ -40,5 +30,5 @@ export function createHoursService(
 }
 
 export function hoursServiceFor(db: D1Database): HoursService {
-  return createHoursService(createRestaurantsRepository(db), createHoursRepository(db));
+  return createHoursService(createHoursRepository(db));
 }

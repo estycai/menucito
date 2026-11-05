@@ -1,3 +1,5 @@
+import type { PermissionKey } from "@menucito/shared";
+
 export interface Env {
   DB: D1Database;
   /** R2 bucket `menucito-media` (logos). Emulated by Miniflare under `wrangler dev --local`. */
@@ -22,11 +24,26 @@ export interface Env {
   WEB_ORIGINS?: string;
 }
 
+/** The signed-in member of a restaurant, resolved by `requireMember` (the tenant always comes from here). */
+export interface MemberContext {
+  memberId: string;
+  userId: string;
+  restaurantId: string;
+  isOwner: boolean;
+  /** `false` when the owner deactivated the user. */
+  active: boolean;
+  /** Effective keys: every key for the owner, none for an inactive role, otherwise the normalized stored ones. */
+  permissions: readonly PermissionKey[];
+  role: { id: string; name: string; active: boolean };
+}
+
 /** Hono environment shared by the app and its routers. */
 export interface AppEnv {
   Bindings: Env;
   Variables: {
     /** Authenticated user id, set by `requireSession`. */
     userId: string;
+    /** Set by `requireMember`. */
+    member: MemberContext;
   };
 }

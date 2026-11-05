@@ -444,3 +444,75 @@ export type OrderDbRow = typeof orders.$inferSelect;
 export type NewOrderDbRow = typeof orders.$inferInsert;
 export type OrderItemDbRow = typeof orderItems.$inferSelect;
 export type NewOrderItemDbRow = typeof orderItems.$inferInsert;
+
+// Roles of a restaurant. The system role ("Dueño", `is_system = 1`) is created with the restaurant,
+// belongs to its owner and grants everything without rows in `role_permissions`. Names are unique
+// per restaurant ignoring case (ASCII only, as `lower()` in SQLite); the schema layer also rejects
+// the reserved owner name in any casing.
+export const roles = sqliteTable(
+  "roles",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    isSystem: integer("is_system", { mode: "boolean" }).notNull().default(false),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("roles_restaurant_name_unique").on(t.restaurantId, sql`lower(${t.name})`)],
+);
+
+export type RoleRow = typeof roles.$inferSelect;
+export type NewRoleRow = typeof roles.$inferInsert;
+
+// One row per permission key a role grants (the catalog lives in `@menucito/shared`, so a key that
+// is no longer in the catalog is ignored when read). No rows for the system role.
+export const rolePermissions = sqliteTable(
+  "role_permissions",
+  {
+    roleId: text("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "cascade" }),
+    permission: text("permission").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.roleId, t.permission] })],
+);
+
+// People with access to a restaurant, the owner included (`is_owner = 1`, kept in sync with
+// `restaurants.owner_id`, which stays the source of truth). One membership per user (`UNIQUE(user_id)`).
+// A role cannot be deleted while a member uses it. The FK is `NO ACTION` (checked when the statement ends),
+// not `RESTRICT` (checked per row): deleting a restaurant or an owner cascades to both its roles and its
+// members, and `RESTRICT` would fail depending on which table the cascade reaches first.
+export const restaurantMembers = sqliteTable(
+  "restaurant_members",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .unique()
+      .references(() => user.id, { onDelete: "cascade" }),
+    roleId: text("role_id")
+      .notNull()
+      .references(() => roles.id, { onDelete: "no action" }),
+    firstName: text("first_name").notNull(),
+    // Empty only for owners backfilled from a single-word account name.
+    lastName: text("last_name").notNull(),
+    // E.164 (`+5491112345678`).
+    phone: text("phone"),
+    isOwner: integer("is_owner", { mode: "boolean" }).notNull().default(false),
+    isCourier: integer("is_courier", { mode: "boolean" }).notNull().default(false),
+    active: integer("active", { mode: "boolean" }).notNull().default(true),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [index("restaurant_members_restaurant_active_idx").on(t.restaurantId, t.active)],
+);
+
+export type MemberRow = typeof restaurantMembers.$inferSelect;
+export type NewMemberRow = typeof restaurantMembers.$inferInsert;

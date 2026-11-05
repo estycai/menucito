@@ -311,6 +311,8 @@ describe("restaurants service (no database)", () => {
   function fakeRepository(insertError?: Error): RestaurantsRepository {
     return {
       findByOwner: async () => null,
+      findById: async () => null,
+      isMember: async () => false,
       findBySlug: async () => null,
       insert: async (row) => {
         if (insertError) throw insertError;

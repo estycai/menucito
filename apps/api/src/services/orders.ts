@@ -48,7 +48,6 @@ import {
   PaymentMethodNotAcceptedError,
   PriceChangedError,
   ProductUnavailableError,
-  RestaurantNotFoundError,
   StoreClosedError,
   StorePausedError,
   TooManyOrdersError,
@@ -416,38 +415,27 @@ function toListFilter(query: OrderFiltersQuery): ListOrdersFilter {
 }
 
 export interface OwnerOrdersDependencies {
-  restaurants: RestaurantsRepository;
   orders: OrdersRepository;
   now?: () => Date;
 }
 
 export function createOwnerOrdersService({
-  restaurants,
   orders,
   now = () => new Date(),
 }: OwnerOrdersDependencies) {
-  async function resolveRestaurant(ownerId: string) {
-    const restaurant = await restaurants.findByOwner(ownerId);
-    if (!restaurant) throw new RestaurantNotFoundError();
-    return restaurant;
-  }
-
   return {
-    async list(ownerId: string, query: OrderFiltersQuery) {
-      const restaurant = await resolveRestaurant(ownerId);
-      return orders.list(restaurant.id, toListFilter(query));
+    async list(restaurantId: string, query: OrderFiltersQuery) {
+      return orders.list(restaurantId, toListFilter(query));
     },
 
-    async getDetail(ownerId: string, orderId: string) {
-      const restaurant = await resolveRestaurant(ownerId);
-      const order = await orders.findDetail(restaurant.id, orderId);
+    async getDetail(restaurantId: string, orderId: string) {
+      const order = await orders.findDetail(restaurantId, orderId);
       if (!order) throw new OrderNotFoundError();
       return order;
     },
 
-    async updateStatus(ownerId: string, orderId: string, targetStatus: OrderStatus) {
-      const restaurant = await resolveRestaurant(ownerId);
-      const current = await orders.findDetail(restaurant.id, orderId);
+    async updateStatus(restaurantId: string, orderId: string, targetStatus: OrderStatus) {
+      const current = await orders.findDetail(restaurantId, orderId);
       if (!current) throw new OrderNotFoundError();
 
       if (current.status === targetStatus) return current;
@@ -457,7 +445,7 @@ export function createOwnerOrdersService({
       }
 
       const updated = await orders.updateStatusIf(
-        restaurant.id,
+        restaurantId,
         orderId,
         current.status,
         targetStatus,
@@ -465,7 +453,7 @@ export function createOwnerOrdersService({
       );
 
       if (!updated) {
-        const fresh = await orders.findDetail(restaurant.id, orderId);
+        const fresh = await orders.findDetail(restaurantId, orderId);
         if (fresh && fresh.status === targetStatus) return fresh;
         throw new InvalidTransitionError();
       }
@@ -473,15 +461,14 @@ export function createOwnerOrdersService({
       return updated;
     },
 
-    async updatePayment(ownerId: string, orderId: string, targetPaymentStatus: PaymentStatus) {
-      const restaurant = await resolveRestaurant(ownerId);
-      const current = await orders.findDetail(restaurant.id, orderId);
+    async updatePayment(restaurantId: string, orderId: string, targetPaymentStatus: PaymentStatus) {
+      const current = await orders.findDetail(restaurantId, orderId);
       if (!current) throw new OrderNotFoundError();
 
       if (current.paymentStatus === targetPaymentStatus) return current;
 
       const updated = await orders.updatePaymentStatus(
-        restaurant.id,
+        restaurantId,
         orderId,
         targetPaymentStatus,
         now(),
@@ -491,10 +478,9 @@ export function createOwnerOrdersService({
       return updated;
     },
 
-    async exportCsv(ownerId: string, query: OrderFiltersQuery) {
-      const restaurant = await resolveRestaurant(ownerId);
+    async exportCsv(restaurantId: string, query: OrderFiltersQuery) {
       // One row past the cap tells "too many" apart from "exactly the cap".
-      const list = await orders.listForExport(restaurant.id, toListFilter(query), ORDER_EXPORT_MAX + 1);
+      const list = await orders.listForExport(restaurantId, toListFilter(query), ORDER_EXPORT_MAX + 1);
       if (list.length > ORDER_EXPORT_MAX) {
         throw new ExportTooLargeError();
       }
@@ -509,7 +495,6 @@ export type OwnerOrdersService = ReturnType<typeof createOwnerOrdersService>;
 
 export function ordersServiceFor(db: D1Database): OwnerOrdersService {
   return createOwnerOrdersService({
-    restaurants: createRestaurantsRepository(db),
     orders: createOrdersRepository(db),
   });
 }

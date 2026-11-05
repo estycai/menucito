@@ -10,8 +10,14 @@ import { FileTooLargeError } from "../services/uploads";
 
 /** Shared HTTP plumbing of the JSON routers: error bodies, domain error mapping, bodies and uploads. */
 
-export function errorResponse(c: Context<AppEnv>, status: ContentfulStatusCode, code: string, message: string) {
-  return c.json<ApiErrorBody>({ error: { code, message } }, status);
+export function errorResponse(
+  c: Context<AppEnv>,
+  status: ContentfulStatusCode,
+  code: string,
+  message: string,
+  details?: Readonly<Record<string, unknown>>,
+) {
+  return c.json<ApiErrorBody>({ error: { code, message, ...details } }, status);
 }
 
 /** HTTP status of each domain error code. Unknown codes answer 400. */
@@ -19,15 +25,25 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   PLAN_LIMIT: 403,
   PLAN_FEATURE: 403,
   PLAN_SWITCH_DISABLED: 403,
+  FORBIDDEN: 403,
+  MEMBER_INACTIVE: 403,
+  OWNER_ONLY: 403,
   RESTAURANT_NOT_FOUND: 404,
   CATEGORY_NOT_FOUND: 404,
   PRODUCT_NOT_FOUND: 404,
   ORDER_NOT_FOUND: 404,
   PLACE_NOT_FOUND: 404,
+  MEMBER_NOT_FOUND: 404,
+  ROLE_NOT_FOUND: 404,
   SLUG_TAKEN: 409,
   ALREADY_HAS_RESTAURANT: 409,
   CATEGORY_NAME_TAKEN: 409,
   CATEGORY_NOT_EMPTY: 409,
+  EMAIL_IN_USE: 409,
+  OWNER_IMMUTABLE: 409,
+  SYSTEM_ROLE: 409,
+  ROLE_IN_USE: 409,
+  ROLE_NAME_TAKEN: 409,
   STORE_PAUSED: 409,
   STORE_CLOSED: 409,
   BELOW_MINIMUM: 409,
@@ -77,7 +93,7 @@ export function safeErrorSummary(error: unknown): SafeErrorSummary {
 /** `onError` handler: domain errors become `{error}` bodies, anything else is logged as a 500. */
 export function domainErrorHandler(scope: string): ErrorHandler<AppEnv> {
   return (error, c) => {
-    if (error instanceof DomainError) return errorResponse(c, statusFor(error), error.code, error.message);
+    if (error instanceof DomainError) return errorResponse(c, statusFor(error), error.code, error.message, error.details);
     console.error(`[${scope}] unexpected error`, safeErrorSummary(error));
     return errorResponse(c, 500, "INTERNAL_ERROR", "Unexpected error");
   };
