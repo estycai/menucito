@@ -2,7 +2,8 @@ import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
 import { ProBadge } from "@/components/ProBadge";
 import { RestaurantAvatar } from "@/components/RestaurantAvatar";
-import { NAV_ITEMS, activeNavItem } from "@/lib/nav";
+import { NO_SECTIONS_MESSAGE } from "@/components/NoAccess";
+import { activeNavItem, visibleNavItems } from "@/lib/nav";
 import { planName } from "@/lib/plans";
 import { useMyRestaurant } from "@/lib/restaurant";
 import { useSignOut } from "@/lib/session";
@@ -29,6 +30,8 @@ export function NavPanel({
   const { data: restaurant } = useMyRestaurant();
   const signOut = useSignOut();
   const active = activeNavItem(pathname);
+  // Only the sections the member may open (spec 12, scenario 39).
+  const items = visibleNavItems(restaurant?.access);
 
   return (
     <nav aria-label="Panel" className="flex h-full min-h-0 flex-col gap-4 p-4">
@@ -50,7 +53,10 @@ export function NavPanel({
       )}
 
       <ul className="m-0 flex min-h-0 flex-1 list-none flex-col gap-1 overflow-y-auto p-0">
-        {NAV_ITEMS.map((item) => {
+        {items.length === 0 && (
+          <li className="px-3 py-2 text-sm text-muted">{NO_SECTIONS_MESSAGE}</li>
+        )}
+        {items.map((item) => {
           const current = item.id === active?.id;
           return (
             <li key={item.id}>

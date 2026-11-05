@@ -14,9 +14,10 @@ export const STORE_LOCATION_KEY = ["restaurant", "location"] as const;
 export const DELIVERY_ZONES_KEY = ["restaurant", "delivery-zones"] as const;
 
 /** The store location and delivery mode (`/location` is the source of truth of the mode). */
-export function useStoreLocation() {
+export function useStoreLocation(enabled = true) {
   return useQuery({
     queryKey: STORE_LOCATION_KEY,
+    enabled,
     queryFn: () => api<StoreLocation>("/api/restaurants/me/location"),
   });
 }

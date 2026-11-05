@@ -21,11 +21,12 @@ function useCatalogKey(): QueryKey {
 }
 
 /** Every category with its products, plus the plan usage. */
-export function useCatalog() {
+export function useCatalog(allowed = true) {
   const queryKey = useCatalogKey();
   return useQuery({
     queryKey,
-    enabled: Boolean(queryKey[1]),
+    // `allowed` is false for a member without `menu.view`: the API would answer 403.
+    enabled: Boolean(queryKey[1]) && allowed,
     queryFn: () => api<Catalog>("/api/categories"),
   });
 }

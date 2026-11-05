@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 import { toast } from "sonner";
 import type { OrderSummary } from "@menucito/shared";
+import { useAccess } from "./access";
 import { ACTIVE_ORDERS_FILTERS, useOrders } from "./orders";
 import { findNewOrders, newOrdersToast, type OrdersNavigationState } from "./new-orders";
 import { useMyRestaurant } from "./restaurant";
@@ -43,7 +44,9 @@ export function createNewOrderNotifier() {
  */
 export function useNewOrderToasts() {
   const { data: restaurant } = useMyRestaurant();
-  const { data } = useOrders(ACTIVE_ORDERS_FILTERS);
+  // A member without `orders.view` would only get 403s from this poll, so it does not run for them.
+  const { can } = useAccess();
+  const { data } = useOrders(ACTIVE_ORDERS_FILTERS, can("orders.view"));
   const navigate = useNavigate();
   const [notify] = useState(createNewOrderNotifier);
   const restaurantId = restaurant?.id;

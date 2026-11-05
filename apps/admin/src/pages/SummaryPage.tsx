@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useAccess } from "@/lib/access";
 import { useCatalog } from "@/lib/catalog";
 import { publicMenuHref } from "@/lib/public-link";
 import { PUBLIC_BASE, publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
@@ -29,7 +30,10 @@ export function SummaryPage() {
   const { data: session } = useSession();
   // `RequireRestaurant` guarantees the restaurant is loaded.
   const { data: restaurant } = useMyRestaurant();
-  const { data: catalog } = useCatalog();
+  const { can } = useAccess();
+  // The product and category counts come from the menu: only members who can see it get them.
+  const canSeeMenu = can("menu.view");
+  const { data: catalog } = useCatalog(canSeeMenu);
   if (!restaurant) return null;
 
   const firstName = session?.user.name?.trim().split(/\s+/)[0];
@@ -67,10 +71,12 @@ export function SummaryPage() {
         </a>
       </section>
 
-      <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-        <Tile label="Productos" value={products} />
-        <Tile label="Categorías" value={categories} />
-      </div>
+      {canSeeMenu && (
+        <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+          <Tile label="Productos" value={products} />
+          <Tile label="Categorías" value={categories} />
+        </div>
+      )}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AdminShell } from "@/components/shell/AdminShell";
-import { GuestOnly, RequireAuth, RequireNoRestaurant, RequireRestaurant } from "@/components/guards";
+import { GuestOnly, RequireAuth, RequireNoRestaurant, RequirePermission, RequireRestaurant } from "@/components/guards";
 import { ComingSoonPage } from "@/pages/ComingSoonPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import {
@@ -22,8 +22,10 @@ import { PlanPage } from "@/pages/PlanPage";
 import { ProductEditorPage } from "@/pages/ProductEditorPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { SummaryPage } from "@/pages/SummaryPage";
+import { UsersPage, UsersRolesTab, UsersMembersTab } from "@/pages/UsersPage";
 import { VerifyEmailPage } from "@/pages/VerifyEmailPage";
 import { DEFAULT_LOCAL_TAB_PATH, LOCAL_TABS, type LocalTab } from "@/lib/local-tabs";
+import { DEFAULT_USERS_TAB_PATH, USERS_TABS, type UsersTab } from "@/lib/users-tabs";
 import { createQueryClient } from "@/lib/query-client";
 import "./index.css";
 
@@ -38,6 +40,12 @@ const LOCAL_TAB_ELEMENTS: Record<LocalTab["id"], ReactNode> = {
   zones: <LocalZonesTab />,
 };
 
+/** Content of each "Usuarios" tab; paths and order come from `USERS_TABS`. */
+const USERS_TAB_ELEMENTS: Record<UsersTab["id"], ReactNode> = {
+  members: <UsersMembersTab />,
+  roles: <UsersRolesTab />,
+};
+
 createRoot(document.getElementById("root") as HTMLElement).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -46,21 +54,45 @@ createRoot(document.getElementById("root") as HTMLElement).render(
           <Route element={<RequireAuth />}>
             <Route element={<RequireRestaurant />}>
               <Route element={<AdminShell />}>
-                <Route path="/" element={<SummaryPage />} />
-                <Route path="/pedidos" element={<OrdersPage />} />
-                <Route path="/menu" element={<MenuPage />} />
-                <Route path="/menu/products/new" element={<ProductEditorPage />} />
-                <Route path="/menu/products/:id" element={<ProductEditorPage />} />
-                <Route path="/local" element={<LocalPage />}>
-                  <Route index element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
-                  {LOCAL_TABS.map((tab) => (
-                    <Route key={tab.id} path={tab.path} element={LOCAL_TAB_ELEMENTS[tab.id]} />
-                  ))}
-                  <Route path="*" element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
+                {/* Each section declares what it needs; without it the page never mounts. */}
+                <Route element={<RequirePermission permission="summary.view" />}>
+                  <Route path="/" element={<SummaryPage />} />
                 </Route>
-                <Route path="/qr" element={<ComingSoonPage id="qr" />} />
-                <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
-                <Route path="/plan" element={<PlanPage />} />
+                <Route element={<RequirePermission permission="orders.view" />}>
+                  <Route path="/pedidos" element={<OrdersPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="menu.view" />}>
+                  <Route path="/menu" element={<MenuPage />} />
+                  <Route path="/menu/products/new" element={<ProductEditorPage />} />
+                  <Route path="/menu/products/:id" element={<ProductEditorPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="store.view" />}>
+                  <Route path="/local" element={<LocalPage />}>
+                    <Route index element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
+                    {LOCAL_TABS.map((tab) => (
+                      <Route key={tab.id} path={tab.path} element={LOCAL_TAB_ELEMENTS[tab.id]} />
+                    ))}
+                    <Route path="*" element={<Navigate to={DEFAULT_LOCAL_TAB_PATH} replace />} />
+                  </Route>
+                </Route>
+                <Route element={<RequirePermission ownerOnly />}>
+                  <Route path="/usuarios" element={<UsersPage />}>
+                    <Route index element={<Navigate to={DEFAULT_USERS_TAB_PATH} replace />} />
+                    {USERS_TABS.map((tab) => (
+                      <Route key={tab.id} path={tab.path} element={USERS_TAB_ELEMENTS[tab.id]} />
+                    ))}
+                    <Route path="*" element={<Navigate to={DEFAULT_USERS_TAB_PATH} replace />} />
+                  </Route>
+                </Route>
+                <Route element={<RequirePermission permission="qr.view" />}>
+                  <Route path="/qr" element={<ComingSoonPage id="qr" />} />
+                </Route>
+                <Route element={<RequirePermission permission="stats.view" />}>
+                  <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
+                </Route>
+                <Route element={<RequirePermission ownerOnly />}>
+                  <Route path="/plan" element={<PlanPage />} />
+                </Route>
               </Route>
             </Route>
             <Route element={<RequireNoRestaurant />}>

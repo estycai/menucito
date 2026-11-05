@@ -4,6 +4,7 @@ import { DEFAULT_COLORS } from "@menucito/shared";
 import { AppearanceForm } from "@/components/AppearanceForm";
 import { MenuPreview } from "@/components/MenuPreview";
 import { PageTabs } from "@/components/PageTabs";
+import { ReadOnlyFieldset } from "@/components/ReadOnlyFieldset";
 import {
   MinOrderCard,
   OutsideHoursCard,
@@ -14,6 +15,7 @@ import {
 import { HoursTab } from "@/components/hours/HoursTab";
 import { DeliveryZonesTab } from "@/components/zones/DeliveryZonesTab";
 import type { AppearanceDraft } from "@/lib/appearance";
+import { useAccess } from "@/lib/access";
 import { LOCAL_TABS, localTabPath } from "@/lib/local-tabs";
 import { useMyRestaurant } from "@/lib/restaurant";
 
@@ -21,11 +23,15 @@ const TABS = LOCAL_TABS.map((tab) => ({ to: localTabPath(tab), label: tab.label 
 
 /** "Mi local": the title and the tab header; each tab is a child route rendered in the outlet. */
 export function LocalPage() {
+  // `store.view` shows the section; changing anything in it needs `store.edit` (spec 12, scenario 41).
+  const readOnly = !useAccess().can("store.edit");
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5">
       <h1 className="m-0 font-display text-[28px] font-extrabold sm:text-[32px]">Mi local</h1>
       <PageTabs label="Secciones de Mi local" tabs={TABS} />
-      <Outlet />
+      <ReadOnlyFieldset readOnly={readOnly} notice="Solo podés ver los datos del local." className="flex flex-col gap-5">
+        <Outlet />
+      </ReadOnlyFieldset>
     </div>
   );
 }

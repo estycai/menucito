@@ -15,6 +15,7 @@ import {
   useReorderProducts,
   useToggleAvailability,
 } from "@/lib/catalog";
+import { useAccess } from "@/lib/access";
 import { menuNotice } from "@/lib/menu-notice";
 import { moveId } from "@/lib/order";
 import { planName } from "@/lib/plans";
@@ -40,6 +41,8 @@ export function MenuPage() {
   const navigate = useNavigate();
   // `RequireRestaurant` guarantees the restaurant is loaded.
   const { data: restaurant } = useMyRestaurant();
+  // `menu.view` shows the menu; changing it needs `menu.edit` (spec 12, scenario 41).
+  const canEdit = useAccess().can("menu.edit");
   const { data: catalog, isPending, isError } = useCatalog();
   // The selected category lives in the URL, so coming back from the editor keeps it.
   const [params, setParams] = useSearchParams();
@@ -77,11 +80,12 @@ export function MenuPage() {
     navigate(selected ? `/menu/products/new?category=${encodeURIComponent(selected.id)}` : "/menu/products/new");
   }
 
-  const newProductButton = (className: string) => (
+  const newProductButton = (className: string) =>
+    canEdit && (
     <Button type="button" className={cn("min-h-12 rounded-xl px-[22px] text-[15px]", className)} disabled={!canCreateProduct} onClick={newProduct}>
       Nuevo producto
     </Button>
-  );
+    );
 
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5 pb-20 md:pb-0">
@@ -93,6 +97,7 @@ export function MenuPage() {
         {newProductButton("hidden md:inline-flex")}
       </div>
 
+      {!canEdit && <Notice tone="info">Solo podés ver el menú.</Notice>}
       {notice === "saved" && <Notice tone="success">Producto guardado.</Notice>}
       {notice === "gone" && <Notice tone="error">Este producto ya no existe.</Notice>}
 
@@ -153,6 +158,7 @@ export function MenuPage() {
                     </li>
                   );
                 })}
+                {canEdit && (
                 <li className="shrink-0">
                   <button
                     type="button"
@@ -162,8 +168,9 @@ export function MenuPage() {
                     + Nueva categoría
                   </button>
                 </li>
+                )}
               </ul>
-              {creating && (
+              {canEdit && creating && (
                 <div className="rounded-2xl border border-line bg-white p-3 md:border-0 md:p-0 md:pt-2">
                   <CategoryNameForm
                     label="Nombre de la categoría"
@@ -183,7 +190,7 @@ export function MenuPage() {
           {showAll ? (
             <div className="flex min-w-0 flex-1 flex-col gap-5">
               {categories.map((category) => (
-                <CategorySection key={category.id} category={category} categories={categories} />
+                <CategorySection key={category.id} category={category} categories={categories} canEdit={canEdit} />
               ))}
             </div>
           ) : selected ? (
@@ -191,11 +198,14 @@ export function MenuPage() {
               key={selected.id}
               category={selected}
               categories={categories}
+              canEdit={canEdit}
             />
           ) : (
             <section className="min-w-0 flex-1 rounded-2xl border border-line bg-white p-6">
               <p className="m-0 text-[15px] text-muted">
-                Todavía no tenés categorías. Creá la primera para empezar a cargar productos.
+                {canEdit
+                  ? "Todavía no tenés categorías. Creá la primera para empezar a cargar productos."
+                  : "Todavía no hay categorías."}
               </p>
             </section>
           )}
@@ -203,9 +213,11 @@ export function MenuPage() {
       )}
 
       {/* Phones: "Nuevo producto" stays reachable at the bottom of the screen. */}
-      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur sm:px-8 md:hidden">
-        {newProductButton("w-full")}
-      </div>
+      {canEdit && (
+        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-line bg-bg/95 px-4 py-3 backdrop-blur sm:px-8 md:hidden">
+          {newProductButton("w-full")}
+        </div>
+      )}
     </div>
   );
 }
@@ -213,9 +225,11 @@ export function MenuPage() {
 function CategorySection({
   category,
   categories,
+  canEdit,
 }: {
   category: CategoryWithProducts;
   categories: CategoryWithProducts[];
+  canEdit: boolean;
 }) {
   const [renaming, setRenaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -247,7 +261,7 @@ function CategorySection({
   return (
     <section aria-label={category.name} className="flex min-w-0 flex-1 flex-col rounded-2xl border border-line bg-white">
       <header className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-line px-4 py-3 md:px-5">
-        {renaming ? (
+        {canEdit && renaming ? (
           <CategoryNameForm
             label="Nuevo nombre de la categoría"
             initialName={category.name}
@@ -261,6 +275,7 @@ function CategorySection({
         ) : (
           <>
             <h2 className="m-0 min-w-0 flex-[1_1_100%] font-display text-xl font-extrabold break-words sm:flex-1">{category.name}</h2>
+            {canEdit && (
             <div className="-ml-2 flex flex-wrap items-center sm:ml-0">
               <FeaturedToggle categoryId={category.id} categoryName={category.name} featured={category.featured} onError={onActionError} />
               <Button type="button" variant="ghost" className="min-h-11 px-3 text-sm" onClick={() => setRenaming(true)}>
@@ -279,6 +294,7 @@ function CategorySection({
                 }}
               />
             </div>
+            )}
           </>
         )}
       </header>
@@ -299,6 +315,7 @@ function CategorySection({
               product={product}
               isFirst={i === 0}
               isLast={i === category.products.length - 1}
+              canEdit={canEdit}
               onMove={(direction) => {
                 setError(null);
                 reorderProducts.mutate(
@@ -322,10 +339,13 @@ function ProductRow({
   product,
   isFirst,
   isLast,
+  canEdit,
   onMove,
   onToggle,
 }: {
   product: Product;
+  /** Without `menu.edit` the availability is a label and there is no reordering. */
+  canEdit: boolean;
   isFirst: boolean;
   isLast: boolean;
   onMove: (direction: -1 | 1) => void;
@@ -348,23 +368,33 @@ function ProductRow({
       </Link>
       <b className="hidden shrink-0 text-[15px] sm:block">{price}</b>
       <div className="flex shrink-0 flex-col items-end sm:flex-row sm:items-center sm:gap-1">
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-label={product.available ? `${product.name}: disponible. Marcar como agotado` : `${product.name}: agotado. Marcar como disponible`}
-          className="inline-flex min-h-11 cursor-pointer items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        >
-          <span
-            className={cn(
-              "rounded-full px-3 py-1.5 text-[13px] font-bold",
-              product.available ? "bg-[#DCFCE7] text-success" : "bg-tab text-[#44403C]",
-            )}
+        {canEdit ? (
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={product.available ? `${product.name}: disponible. Marcar como agotado` : `${product.name}: agotado. Marcar como disponible`}
+            className="inline-flex min-h-11 cursor-pointer items-center rounded-full focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            {product.available ? "Disponible" : "Agotado"}
-          </span>
-        </button>
-        <ReorderButtons name={product.name} isFirst={isFirst} isLast={isLast} onMove={onMove} />
+            <AvailabilityBadge available={product.available} />
+          </button>
+        ) : (
+          <AvailabilityBadge available={product.available} />
+        )}
+        {canEdit && <ReorderButtons name={product.name} isFirst={isFirst} isLast={isLast} onMove={onMove} />}
       </div>
     </li>
+  );
+}
+
+function AvailabilityBadge({ available }: { available: boolean }) {
+  return (
+    <span
+      className={cn(
+        "rounded-full px-3 py-1.5 text-[13px] font-bold",
+        available ? "bg-[#DCFCE7] text-success" : "bg-tab text-[#44403C]",
+      )}
+    >
+      {available ? "Disponible" : "Agotado"}
+    </span>
   );
 }

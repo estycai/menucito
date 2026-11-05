@@ -38,6 +38,8 @@ import {
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 
 interface ActiveOrdersBoardProps {
+  /** `orders.status`: without it the cards open the detail but cannot be dragged. */
+  canMove?: boolean;
   /** `undefined` until the first successful load. */
   orders: OrderSummary[] | undefined;
   /** Orders delivered today, for the "Entregados" column; `undefined` until they load. */
@@ -54,6 +56,7 @@ interface ActiveOrdersBoardProps {
 
 /** "Activos" tab: the board of active orders, moved forward by drag and drop (mouse, touch or keyboard). */
 export function ActiveOrdersBoard({
+  canMove = true,
   orders,
   deliveredOrders = [],
   isLoading,
@@ -183,6 +186,7 @@ export function ActiveOrdersBoard({
                 key={column.status}
                 column={column}
                 orders={column.isFinal ? deliveredOrders : orders.filter((o) => o.status === column.status)}
+                canMove={canMove}
                 dragState={!activeOrder ? "idle" : validTargets.includes(column.status) ? "valid" : "invalid"}
                 savingIds={savingIds}
                 onSelectOrder={handleSelectOrder}

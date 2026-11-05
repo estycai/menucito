@@ -1,5 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, Navigate, useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -17,6 +17,7 @@ import {
 } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
+import { ReadOnlyFieldset } from "@/components/ReadOnlyFieldset";
 import { ProductPhotoUploader } from "@/components/ProductPhotoUploader";
 import { ProductProSections } from "@/components/ProductProSections";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import {
   useUpdateProduct,
   useUploadProductPhoto,
 } from "@/lib/catalog";
+import { useAccess } from "@/lib/access";
 import { attempt } from "@/lib/attempt";
 import { PRODUCT_GONE_STATE, PRODUCT_SAVED_STATE, createdProductState, type CreatedProductState } from "@/lib/menu-notice";
 import { ingredientsToSave, withKey, type DraftIngredient } from "@/lib/ingredient-form";
@@ -76,6 +78,7 @@ const textareaClass =
 export function ProductEditorPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const canEdit = useAccess().can("menu.edit");
   const catalog = useCatalog();
   const product = useProduct(id);
   const notFound = product.error instanceof ApiError && product.error.status === 404;
@@ -84,6 +87,9 @@ export function ProductEditorPage() {
   useEffect(() => {
     if (notFound) navigate("/menu", { replace: true });
   }, [notFound, navigate]);
+
+  // Creating needs `menu.edit`; a member who can only view goes back to the list.
+  if (!id && !canEdit) return <Navigate to="/menu" replace />;
 
   if (catalog.isError || (product.isError && !notFound)) {
     return (
@@ -141,6 +147,7 @@ function ProductForm({
   const location = useLocation();
   const [params] = useSearchParams();
   const { data: restaurant } = useMyRestaurant();
+  const readOnly = !useAccess().can("menu.edit");
   const createProduct = useCreateProduct();
   const updateProduct = useUpdateProduct();
   const deleteProduct = useDeleteProduct();
@@ -277,6 +284,7 @@ function ProductForm({
 
   return (
     <EditorShell title={product?.name ?? "Nuevo producto"}>
+      <ReadOnlyFieldset readOnly={readOnly} notice="Solo podés ver el menú." className="flex flex-col gap-5">
       {isNew && atLimit && <Notice tone="error">{limitMessage}</Notice>}
       {/* The form holds only "Datos básicos"; its buttons sit below the Pro sections and submit it by id. */}
       <form id={formId} noValidate onSubmit={handleSubmit(onValid)} className="flex flex-col gap-5">
@@ -371,6 +379,7 @@ function ProductForm({
           </Button>
         </div>
       </div>
+      </ReadOnlyFieldset>
     </EditorShell>
   );
 }

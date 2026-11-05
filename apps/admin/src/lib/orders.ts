@@ -279,8 +279,9 @@ export function ordersQueryOptions(filters: OrderFilters) {
   });
 }
 
-export function useOrders(filters: OrderFilters) {
-  return useQuery(ordersQueryOptions(filters));
+/** `enabled` is false for a member without `orders.view`: the list is then never requested. */
+export function useOrders(filters: OrderFilters, enabled = true) {
+  return useQuery({ ...ordersQueryOptions(filters), enabled });
 }
 
 /** History with "Cargar más": each page is appended after the ones already loaded (scenario 44). */

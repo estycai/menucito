@@ -1,3 +1,6 @@
+import type { Access, PermissionKey } from "@menucito/shared";
+import { accessApi } from "./access";
+
 export interface NavItem {
   id: string;
   label: string;
@@ -6,18 +9,35 @@ export interface NavItem {
   title: string;
   /** Shows the "PRO" pill next to the label. */
   pro?: true;
+  /** The `<section>.view` key a member needs to see the section. */
+  permission?: PermissionKey;
+  /** Only the owner sees it; it is not a permission anyone can be given. */
+  ownerOnly?: true;
 }
 
-/** Panel sections in the order of the design canvas. */
+/** Panel sections in the order of the design canvas ("Usuarios" goes after "Mi local", spec 12). */
 export const NAV_ITEMS: readonly NavItem[] = [
-  { id: "summary", label: "Resumen", to: "/", title: "Resumen" },
-  { id: "orders", label: "Pedidos", to: "/pedidos", title: "Pedidos" },
-  { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú" },
-  { id: "local", label: "Mi local", to: "/local", title: "Mi local" },
-  { id: "qr", label: "Link y QR", to: "/qr", title: "Link y QR" },
-  { id: "stats", label: "Estadísticas", to: "/estadisticas", title: "Estadísticas", pro: true },
-  { id: "plan", label: "Plan y pagos", to: "/plan", title: "Plan y pagos" },
+  { id: "summary", label: "Resumen", to: "/", title: "Resumen", permission: "summary.view" },
+  { id: "orders", label: "Pedidos", to: "/pedidos", title: "Pedidos", permission: "orders.view" },
+  { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú", permission: "menu.view" },
+  { id: "local", label: "Mi local", to: "/local", title: "Mi local", permission: "store.view" },
+  { id: "users", label: "Usuarios", to: "/usuarios", title: "Usuarios", ownerOnly: true },
+  { id: "qr", label: "Link y QR", to: "/qr", title: "Link y QR", permission: "qr.view" },
+  { id: "stats", label: "Estadísticas", to: "/estadisticas", title: "Estadísticas", pro: true, permission: "stats.view" },
+  { id: "plan", label: "Plan y pagos", to: "/plan", title: "Plan y pagos", ownerOnly: true },
 ];
+
+/** Whether `access` may open `item`: owner-only items need the owner, the others their `.view` key. */
+export function canSeeNavItem(item: NavItem, access: Access | null | undefined): boolean {
+  const { can, isOwner } = accessApi(access);
+  if (item.ownerOnly) return isOwner;
+  return item.permission ? can(item.permission) : true;
+}
+
+/** The sections of the menu the member may open, in menu order. Empty while `access` is unknown. */
+export function visibleNavItems(access: Access | null | undefined): NavItem[] {
+  return access ? NAV_ITEMS.filter((item) => canSeeNavItem(item, access)) : [];
+}
 
 /**
  * The nav item that owns `pathname`, or `null`. `/` matches only exactly; every other item matches its

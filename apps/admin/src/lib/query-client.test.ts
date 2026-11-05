@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ApiError, RESTAURANT_KEY } from "./restaurant";
-import { createQueryClient, isUnauthorizedError } from "./query-client";
+import { createQueryClient, isAccessError, isUnauthorizedError } from "./query-client";
 import { ACTIVE_ORDERS_KEY, DELIVERED_TODAY_KEY, ORDERS_KEY } from "./orders";
 import { SESSION_KEY, clearSession } from "./session";
 
@@ -48,6 +48,38 @@ describe("createQueryClient", () => {
     ).rejects.toThrow();
 
     expect(client.getQueryData(SESSION_KEY)).toEqual(session);
+  });
+});
+
+describe("access errors", () => {
+  it("isAccessError is true for permission 403s only", () => {
+    expect(isAccessError(new ApiError(403, "FORBIDDEN", "x"))).toBe(true);
+    expect(isAccessError(new ApiError(403, "MEMBER_INACTIVE", "x"))).toBe(true);
+    expect(isAccessError(new ApiError(403, "PLAN_FEATURE", "x"))).toBe(false);
+    expect(isAccessError(new ApiError(401, "FORBIDDEN", "x"))).toBe(false);
+  });
+
+  it("refreshes the restaurant query when a query answers a permission 403, and keeps the session", async () => {
+    const client = createQueryClient();
+    client.setQueryData(SESSION_KEY, { user: { id: "u1" } });
+    client.setQueryData([...RESTAURANT_KEY, "u1"], { id: "r1" });
+
+    await expect(
+      client.fetchQuery({ queryKey: ["orders"], queryFn: () => Promise.reject(new ApiError(403, "FORBIDDEN", "x")) }),
+    ).rejects.toThrow();
+
+    expect(client.getQueryState([...RESTAURANT_KEY, "u1"])?.isInvalidated).toBe(true);
+    expect(client.getQueryData(SESSION_KEY)).toEqual({ user: { id: "u1" } });
+  });
+
+  it("refreshes the restaurant query when a mutation answers a permission 403", async () => {
+    const client = createQueryClient();
+    client.setQueryData([...RESTAURANT_KEY, "u1"], { id: "r1" });
+    const mutation = client.getMutationCache().build(client, {
+      mutationFn: () => Promise.reject(new ApiError(403, "FORBIDDEN", "x")),
+    });
+    await expect(mutation.execute(undefined)).rejects.toThrow();
+    expect(client.getQueryState([...RESTAURANT_KEY, "u1"])?.isInvalidated).toBe(true);
   });
 });
 

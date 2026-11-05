@@ -18,6 +18,7 @@ import {
   type OrderFilters,
 } from "@/lib/orders";
 import { ORDERS_MAP_VIEW, ORDERS_VIEW_PARAM } from "@/lib/orders-map";
+import { useAccess } from "@/lib/access";
 import { publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { useOrdersExport } from "@/lib/use-orders-export";
@@ -29,6 +30,10 @@ export type OrdersTab = "active" | "history";
 export function OrdersPage() {
   useDocumentTitle("Pedidos");
   const { data: restaurant } = useMyRestaurant();
+  // Without these keys the actions are not offered (the API refuses them anyway).
+  const { can } = useAccess();
+  const canMove = can("orders.status");
+  const canExport = can("orders.export");
   const [tab, setTab] = useState<OrdersTab>("active");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
@@ -105,7 +110,7 @@ export function OrdersPage() {
         <div className="flex flex-wrap items-center gap-2">
           {tab === "active" && !hasNoOrdersEver && <ViewToggle showMap={showMap} onChange={handleViewChange} />}
 
-          {tab === "history" && (
+          {tab === "history" && canExport && (
             <Button
               type="button"
               variant="outline"
@@ -174,6 +179,7 @@ export function OrdersPage() {
 
           {tab === "active" && !showMap && (
             <ActiveOrdersBoard
+              canMove={canMove}
               orders={activeOrders}
               deliveredOrders={deliveredQuery.data?.orders}
               isLoading={activeQuery.isLoading}

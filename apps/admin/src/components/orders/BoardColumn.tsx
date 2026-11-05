@@ -14,12 +14,15 @@ export type ColumnDragState = "idle" | "valid" | "invalid";
 export function BoardColumn({
   column: { status, label, isFinal = false, emptyMessage },
   orders,
+  canMove = true,
   dragState,
   savingIds,
   onSelectOrder,
   footer,
 }: {
   column: BoardColumnConfig;
+  /** Without `orders.status` every card is a plain button, like the ones of the final column. */
+  canMove?: boolean;
   orders: OrderSummary[];
   dragState: ColumnDragState;
   savingIds: Array<string | undefined>;
@@ -50,7 +53,7 @@ export function BoardColumn({
       ) : (
         <div className="flex flex-col gap-3">
           {orders.map((order) =>
-            isFinal ? (
+            isFinal || !canMove ? (
               <button
                 key={order.id}
                 type="button"

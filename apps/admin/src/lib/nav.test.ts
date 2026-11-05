@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { NAV_ITEMS, activeNavItem, documentTitle } from "./nav";
+import { ALL_PERMISSIONS, type Access, type PermissionKey } from "@menucito/shared";
+import { NAV_ITEMS, activeNavItem, canSeeNavItem, documentTitle, visibleNavItems } from "./nav";
+
+const staff = (permissions: PermissionKey[], overrides: Partial<Access> = {}): Access => ({
+  memberId: "m1",
+  isOwner: false,
+  active: true,
+  role: { id: "r1", name: "Cajero", active: true },
+  permissions,
+  ...overrides,
+});
+const owner = staff([...ALL_PERMISSIONS], { isOwner: true });
+const labels = (access: Access | null) => visibleNavItems(access).map((item) => item.label);
 
 describe("NAV_ITEMS", () => {
   it("keeps the canvas order", () => {
@@ -8,6 +20,7 @@ describe("NAV_ITEMS", () => {
       "Pedidos",
       "Mi menú",
       "Mi local",
+      "Usuarios",
       "Link y QR",
       "Estadísticas",
       "Plan y pagos",
@@ -32,6 +45,8 @@ describe("activeNavItem", () => {
     ["/local/apariencia", "Mi local"],
     ["/local/pagos", "Mi local"],
     ["/local/zonas", "Mi local"],
+    ["/usuarios", "Usuarios"],
+    ["/usuarios/roles", "Usuarios"],
     ["/qr", "Link y QR"],
     ["/estadisticas", "Estadísticas"],
     ["/plan", "Plan y pagos"],
@@ -64,5 +79,35 @@ describe("activeNavItem", () => {
 describe("documentTitle", () => {
   it("appends the product name", () => {
     expect(documentTitle("Mi menú")).toBe("Mi menú · Menucito");
+  });
+});
+
+describe("visibleNavItems", () => {
+  it("shows the owner every section, Usuarios and Plan y pagos included", () => {
+    expect(labels(owner)).toEqual(NAV_ITEMS.map((item) => item.label));
+  });
+
+  it("shows a member only the sections whose view key they have", () => {
+    expect(labels(staff(["orders.view", "orders.status"]))).toEqual(["Pedidos"]);
+    expect(labels(staff(["menu.view", "qr.view"]))).toEqual(["Mi menú", "Link y QR"]);
+  });
+
+  it("never shows Usuarios or Plan y pagos to a member, whatever the permissions", () => {
+    expect(labels(staff([...ALL_PERMISSIONS]))).not.toContain("Usuarios");
+    expect(labels(staff([...ALL_PERMISSIONS]))).not.toContain("Plan y pagos");
+  });
+
+  it("shows nothing without permissions, with an inactive role or member, or while access is unknown", () => {
+    expect(labels(staff([]))).toEqual([]);
+    expect(labels(staff(["orders.view"], { role: { id: "r1", name: "x", active: false } }))).toEqual([]);
+    expect(labels(staff(["orders.view"], { active: false }))).toEqual([]);
+    expect(labels(staff([...ALL_PERMISSIONS], { isOwner: true, active: false }))).toEqual([]);
+    expect(labels(null)).toEqual([]);
+  });
+
+  it("canSeeNavItem follows the rule of the item", () => {
+    const users = NAV_ITEMS.find((item) => item.id === "users")!;
+    expect(canSeeNavItem(users, owner)).toBe(true);
+    expect(canSeeNavItem(users, staff([...ALL_PERMISSIONS]))).toBe(false);
   });
 });

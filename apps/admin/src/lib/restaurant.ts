@@ -4,6 +4,7 @@ import type {
   CoverUploadResult,
   CreateRestaurantInput,
   LogoUploadResult,
+  MyRestaurant,
   Restaurant,
   SlugAvailability,
   UpdateAppearanceInput,
@@ -44,24 +45,31 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   return (await res.json()) as T;
 }
 
-/** The logged-in user's restaurant, or `null` when they have not created one yet. */
-export function useMyRestaurant() {
-  const { data: session } = useSession();
-  const userId = session?.user.id;
-  return useQuery({
+/** Query of the logged-in user's restaurant, or `null` when they have not created one yet. */
+export function myRestaurantOptions(userId: string | undefined) {
+  return queryOptions({
     // Keyed by user so a different login in the same tab never sees a cached restaurant.
     queryKey: [...RESTAURANT_KEY, userId],
     enabled: Boolean(userId),
     queryFn: async () => {
       try {
-        return await api<Restaurant>("/api/restaurants/me");
+        return await api<MyRestaurant>("/api/restaurants/me");
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) return null;
         throw error;
       }
     },
     staleTime: 60_000,
+    // The owner can change this member's role or deactivate them at any time: coming back to the tab
+    // always asks again, so the navigation follows the current permissions (spec 12, scenario 43).
+    refetchOnWindowFocus: "always",
   });
+}
+
+/** The logged-in user's restaurant with what they can do in it (`access`), or `null` before onboarding. */
+export function useMyRestaurant() {
+  const { data: session } = useSession();
+  return useQuery(myRestaurantOptions(session?.user.id));
 }
 
 /** Query options for the availability of `slug`; also used with `fetchQuery` right before submitting. */
@@ -84,9 +92,9 @@ export function useCreateRestaurant() {
   return useMutation({
     mutationFn: (input: CreateRestaurantInput) =>
       api<Restaurant>("/api/restaurants", { method: "POST", body: JSON.stringify(input) }),
-    onSuccess: (restaurant) => {
-      queryClient.setQueryData([...RESTAURANT_KEY, session?.user.id], restaurant);
-    },
+    // `POST /api/restaurants` answers a plain restaurant: read `/me` so the cache has `access` too.
+    onSuccess: () =>
+      queryClient.fetchQuery({ ...myRestaurantOptions(session?.user.id), staleTime: 0 }),
   });
 }
 
@@ -145,8 +153,11 @@ export function useUpdateAppearance() {
   return useMutation({
     mutationFn: (input: UpdateAppearanceInput) =>
       api<Restaurant>("/api/restaurants/me/appearance", { method: "PATCH", body: JSON.stringify(input) }),
+    // The answer is a plain restaurant: merge it so the cached `access` is kept.
     onSuccess: (restaurant) => {
-      queryClient.setQueryData([...RESTAURANT_KEY, session?.user.id], restaurant);
+      queryClient.setQueryData<MyRestaurant | null>([...RESTAURANT_KEY, session?.user.id], (previous) =>
+        previous ? { ...previous, ...restaurant } : previous,
+      );
     },
   });
 }

@@ -19,6 +19,7 @@ import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { PaymentStatusBadge } from "@/components/orders/PaymentStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { useAccess } from "@/lib/access";
 import {
   googleMapsSearchUrl,
   isInvalidTransitionError,
@@ -35,6 +36,9 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const titleId = useId();
 
   const { data: order, isLoading, isError, isRefetching, refetch } = useOrder(orderId);
+  const { can } = useAccess();
+  const canChangeStatus = can("orders.status");
+  const canChangePayment = can("orders.payment");
   const statusMutation = useChangeOrderStatus();
   const paymentMutation = useChangeOrderPayment();
 
@@ -133,8 +137,9 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             <OrderItems order={order} />
             <OrderTotals order={order} />
 
+            {(canChangeStatus || canChangePayment) && (
             <div className="flex flex-col gap-2 border-t border-line pt-4">
-              {next && !showCancelConfirm && (
+              {canChangeStatus && next && !showCancelConfirm && (
                 <Button
                   type="button"
                   disabled={isPendingAction}
@@ -145,7 +150,7 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                 </Button>
               )}
 
-              {!showCancelConfirm && (
+              {canChangePayment && !showCancelConfirm && (
                 <Button
                   type="button"
                   variant="outline"
@@ -157,7 +162,8 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                 </Button>
               )}
 
-              {order.status !== "delivered" &&
+              {canChangeStatus &&
+                order.status !== "delivered" &&
                 order.status !== "cancelled" &&
                 (showCancelConfirm ? (
                   <div className="flex flex-col gap-2 rounded-xl border border-danger/30 bg-danger/5 p-3">
@@ -196,6 +202,7 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                   </Button>
                 ))}
             </div>
+            )}
           </>
         )}
       </div>

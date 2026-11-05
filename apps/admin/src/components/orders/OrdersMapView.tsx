@@ -23,6 +23,7 @@ import {
   type MapScope,
 } from "@/lib/orders-map";
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
+import { useAccess } from "@/lib/access";
 import { useStoreLocation } from "@/lib/zones";
 import { cn } from "@/lib/utils";
 
@@ -53,7 +54,9 @@ export function OrdersMapView({
   onSelectOrder,
 }: OrdersMapViewProps) {
   const [filters, setFilters] = useState<MapFilters>(DEFAULT_MAP_FILTERS);
-  const locationQuery = useStoreLocation();
+  // The store pin needs `store.view`; without it the map shows the orders only.
+  const { can } = useAccess();
+  const locationQuery = useStoreLocation(can("store.view"));
 
   if (isLoading || locationQuery.isLoading) {
     return <div className="p-8 text-center text-muted">Cargando pedidos…</div>;
