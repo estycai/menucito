@@ -1212,6 +1212,122 @@ button:disabled {
   font-weight: 700;
 }
 
+.tip-field {
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--color-line);
+  border-radius: 16px;
+  background: var(--color-surface);
+}
+
+.tip-field > legend {
+  padding: 0 4px;
+  font-size: 13px;
+}
+
+.tip-optional {
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.tip-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.tip-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 56px;
+  padding: 6px 4px;
+  border: 1px solid var(--color-line);
+  border-radius: 12px;
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tip-option-percent {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.tip-option-amount {
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.tip-option-selected {
+  border: 2px solid var(--color-primary);
+  background: var(--color-nav-active);
+  color: var(--color-primary);
+}
+
+.tip-option-selected .tip-option-amount {
+  color: inherit;
+}
+
+.tip-other-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* One box: the "$" and the input share the border, like the percentage buttons. */
+.tip-other-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px dashed var(--color-muted);
+  border-radius: 12px;
+  background: var(--color-surface);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.tip-other-input.tip-option-selected {
+  border: 2px solid var(--color-primary);
+  padding: 0 13px;
+}
+
+.tip-other-input:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+
+.tip-other-input:has(input[aria-invalid="true"]) {
+  border-color: var(--color-danger);
+}
+
+/* Beats `.field input[type="text"]`, which would draw a second box inside this one. */
+.tip-field .tip-other-input input[type="text"] {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--color-ink);
+  font: inherit;
+}
+
+.tip-field .tip-other-input input[type="text"]::placeholder {
+  color: var(--color-ink);
+}
+
+.tip-field .tip-other-input input[type="text"]:focus {
+  outline: none;
+}
+
 .order-confirmation {
   display: flex;
   flex-direction: column;

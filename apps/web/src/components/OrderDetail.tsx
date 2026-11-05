@@ -7,11 +7,13 @@ import {
   ORDER_ADDRESS_MAX_LENGTH,
   ORDER_NAME_MAX_LENGTH,
   PAYMENT_LABELS,
+  TIP_PERCENTAGES,
   cartTotalCents,
   describeChanges,
   formatArs,
   lineTotalCents,
   orderTotals,
+  tipFromPercent,
   type DeliveryMode,
   type Fulfillment,
   type HoursSlot,
@@ -39,6 +41,7 @@ import { useCart } from "../lib/use-cart";
 import { useDeliveryQuote } from "../lib/use-delivery-quote";
 import { useOrderSubmit } from "../lib/use-order-submit";
 import { orderHoursNotice } from "../lib/store-hours";
+import { tipAllowed as tipAllowedFor, tipCentsFor, tipOtherError, type TipChoice } from "../lib/tip";
 import { AddressDialog } from "./AddressDialog";
 import { CoverageDialog } from "./CoverageDialog";
 import { OrderConfirmation } from "./OrderConfirmation";
@@ -93,6 +96,8 @@ function liveStoreFromMenu(menu: PublicMenu): LiveStore {
 }
 
 const PHONE_HELP_ID = "order-phone-help";
+const TIP_OTHER_ID = "order-tip-other";
+const TIP_OTHER_HELP_ID = "order-tip-other-help";
 
 const FIELD_IDS: Record<OrderFormField, string> = {
   name: "order-name",
@@ -138,6 +143,9 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   const [deliveryAddress, setDeliveryAddress] = useState<OrderDelivery | null>(null);
   const [addressOpen, setAddressOpen] = useState(false);
   const [coverageOpen, setCoverageOpen] = useState(false);
+  // Tip selection is never persisted: every order starts without one (scenario 35).
+  const [tipChoice, setTipChoice] = useState<TipChoice>(null);
+  const [tipOther, setTipOther] = useState("");
   // The clock the opening hours are checked against, refreshed so an open page follows the hours.
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -159,6 +167,15 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   useEffect(() => {
     if (restored) writeOrderForm(browserStorage(), slug, values);
   }, [restored, slug, values]);
+
+  // A tip only exists on delivery paid by transfer: switching away clears it (scenario 36).
+  const tipVisible = tipAllowedFor(values.fulfillment, values.payment);
+  useEffect(() => {
+    if (!tipVisible) {
+      setTipChoice(null);
+      setTipOther("");
+    }
+  }, [tipVisible]);
 
   // Removing the last line unmounts the list; keep keyboard focus inside the page.
   useEffect(() => {
@@ -224,9 +241,12 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
   }
 
   const pricing = deliveryPricing(storeLocation !== null, quote, { shippingCents, minOrderCents });
+  const tipCents = tipVisible ? tipCentsFor(tipChoice, tipOther, subtotalCents) : 0;
+  const tipError = tipChoice === "other" ? tipOtherError(tipOther) : undefined;
   const totals = orderTotals({
     subtotalCents,
     shippingCents: pricing.shippingCents,
+    tipCents,
     // Until a fulfillment is picked, the total is shown without shipping.
     fulfillment: values.fulfillment === "delivery" ? "delivery" : "takeaway",
   });
@@ -253,6 +273,11 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
       return;
     }
 
+    if (tipError) {
+      document.getElementById(TIP_OTHER_ID)?.focus();
+      return;
+    }
+
     if (outOfCoverage) {
       setCoverageOpen(true);
       return;
@@ -264,7 +289,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     if (!acceptingOrders || closed || isBelowMinOrder || quoting) return;
 
     const geocoded = zonesDelivery ? deliveryAddress : null;
-    void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents, geocoded));
+    void orderSubmit.send((clientOrderId) => buildOrderRequest(values, state.lines, clientOrderId, totals.totalCents, geocoded, tipCents));
   };
 
   return (
@@ -336,7 +361,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
 
       <dl class="order-breakdown">
         <div class="order-breakdown-row">
-          <dt>Subtotal</dt>
+          <dt>Productos</dt>
           <dd>{formatArs(totals.subtotalCents)}</dd>
         </div>
         {values.fulfillment === "delivery" &&
@@ -355,6 +380,12 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
               <dt>Envío gratis</dt>
             </div>
           ))}
+        {totals.tipCents > 0 && (
+          <div class="order-breakdown-row">
+            <dt>Propina</dt>
+            <dd>{formatArs(totals.tipCents)}</dd>
+          </div>
+        )}
         <div class="order-breakdown-total">
           <dt>Total</dt>
           <dd aria-live="polite" aria-atomic="true">
@@ -518,6 +549,65 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
               <p>El local te pasa los datos por WhatsApp</p>
             )}
           </div>
+        )}
+
+        {tipVisible && (
+          <fieldset class="field tip-field">
+            <legend>
+              Propina para el repartidor <span class="tip-optional">(opcional)</span>
+            </legend>
+            <div class="tip-options">
+              {TIP_PERCENTAGES.map((percent) => {
+                const selected = tipChoice === percent;
+                return (
+                  <button
+                    key={percent}
+                    type="button"
+                    class={`tip-option${selected ? " tip-option-selected" : ""}`}
+                    aria-pressed={selected}
+                    onClick={() => {
+                      setTipChoice(selected ? null : percent);
+                      setTipOther("");
+                    }}
+                  >
+                    <span class="tip-option-percent">{percent}%</span>
+                    <span class="tip-option-amount">{formatArs(tipFromPercent(subtotalCents, percent))}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {/* "Otro monto" is the input itself: typing in it replaces the picked percentage. */}
+            <div class="tip-other-field">
+              <div class={`tip-other-input${tipChoice === "other" ? " tip-option-selected" : ""}`}>
+                <span aria-hidden="true">$</span>
+                <input
+                  id={TIP_OTHER_ID}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="Otro monto"
+                  aria-label="Otro monto de propina, en pesos"
+                  value={tipOther}
+                  aria-invalid={tipError ? "true" : undefined}
+                  aria-describedby={tipError ? `${TIP_OTHER_HELP_ID} ${TIP_OTHER_ID}-error` : TIP_OTHER_HELP_ID}
+                  onFocus={() => {
+                    if (tipChoice !== "other") setTipChoice("other");
+                  }}
+                  onInput={(event) => {
+                    setTipChoice("other");
+                    setTipOther(event.currentTarget.value);
+                  }}
+                />
+              </div>
+              {tipChoice === "other" && (
+                <p class="field-help" id={TIP_OTHER_HELP_ID}>
+                  Pesos enteros, hasta $50.000.
+                </p>
+              )}
+              <FieldError id={`${TIP_OTHER_ID}-error`} message={tipError} />
+            </div>
+            <p class="field-help">Va completa para quien te lleva el pedido.</p>
+          </fieldset>
         )}
 
         <div aria-live="polite" aria-atomic="true">

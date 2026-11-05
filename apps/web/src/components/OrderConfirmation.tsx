@@ -49,6 +49,22 @@ export function OrderConfirmation({ response }: { response: CreateOrderResponse 
           <dt>Entrega</dt>
           <dd>{FULFILLMENT_LABELS[order.fulfillment]}</dd>
         </div>
+        <div class="order-breakdown-row">
+          <dt>Productos</dt>
+          <dd>{formatArs(order.subtotalCents)}</dd>
+        </div>
+        {order.shippingCents > 0 && (
+          <div class="order-breakdown-row">
+            <dt>Envío</dt>
+            <dd>{formatArs(order.shippingCents)}</dd>
+          </div>
+        )}
+        {order.tipCents > 0 && (
+          <div class="order-breakdown-row">
+            <dt>Propina</dt>
+            <dd>{formatArs(order.tipCents)}</dd>
+          </div>
+        )}
         <div class="order-breakdown-total">
           <dt>Total</dt>
           <dd>

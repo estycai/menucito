@@ -1,7 +1,7 @@
 import type {
   ApiErrorBody,
   CartLine,
-  CreateOrderRequest,
+  CreateOrderRequestInput,
   CreateOrderResponse,
   OrderDelivery,
   PaymentMethod,
@@ -15,7 +15,9 @@ export const ORDER_SUBMIT_TIMEOUT_MS = 15000;
 /**
  * The request body for a validated form (see `getFormErrors`). Text is trimmed and takeaway orders
  * never carry an address, even when the diner typed one before switching. A geocoded `delivery`
- * address (stores in `zones` mode) replaces the typed one.
+ * address (stores in `zones` mode) replaces the typed one. `tipCents` is the amount already rounded
+ * to whole pesos by the tip selector; it must be part of `expectedTotalCents` (scenario 8) and is only
+ * sent on a delivery paid by transfer, so cash and takeaway never carry the field at all.
  */
 export function buildOrderRequest(
   values: OrderFormValues,
@@ -23,11 +25,13 @@ export function buildOrderRequest(
   clientOrderId: string,
   expectedTotalCents: number,
   delivery: OrderDelivery | null = null,
-): CreateOrderRequest {
+  tipCents = 0,
+): CreateOrderRequestInput {
   const common = {
     clientOrderId,
     paymentMethod: values.payment as PaymentMethod,
     expectedTotalCents,
+    ...(values.fulfillment === "delivery" && values.payment === "transfer" ? { tipCents } : {}),
     items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, choices: { ...line.choices } })),
   };
   const name = values.name.trim();
@@ -47,7 +51,7 @@ export type SubmitOrderResult =
 export async function submitOrder(
   apiUrl: string,
   slug: string,
-  body: CreateOrderRequest,
+  body: CreateOrderRequestInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<SubmitOrderResult> {
   const controller = new AbortController();

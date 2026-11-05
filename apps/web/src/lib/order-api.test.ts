@@ -16,6 +16,7 @@ const sampleBody: CreateOrderRequest = {
   paymentMethod: "cash",
   clientOrderId: "10000000-0000-4000-8000-000000000001",
   expectedTotalCents: 500_000,
+  tipCents: 0,
   delivery: null,
 };
 
@@ -30,6 +31,7 @@ const sampleSuccessResponse: CreateOrderResponse = {
     subtotalCents: 500_000,
     shippingCents: 0,
     discountCents: 0,
+    tipCents: 0,
     totalCents: 500_000,
     items: [],
   },
@@ -232,5 +234,20 @@ describe("buildOrderRequest", () => {
     const request = buildOrderRequest(values, lines, token, 100);
     expect(request.items[0]?.choices).toEqual(lines[0]?.choices);
     expect(request.items[0]?.choices).not.toBe(lines[0]?.choices);
+  });
+
+  it("sends the tip the diner picked (13 scenario 35)", () => {
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "transfer" } as const;
+    const request = buildOrderRequest(values, lines, token, 112_350, null, 12_350);
+    expect(request.tipCents).toBe(12_350);
+    expect(request.expectedTotalCents).toBe(112_350);
+  });
+
+  it("sends no tip field on cash or takeaway orders, even when the amount is 0 (13 scenario 36)", () => {
+    const cash = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
+    expect(buildOrderRequest(cash, lines, token, 100)).not.toHaveProperty("tipCents");
+
+    const takeaway = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "transfer" } as const;
+    expect(buildOrderRequest(takeaway, lines, token, 100)).not.toHaveProperty("tipCents");
   });
 });

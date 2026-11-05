@@ -1,5 +1,5 @@
 import { useRef, useState } from "preact/hooks";
-import type { CreateOrderRequest, CreateOrderResponse, PublicMenu } from "@menucito/shared";
+import type { CreateOrderRequestInput, CreateOrderResponse, PublicMenu } from "@menucito/shared";
 import { browserStorage, type CartStore } from "./cart-store";
 import { toCatalog } from "./catalog";
 import { ORDER_SUBMIT_MESSAGES, orderFailureAction, refreshMenu, submitOrder } from "./order-api";
@@ -30,7 +30,7 @@ export interface OrderSubmit {
   clearError: () => void;
   dismissMenuRefreshed: () => void;
   /** Sends the order built for this attempt's idempotency token; ignored while one is on its way. */
-  send: (build: (clientOrderId: string) => CreateOrderRequest) => Promise<void>;
+  send: (build: (clientOrderId: string) => CreateOrderRequestInput) => Promise<void>;
 }
 
 /** Order submission and failure handling (scenarios 58 to 61). Nothing is resent automatically. */
@@ -98,7 +98,7 @@ export function useOrderSubmit({
     }
   };
 
-  const send = async (build: (clientOrderId: string) => CreateOrderRequest) => {
+  const send = async (build: (clientOrderId: string) => CreateOrderRequestInput) => {
     if (inFlight.current) return;
     inFlight.current = true;
     setSubmitting(true);
