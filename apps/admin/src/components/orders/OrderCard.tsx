@@ -8,6 +8,7 @@ import {
 } from "@menucito/shared";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { Badge } from "@/components/ui/badge";
+import { courierName } from "@/lib/couriers";
 
 export const ORDER_CARD_CLASS =
   "flex min-h-[44px] cursor-pointer flex-col gap-2 rounded-xl border border-line bg-white p-4 text-left shadow-sm transition hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-primary";
@@ -37,6 +38,13 @@ export function OrderCardContent({ order, showStatus = false }: { order: OrderSu
         <span className="truncate text-sm font-semibold text-ink">{order.customerName}</span>
         <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
       </div>
+
+      {order.courier && (
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="text-muted">Repartidor</span>
+          <span className="truncate font-bold text-ink">{courierName(order.courier)}</span>
+        </div>
+      )}
 
       <div className="flex items-center justify-between gap-2 border-t border-line/60 pt-2 text-xs">
         <span className="text-muted">

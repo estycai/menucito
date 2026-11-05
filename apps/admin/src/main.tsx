@@ -3,8 +3,10 @@ import { createRoot } from "react-dom/client";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AdminShell } from "@/components/shell/AdminShell";
-import { GuestOnly, RequireAuth, RequireNoRestaurant, RequirePermission, RequireRestaurant } from "@/components/guards";
+import { GuestOnly, RequireAuth, RequireCourier, RequireNoRestaurant, RequirePermission, RequireRestaurant } from "@/components/guards";
 import { ComingSoonPage } from "@/pages/ComingSoonPage";
+import { CouriersPage } from "@/pages/CouriersPage";
+import { DeliveriesPage } from "@/pages/DeliveriesPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import {
   LocalAppearanceTab,
@@ -60,6 +62,13 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 </Route>
                 <Route element={<RequirePermission permission="orders.view" />}>
                   <Route path="/pedidos" element={<OrdersPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="couriers.view" />}>
+                  <Route path="/repartidores" element={<CouriersPage />} />
+                </Route>
+                {/* "Mis repartos" follows the `is_courier` mark, not a permission (change 13, decision 10). */}
+                <Route element={<RequireCourier />}>
+                  <Route path="/mis-repartos" element={<DeliveriesPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="menu.view" />}>
                   <Route path="/menu" element={<MenuPage />} />

@@ -13,12 +13,16 @@ export interface NavItem {
   permission?: PermissionKey;
   /** Only the owner sees it; it is not a permission anyone can be given. */
   ownerOnly?: true;
+  /** Only a member marked as a courier sees it (change 13): the mark, not a permission, enables it. */
+  courierOnly?: true;
 }
 
 /** Panel sections in the order of the design canvas ("Usuarios" goes after "Mi local", spec 12). */
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: "summary", label: "Resumen", to: "/", title: "Resumen", permission: "summary.view" },
   { id: "orders", label: "Pedidos", to: "/pedidos", title: "Pedidos", permission: "orders.view" },
+  { id: "couriers", label: "Repartidores", to: "/repartidores", title: "Repartidores", permission: "couriers.view" },
+  { id: "deliveries", label: "Mis repartos", to: "/mis-repartos", title: "Mis repartos", courierOnly: true },
   { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú", permission: "menu.view" },
   { id: "local", label: "Mi local", to: "/local", title: "Mi local", permission: "store.view" },
   { id: "users", label: "Usuarios", to: "/usuarios", title: "Usuarios", ownerOnly: true },
@@ -31,6 +35,8 @@ export const NAV_ITEMS: readonly NavItem[] = [
 export function canSeeNavItem(item: NavItem, access: Access | null | undefined): boolean {
   const { can, isOwner } = accessApi(access);
   if (item.ownerOnly) return isOwner;
+  // The courier section follows the `is_courier` mark, on top of whatever the role's permissions grant.
+  if (item.courierOnly) return Boolean(access?.active && access.isCourier);
   return item.permission ? can(item.permission) : true;
 }
 

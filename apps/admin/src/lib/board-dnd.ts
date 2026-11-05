@@ -11,7 +11,7 @@ import {
   type UniqueIdentifier,
 } from "@dnd-kit/core";
 import { ORDER_STATUS_LABELS, type OrderSummary } from "@menucito/shared";
-import { adjacentColumn, isValidDrop, type BoardDropStatus } from "./orders";
+import { adjacentColumn, isValidDrop, type BoardDropStatus, type BoardPermissions } from "./orders";
 
 export interface BoardColumnConfig {
   status: BoardDropStatus;
@@ -59,7 +59,10 @@ export const BOARD_SCREEN_READER_INSTRUCTIONS = {
 };
 
 /** Screen reader announcements of a drag over the board columns. */
-export function boardAnnouncements(findOrder: (id: UniqueIdentifier) => OrderSummary | undefined): Announcements {
+export function boardAnnouncements(
+  findOrder: (id: UniqueIdentifier) => OrderSummary | undefined,
+  permissions: BoardPermissions = {},
+): Announcements {
   const numberOf = (id: UniqueIdentifier) => `#${findOrder(id)?.number ?? ""}`;
   return {
     onDragStart: ({ active }) => `Tomaste el pedido ${numberOf(active.id)}.`,
@@ -67,13 +70,13 @@ export function boardAnnouncements(findOrder: (id: UniqueIdentifier) => OrderSum
       if (!over) return `Pedido ${numberOf(active.id)} fuera de las columnas.`;
       const order = findOrder(active.id);
       const label = ORDER_STATUS_LABELS[over.id as BoardDropStatus];
-      return order && isValidDrop(order.status, order.fulfillment, over.id)
+      return order && isValidDrop(order.status, order.fulfillment, over.id, permissions)
         ? `Pedido ${numberOf(active.id)} sobre ${label}.`
         : `Pedido ${numberOf(active.id)} sobre ${label}. No se puede mover ahí.`;
     },
     onDragEnd: ({ active, over }) => {
       const order = findOrder(active.id);
-      return order && over && isValidDrop(order.status, order.fulfillment, over.id)
+      return order && over && isValidDrop(order.status, order.fulfillment, over.id, permissions)
         ? `Soltaste el pedido ${numberOf(active.id)} en ${ORDER_STATUS_LABELS[over.id]}.`
         : `Soltaste el pedido ${numberOf(active.id)}. No cambió de estado.`;
     },

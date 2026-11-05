@@ -16,6 +16,7 @@ import type { OrderSummary } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { QueryError } from "@/components/QueryError";
 import { BoardColumn } from "@/components/orders/BoardColumn";
+import { CourierPickerDialog } from "@/components/orders/CourierPickerDialog";
 import { OrderCardContent } from "@/components/orders/OrderCard";
 import {
   BOARD_COLUMNS,
@@ -40,6 +41,8 @@ import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 interface ActiveOrdersBoardProps {
   /** `orders.status`: without it the cards open the detail but cannot be dragged. */
   canMove?: boolean;
+  /** `orders.assign`: "Enviados" is reachable by assigning a courier (change 13, decision 5). */
+  canAssign?: boolean;
   /** `undefined` until the first successful load. */
   orders: OrderSummary[] | undefined;
   /** Orders delivered today, for the "Entregados" column; `undefined` until they load. */
@@ -57,6 +60,7 @@ interface ActiveOrdersBoardProps {
 /** "Activos" tab: the board of active orders, moved forward by drag and drop (mouse, touch or keyboard). */
 export function ActiveOrdersBoard({
   canMove = true,
+  canAssign = false,
   orders,
   deliveredOrders = [],
   isLoading,
@@ -70,6 +74,8 @@ export function ActiveOrdersBoard({
   const statusMutation = useChangeOrderStatus();
   const [boardError, setBoardError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
+  /** Ready order waiting for a courier: the picker is open for it (change 13 scenario 39). */
+  const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
 
   // Orders with a status change in flight (from the board or the detail dialog) cannot be dragged.
   const savingIds = useMutationState({
@@ -124,7 +130,10 @@ export function ActiveOrdersBoard({
   // Only active orders are draggable, so only they are looked up by the drag handlers.
   const findOrder = (id: UniqueIdentifier) => orders.find((o) => o.id === id);
   const activeOrder = activeId === null ? undefined : findOrder(activeId);
-  const validTargets = activeOrder ? dropTargetsFor(activeOrder.status, activeOrder.fulfillment) : [];
+  const validTargets = activeOrder
+    ? dropTargetsFor(activeOrder.status, activeOrder.fulfillment, { canChangeStatus: canMove, canAssign })
+    : [];
+  const assignOrder = assignOrderId === null ? undefined : findOrder(assignOrderId);
 
   function handleDragStart({ active, activatorEvent }: DragStartEvent) {
     setActiveId(active.id);
@@ -142,7 +151,14 @@ export function ActiveOrdersBoard({
 
     const order = findOrder(active.id);
     // Same column, a column behind or outside the board: nothing changes.
-    if (!order || !over || !isValidDrop(order.status, order.fulfillment, over.id)) return;
+    if (!order || !over || !isValidDrop(order.status, order.fulfillment, over.id, { canChangeStatus: canMove, canAssign })) return;
+
+    // "Enviados" is only reached by assigning a courier: the drop opens the picker.
+    if (over.id === "sent") {
+      setBoardError(null);
+      setAssignOrderId(order.id);
+      return;
+    }
 
     setBoardError(null);
     try {
@@ -171,7 +187,7 @@ export function ActiveOrdersBoard({
         sensors={sensors}
         collisionDetection={boardCollisionDetection}
         accessibility={{
-          announcements: boardAnnouncements(findOrder),
+          announcements: boardAnnouncements(findOrder, { canChangeStatus: canMove, canAssign }),
           screenReaderInstructions: BOARD_SCREEN_READER_INSTRUCTIONS,
         }}
         onDragStart={handleDragStart}
@@ -186,7 +202,7 @@ export function ActiveOrdersBoard({
                 key={column.status}
                 column={column}
                 orders={column.isFinal ? deliveredOrders : orders.filter((o) => o.status === column.status)}
-                canMove={canMove}
+                canMove={canMove || canAssign}
                 dragState={!activeOrder ? "idle" : validTargets.includes(column.status) ? "valid" : "invalid"}
                 savingIds={savingIds}
                 onSelectOrder={handleSelectOrder}
@@ -204,6 +220,21 @@ export function ActiveOrdersBoard({
           ) : null}
         </DragOverlay>
       </DndContext>
+
+      {assignOrder && (
+        <CourierPickerDialog
+          order={{
+            id: assignOrder.id,
+            number: assignOrder.number,
+            customerName: assignOrder.customerName,
+            totalCents: assignOrder.totalCents,
+          }}
+          status={assignOrder.status}
+          currentCourierId={assignOrder.courier?.memberId ?? null}
+          onClose={() => setAssignOrderId(null)}
+          onAssigned={() => setAssignOrderId(null)}
+        />
+      )}
     </div>
   );
 }

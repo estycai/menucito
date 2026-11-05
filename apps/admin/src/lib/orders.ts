@@ -149,12 +149,12 @@ export const ACTIVE_ORDERS_KEY = [...ORDERS_KEY, ACTIVE_ORDERS_FILTERS] as const
 export const DELIVERED_TODAY_LIMIT = 50;
 /**
  * Filters of the "Entregados" column: the orders delivered today, newest first (spec 11b, decision 4).
- * "Delivered today" is approximated by the last update, since there is no delivery timestamp.
+ * "Delivered today" uses the exact delivery timestamp (`delivered_at`, change 13 scenario 43).
  */
 export const DELIVERED_TODAY_FILTERS: OrderFilters = {
   status: "delivered",
   preset: "today",
-  dateField: "updated",
+  dateField: "delivered",
   limit: DELIVERED_TODAY_LIMIT,
 };
 export const DELIVERED_TODAY_KEY = [...ORDERS_KEY, DELIVERED_TODAY_FILTERS] as const;
@@ -165,19 +165,52 @@ export const DELIVERED_TODAY_HISTORY_FILTERS: OrderFilters = { status: "delivere
 export const BOARD_DROP_STATUSES = [...ACTIVE_ORDER_STATUSES, "delivered"] as const;
 export type BoardDropStatus = (typeof BOARD_DROP_STATUSES)[number];
 
+/** What the signed-in member may do with the board (`orders.status` and `orders.assign`). */
+export interface BoardPermissions {
+  /** `orders.status`: move the order to any column except "Enviados". */
+  canChangeStatus?: boolean;
+  /** `orders.assign`: assign a courier to a Ready order, which sends it. */
+  canAssign?: boolean;
+}
+
+const STATUS_BY_DEFAULT: Required<BoardPermissions> = { canChangeStatus: true, canAssign: true };
+
+/**
+ * Whether `column` is reachable from `status`: the other columns need `orders.status`; "Enviados" is
+ * only reached by assigning a courier to a Ready order (change 13, decision 5), so it needs
+ * `orders.assign` and cannot be skipped from New or Preparing.
+ */
+function canReach(status: OrderStatus, column: BoardDropStatus, permissions: BoardPermissions): boolean {
+  const { canChangeStatus, canAssign } = { ...STATUS_BY_DEFAULT, ...permissions };
+  if (column === "sent") return canAssign && status === "ready";
+  return canChangeStatus;
+}
+
 /**
  * Board drop targets an order in `status` can be dropped on: forward only, never its own column
- * (decision "Sin marcha atrás"), and "Enviados" only for delivery orders.
+ * (decision "Sin marcha atrás"), "Enviados" only for a Ready delivery order through assignment.
  */
-export function dropTargetsFor(status: OrderStatus, fulfillment: Fulfillment): BoardDropStatus[] {
-  return BOARD_DROP_STATUSES.filter((column) => canTransition(status, column, fulfillment));
+export function dropTargetsFor(
+  status: OrderStatus,
+  fulfillment: Fulfillment,
+  permissions: BoardPermissions = {},
+): BoardDropStatus[] {
+  return BOARD_DROP_STATUSES.filter(
+    (column) => canTransition(status, column, fulfillment) && canReach(status, column, permissions),
+  );
 }
 
 /** Whether dropping an order in `status` on `target` (a droppable id, if any) changes its status. */
-export function isValidDrop(status: OrderStatus, fulfillment: Fulfillment, target: unknown): target is BoardDropStatus {
+export function isValidDrop(
+  status: OrderStatus,
+  fulfillment: Fulfillment,
+  target: unknown,
+  permissions: BoardPermissions = {},
+): target is BoardDropStatus {
   return (
     (BOARD_DROP_STATUSES as readonly unknown[]).includes(target) &&
-    canTransition(status, target as BoardDropStatus, fulfillment)
+    canTransition(status, target as BoardDropStatus, fulfillment) &&
+    canReach(status, target as BoardDropStatus, permissions)
   );
 }
 
@@ -241,6 +274,25 @@ export function revertOrder(pages: BoardPages, previous: OrderSummary): BoardPag
   };
 }
 
+/**
+ * The board after a successful assignment: the order shows its courier and, when it was Ready, moves
+ * to Enviados without waiting for the refetch (scenario 39). A sent order only changes its courier.
+ */
+export function applyAssignment(pages: BoardPages, updated: OrderDetail): BoardPages {
+  if (!pages.active) return pages;
+  const exists = pages.active.orders.some((order) => order.id === updated.id);
+  if (!exists) return pages;
+  return {
+    ...pages,
+    active: {
+      ...pages.active,
+      orders: pages.active.orders.map((order) =>
+        order.id === updated.id ? { ...order, status: updated.status, courier: updated.courier } : order,
+      ),
+    },
+  };
+}
+
 function hasErrorCode(err: unknown, code: string): boolean {
   return Boolean(err && typeof err === "object" && "code" in err && (err as { code: unknown }).code === code);
 }
@@ -266,16 +318,25 @@ export async function exportErrorFrom(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body?.error?.code ?? "UNKNOWN", body?.error?.message ?? res.statusText);
 }
 
-/** How often the order lists refresh, only while the tab is visible. */
-export const ORDERS_POLL_MS = 30000;
+/** How often the order lists refresh while the tab is visible: a courier's delivery shows up in seconds. */
+export const ORDERS_POLL_MS = 5000;
+/** With the tab hidden the lists keep listening, slower, so the new-order toast and board stay current. */
+export const ORDERS_BACKGROUND_POLL_MS = 30000;
+
+/** Poll interval for the current tab visibility (no `document` outside the browser counts as visible). */
+export function ordersPollInterval(): number {
+  const hidden = typeof document !== "undefined" && document.visibilityState === "hidden";
+  return hidden ? ORDERS_BACKGROUND_POLL_MS : ORDERS_POLL_MS;
+}
 
 /** Query of a list of orders; shared by `useOrders` and anything that observes the same list. */
 export function ordersQueryOptions(filters: OrderFilters) {
   return queryOptions({
     queryKey: [...ORDERS_KEY, filters],
     queryFn: () => api<OrdersPage>(ordersPath(filters)),
-    refetchInterval: ORDERS_POLL_MS,
-    refetchIntervalInBackground: false,
+    refetchInterval: ordersPollInterval,
+    refetchIntervalInBackground: true,
+    refetchOnWindowFocus: true,
   });
 }
 
@@ -291,7 +352,8 @@ export function useOrdersHistory(filters: OrderFilters) {
     queryFn: ({ pageParam }) => api<OrdersPage>(ordersPath(filters, pageParam)),
     initialPageParam: undefined as number | undefined,
     getNextPageParam: (lastPage) => lastPage.nextBefore ?? undefined,
-    refetchInterval: ORDERS_POLL_MS,
+    // History reloads every loaded page on each poll, so it keeps the slow pace.
+    refetchInterval: ORDERS_BACKGROUND_POLL_MS,
     refetchIntervalInBackground: false,
   });
 }
@@ -347,6 +409,36 @@ export function useChangeOrderStatus() {
       queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
     },
     // Both board lists (and the history) reload whatever the outcome.
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+    },
+  });
+}
+
+/**
+ * `POST /api/orders/:id/assign`: sends a Ready order or reassigns a sent one (change 13, decisions
+ * 5 and 7). The board shows the courier as soon as the API answers, then both lists reload; it is
+ * not optimistic because the courier's name only comes in the response.
+ */
+export function useAssignCourier() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, courierMemberId }: { id: string; courierMemberId: string }) =>
+      api<OrderDetail>(`/api/orders/${id}/assign`, {
+        method: "POST",
+        body: JSON.stringify({ courierMemberId }),
+      }),
+    onMutate: async () => {
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: ACTIVE_ORDERS_KEY, exact: true }),
+        queryClient.cancelQueries({ queryKey: DELIVERED_TODAY_KEY, exact: true }),
+      ]);
+    },
+    onSuccess: (updated) => {
+      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      const pages = readBoard(queryClient);
+      writeBoard(queryClient, pages, applyAssignment(pages, updated));
+    },
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
     },

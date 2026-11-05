@@ -5,6 +5,7 @@ export const ORDERS_UI_MESSAGES = {
   detailLoadFailed: "No pudimos cargar el pedido.",
   orderChanged: "El pedido cambió. Lo actualizamos.",
   updateFailed: "No pudimos actualizar el pedido. Probá de nuevo.",
+  assignFailed: "No pudimos asignar el repartidor. Probá de nuevo.",
   exportTooLarge: "Hay demasiados pedidos para exportar. Acotá las fechas.",
   exportFailed: "No pudimos exportar los pedidos. Probá de nuevo.",
 } as const;

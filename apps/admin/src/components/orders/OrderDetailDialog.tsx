@@ -15,11 +15,13 @@ import {
 } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { QueryError } from "@/components/QueryError";
+import { CourierPickerDialog } from "@/components/orders/CourierPickerDialog";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { PaymentStatusBadge } from "@/components/orders/PaymentStatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAccess } from "@/lib/access";
+import { courierName } from "@/lib/couriers";
 import {
   googleMapsSearchUrl,
   isInvalidTransitionError,
@@ -39,11 +41,13 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const { can } = useAccess();
   const canChangeStatus = can("orders.status");
   const canChangePayment = can("orders.payment");
+  const canAssign = can("orders.assign");
   const statusMutation = useChangeOrderStatus();
   const paymentMutation = useChangeOrderPayment();
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
+  const [showCourierPicker, setShowCourierPicker] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -86,6 +90,7 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const next = order ? nextStatus(order.status, order.fulfillment) : null;
 
   return (
+    <>
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
@@ -137,9 +142,9 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             <OrderItems order={order} />
             <OrderTotals order={order} />
 
-            {(canChangeStatus || canChangePayment) && (
+            {(canChangeStatus || canChangePayment || canAssign) && (
             <div className="flex flex-col gap-2 border-t border-line pt-4">
-              {canChangeStatus && next && !showCancelConfirm && (
+              {canChangeStatus && next && next !== "sent" && !showCancelConfirm && (
                 <Button
                   type="button"
                   disabled={isPendingAction}
@@ -147,6 +152,30 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                   className="min-h-11 w-full text-sm font-bold"
                 >
                   Pasar a {ORDER_STATUS_LABELS[next]}
+                </Button>
+              )}
+
+              {/* "Enviados" is only reached by assigning a courier (change 13, decision 5, scenario 41). */}
+              {canAssign && next === "sent" && !showCancelConfirm && (
+                <Button
+                  type="button"
+                  disabled={isPendingAction}
+                  onClick={() => setShowCourierPicker(true)}
+                  className="min-h-11 w-full text-sm font-bold"
+                >
+                  Pasar a Enviado
+                </Button>
+              )}
+
+              {canAssign && order.status === "sent" && !showCancelConfirm && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={isPendingAction}
+                  onClick={() => setShowCourierPicker(true)}
+                  className="min-h-11 w-full text-sm font-bold"
+                >
+                  Cambiar repartidor
                 </Button>
               )}
 
@@ -207,6 +236,23 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
         )}
       </div>
     </dialog>
+
+    {showCourierPicker && order && (
+      <CourierPickerDialog
+        order={{
+          id: order.id,
+          number: order.number,
+          customerName: order.customerName,
+          totalCents: order.totalCents,
+          deliveryAddress: order.deliveryAddress,
+        }}
+        status={order.status}
+        currentCourierId={order.courier?.memberId ?? null}
+        onClose={() => setShowCourierPicker(false)}
+        onAssigned={() => setShowCourierPicker(false)}
+      />
+    )}
+    </>
   );
 }
 
@@ -228,6 +274,7 @@ function OrderCustomer({ order }: { order: OrderDetail }) {
       {order.fulfillment === "delivery" && order.deliveryLocation && (
         <OrderDeliveryLocationDetails location={order.deliveryLocation} />
       )}
+      {order.courier && <span className="text-muted">Repartidor: {courierName(order.courier)}</span>}
     </div>
   );
 }
@@ -293,6 +340,12 @@ function OrderTotals({ order }: { order: OrderDetail }) {
         <div className="flex justify-between text-muted">
           <span>Envío</span>
           <span>{order.shippingCents > 0 ? formatArs(order.shippingCents) : "Gratis"}</span>
+        </div>
+      )}
+      {order.tipCents > 0 && (
+        <div className="flex justify-between text-muted">
+          <span>Propina</span>
+          <span>{formatArs(order.tipCents)}</span>
         </div>
       )}
       <div className="flex justify-between pt-1 text-base font-extrabold text-ink">

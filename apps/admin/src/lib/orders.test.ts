@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { OrderSummary } from "@menucito/shared";
+import type { OrderDetail, OrderSummary } from "@menucito/shared";
 import { ApiError } from "./restaurant";
 import {
   ACTIVE_ORDERS_KEY,
+  ORDERS_BACKGROUND_POLL_MS,
+  ORDERS_POLL_MS,
+  ordersPollInterval,
   DELIVERED_TODAY_FILTERS,
   DELIVERED_TODAY_KEY,
   adjacentColumn,
+  applyAssignment,
   buildQueryString,
   dropTargetsFor,
   filtersFromSearchParams,
@@ -102,12 +106,25 @@ describe("pagination cursor", () => {
 
 describe("board drag and drop", () => {
   it("offers only the columns ahead of the order (no going back)", () => {
-    expect(dropTargetsFor("new", "delivery")).toEqual(["preparing", "ready", "sent", "delivered"]);
-    expect(dropTargetsFor("preparing", "delivery")).toEqual(["ready", "sent", "delivered"]);
+    expect(dropTargetsFor("new", "delivery")).toEqual(["preparing", "ready", "delivered"]);
+    expect(dropTargetsFor("preparing", "delivery")).toEqual(["ready", "delivered"]);
     expect(dropTargetsFor("ready", "delivery")).toEqual(["sent", "delivered"]);
     expect(dropTargetsFor("sent", "delivery")).toEqual(["delivered"]);
     expect(dropTargetsFor("delivered", "delivery")).toEqual([]);
     expect(dropTargetsFor("cancelled", "delivery")).toEqual([]);
+  });
+
+  it("only sends a Ready order, through assignment (13 scenarios 39 and 41)", () => {
+    // Enviados is not a step that can be skipped: it is reached by assigning a courier to a Ready order.
+    expect(isValidDrop("new", "delivery", "sent")).toBe(false);
+    expect(isValidDrop("preparing", "delivery", "sent")).toBe(false);
+    expect(isValidDrop("ready", "delivery", "sent")).toBe(true);
+    // Without `orders.assign`, Enviados is not a valid destination at all.
+    expect(dropTargetsFor("ready", "delivery", { canAssign: false })).toEqual(["delivered"]);
+    expect(isValidDrop("ready", "delivery", "sent", { canAssign: false })).toBe(false);
+    // A member without `orders.status` can still assign, but cannot move to the other columns.
+    expect(dropTargetsFor("ready", "delivery", { canChangeStatus: false })).toEqual(["sent"]);
+    expect(isValidDrop("new", "delivery", "preparing", { canChangeStatus: false })).toBe(false);
   });
 
   it("never offers Enviados to a takeaway order (spec 11b, scenario 14)", () => {
@@ -149,10 +166,10 @@ describe("board drag and drop", () => {
 });
 
 describe("delivered today query", () => {
-  it("asks for the orders delivered (last updated) today, at most 50 (spec 11b, decision 4)", () => {
+  it("asks for the orders delivered (delivered_at) today, at most 50 (13 scenario 43)", () => {
     const path = ordersPath(DELIVERED_TODAY_FILTERS);
     expect(path).toMatch(
-      /^\/api\/orders\?status=delivered&from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}&dateField=updated&limit=50$/,
+      /^\/api\/orders\?status=delivered&from=\d{4}-\d{2}-\d{2}&to=\d{4}-\d{2}-\d{2}&dateField=delivered&limit=50$/,
     );
     expect(DELIVERED_TODAY_KEY).not.toEqual(ACTIVE_ORDERS_KEY);
   });
@@ -235,6 +252,35 @@ describe("revertOrder", () => {
   });
 });
 
+describe("applyAssignment (13 scenario 39)", () => {
+  const courier = { memberId: "m1", firstName: "Ana", lastName: "Gómez" };
+  const summary = (id: string, number: number, status: OrderSummary["status"]) => ({ id, number, status }) as OrderSummary;
+  const detail = (id: string, status: OrderDetail["status"]) =>
+    ({ id, number: 1, status, courier }) as OrderDetail;
+  const start: BoardPages = {
+    active: { orders: [summary("a", 2, "ready"), summary("b", 1, "sent")], nextBefore: null },
+    delivered: { orders: [], nextBefore: null },
+  };
+
+  it("shows the courier and sends a Ready order to Enviados without reloading", () => {
+    const next = applyAssignment(start, detail("a", "sent"));
+    expect(next.active?.orders.find((o) => o.id === "a")).toMatchObject({ status: "sent", courier });
+    // The other order keeps its own state.
+    expect(next.active?.orders.find((o) => o.id === "b")).toEqual(summary("b", 1, "sent"));
+  });
+
+  it("keeps a sent order in place and only changes its courier (reassignment)", () => {
+    const next = applyAssignment(start, detail("b", "sent"));
+    expect(next.active?.orders.find((o) => o.id === "b")).toMatchObject({ status: "sent", courier });
+  });
+
+  it("leaves the board untouched when the order is not on the active list", () => {
+    expect(applyAssignment(start, detail("zzz", "sent"))).toBe(start);
+    const empty: BoardPages = { active: undefined, delivered: undefined };
+    expect(applyAssignment(empty, detail("a", "sent"))).toBe(empty);
+  });
+});
+
 describe("isInvalidTransitionError", () => {
   it("recognizes the 409 of a status that changed meanwhile", () => {
     expect(isInvalidTransitionError(new ApiError(409, "INVALID_TRANSITION", "x"))).toBe(true);
@@ -282,5 +328,20 @@ describe("googleMapsSearchUrl", () => {
     expect(googleMapsSearchUrl({ lat: -34.6037, lng: -58.3816 })).toBe(
       "https://www.google.com/maps/search/?api=1&query=-34.6037,-58.3816",
     );
+  });
+});
+
+describe("ordersPollInterval", () => {
+  it("polls fast with the tab visible and keeps listening slower when hidden", () => {
+    const original = Object.getOwnPropertyDescriptor(globalThis, "document");
+    try {
+      Object.defineProperty(globalThis, "document", { value: { visibilityState: "visible" }, configurable: true });
+      expect(ordersPollInterval()).toBe(ORDERS_POLL_MS);
+      Object.defineProperty(globalThis, "document", { value: { visibilityState: "hidden" }, configurable: true });
+      expect(ordersPollInterval()).toBe(ORDERS_BACKGROUND_POLL_MS);
+    } finally {
+      if (original) Object.defineProperty(globalThis, "document", original);
+      else delete (globalThis as { document?: unknown }).document;
+    }
   });
 });

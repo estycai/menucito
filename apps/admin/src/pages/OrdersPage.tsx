@@ -33,6 +33,7 @@ export function OrdersPage() {
   // Without these keys the actions are not offered (the API refuses them anyway).
   const { can } = useAccess();
   const canMove = can("orders.status");
+  const canAssign = can("orders.assign");
   const canExport = can("orders.export");
   const [tab, setTab] = useState<OrdersTab>("active");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
@@ -180,6 +181,7 @@ export function OrdersPage() {
           {tab === "active" && !showMap && (
             <ActiveOrdersBoard
               canMove={canMove}
+              canAssign={canAssign}
               orders={activeOrders}
               deliveredOrders={deliveredQuery.data?.orders}
               isLoading={activeQuery.isLoading}

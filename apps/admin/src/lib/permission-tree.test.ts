@@ -48,7 +48,7 @@ describe("togglePermission", () => {
 describe("sectionState", () => {
   it("counts the checked sub-permissions", () => {
     const state = sectionState(["orders.view", "orders.status", "orders.export"], section("orders.view"));
-    expect(state).toEqual({ checked: true, checkedCount: 2, totalCount: 3, summary: "2 de 3" });
+    expect(state).toEqual({ checked: true, checkedCount: 2, totalCount: 4, summary: "2 de 4" });
   });
 
   it("has no summary when no sub-permission is checked or the section has none", () => {

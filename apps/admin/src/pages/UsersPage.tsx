@@ -281,10 +281,13 @@ export function UsersRolesTab() {
 }
 
 /** Copy of a failed owner action; the codes the API uses for "the thing changed under you" get their own. */
-function actionFailure(cause: unknown, verb: string): string {
+export function actionFailure(cause: unknown, verb: string): string {
   if (cause instanceof ApiError) {
     if (cause.code === "MEMBER_NOT_FOUND" || cause.code === "ROLE_NOT_FOUND") {
       return "Ya no existe. Recargá la página para ver la lista actualizada.";
+    }
+    if (cause.code === "MEMBER_HAS_HISTORY") {
+      return "Tiene pedidos asignados. Desactivalo en lugar de eliminarlo.";
     }
     if (cause.code === "OWNER_IMMUTABLE") return "El dueño no se puede modificar.";
     if (cause.code === "SYSTEM_ROLE") return "El rol del dueño no se puede modificar.";

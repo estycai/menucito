@@ -57,6 +57,15 @@ export function RequirePermission({ permission, ownerOnly = false }: { permissio
   return allowed ? <Outlet /> : <NoAccess />;
 }
 
+/**
+ * A section only a courier may open (change 13, "Mis repartos"): it follows the `is_courier` mark, not a
+ * permission, so a member without the mark sees "No tenés acceso". Use inside `RequireRestaurant`.
+ */
+export function RequireCourier() {
+  const { access } = useAccess();
+  return access?.active && access.isCourier ? <Outlet /> : <NoAccess />;
+}
+
 /** Onboarding: users who already have a restaurant go to /. Use inside `RequireAuth`. */
 export function RequireNoRestaurant() {
   const { data: restaurant, isPending, isError } = useMyRestaurant();

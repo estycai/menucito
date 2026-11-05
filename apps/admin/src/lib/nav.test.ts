@@ -5,6 +5,7 @@ import { NAV_ITEMS, activeNavItem, canSeeNavItem, documentTitle, visibleNavItems
 const staff = (permissions: PermissionKey[], overrides: Partial<Access> = {}): Access => ({
   memberId: "m1",
   isOwner: false,
+  isCourier: false,
   active: true,
   role: { id: "r1", name: "Cajero", active: true },
   permissions,
@@ -18,6 +19,8 @@ describe("NAV_ITEMS", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Resumen",
       "Pedidos",
+      "Repartidores",
+      "Mis repartos",
       "Mi menú",
       "Mi local",
       "Usuarios",
@@ -36,6 +39,8 @@ describe("activeNavItem", () => {
   it.each([
     ["/", "Resumen"],
     ["/pedidos", "Pedidos"],
+    ["/repartidores", "Repartidores"],
+    ["/mis-repartos", "Mis repartos"],
     ["/menu", "Mi menú"],
     ["/menu/products/new", "Mi menú"],
     ["/menu/products/abc123", "Mi menú"],
@@ -83,8 +88,22 @@ describe("documentTitle", () => {
 });
 
 describe("visibleNavItems", () => {
-  it("shows the owner every section, Usuarios and Plan y pagos included", () => {
-    expect(labels(owner)).toEqual(NAV_ITEMS.map((item) => item.label));
+  it("shows the owner every section except the courier's own, Usuarios and Plan y pagos included", () => {
+    expect(labels(owner)).toEqual(NAV_ITEMS.filter((item) => !item.courierOnly).map((item) => item.label));
+  });
+
+  it("shows a member their sections, and adds Mis repartos only when marked as courier (13 scenario 44)", () => {
+    const courier = staff([], { isCourier: true });
+    expect(labels(courier)).toEqual(["Mis repartos"]);
+    // The mark adds the section on top of the role's sections, it does not replace them.
+    expect(labels(staff(["orders.view"], { isCourier: true }))).toEqual(["Pedidos", "Mis repartos"]);
+    expect(labels(staff(["orders.view"]))).toEqual(["Pedidos"]);
+  });
+
+  it("shows Repartidores to a member with couriers.view", () => {
+    expect(labels(staff(["couriers.view"]))).toEqual(["Repartidores"]);
+    // A courier with that permission sees both.
+    expect(labels(staff(["couriers.view"], { isCourier: true }))).toEqual(["Repartidores", "Mis repartos"]);
   });
 
   it("shows a member only the sections whose view key they have", () => {
@@ -109,5 +128,9 @@ describe("visibleNavItems", () => {
     const users = NAV_ITEMS.find((item) => item.id === "users")!;
     expect(canSeeNavItem(users, owner)).toBe(true);
     expect(canSeeNavItem(users, staff([...ALL_PERMISSIONS]))).toBe(false);
+
+    const deliveries = NAV_ITEMS.find((item) => item.id === "deliveries")!;
+    expect(canSeeNavItem(deliveries, staff([], { isCourier: true }))).toBe(true);
+    expect(canSeeNavItem(deliveries, staff([...ALL_PERMISSIONS]))).toBe(false);
   });
 });
