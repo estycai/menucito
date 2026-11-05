@@ -447,7 +447,7 @@ describe("Owner Orders API (scenarios 31-38)", () => {
 
     const csvText = new TextDecoder().decode(bytes);
     // Semicolon separated header
-    expect(csvText).toContain("Número;Fecha y hora;Estado;Estado de pago;Modalidad;Forma de pago;Cliente;Teléfono;Dirección;Subtotal;Envío;Total;Ítems");
+    expect(csvText).toContain("Número;Fecha y hora;Estado;Estado de pago;Modalidad;Forma de pago;Cliente;Teléfono;Dirección;Repartidor;Subtotal;Envío;Propina;Total;Ítems");
 
     // Customer name with = escaped with apostrophe
     expect(csvText).toContain("'=SUM(1,2)");
@@ -504,41 +504,44 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
     return { client, restaurant, prod, patchStatus };
   }
 
-  it("sends a delivery order and rejects sending a takeaway one with 409 (scenario 10)", async () => {
+  it("requires a courier to send a delivery order and rejects sending a takeaway one with 409 (scenario 10, decision 6)", async () => {
     const { restaurant, prod, patchStatus } = await ownerWithProduct();
     const delivery = await createOrder(restaurant.slug, prod.id, { fulfillment: "delivery" });
     const takeaway = await createOrder(restaurant.slug, prod.id, { fulfillment: "takeaway" });
 
+    // Since spec 13, `sent` is reached only by assigning a courier.
     const resSent = await patchStatus(delivery.order.id, "sent");
-    expect(resSent.status).toBe(200);
-    expect(((await resSent.json()) as { status: string }).status).toBe("sent");
+    expect(resSent.status).toBe(409);
+    expect(((await resSent.json()) as { error: { code: string } }).error.code).toBe("COURIER_REQUIRED");
 
     const resTakeaway = await patchStatus(takeaway.order.id, "sent");
     expect(resTakeaway.status).toBe(409);
     expect(((await resTakeaway.json()) as { error: { code: string } }).error.code).toBe("INVALID_TRANSITION");
 
-    // A sent order moves on to delivered, and never back to ready.
-    expect((await patchStatus(delivery.order.id, "ready")).status).toBe(409);
+    // The delivery order still walks its pipeline and never goes back.
+    expect((await patchStatus(delivery.order.id, "ready")).status).toBe(200);
+    expect((await patchStatus(delivery.order.id, "new")).status).toBe(409);
     expect((await patchStatus(delivery.order.id, "delivered")).status).toBe(200);
   });
 
   it("cancels a sent order (scenario 10, decision 2)", async () => {
     const { restaurant, prod, patchStatus } = await ownerWithProduct();
     const created = await createOrder(restaurant.slug, prod.id, { fulfillment: "delivery" });
+    // A sent order (older ones have no courier) still cancels from Pedidos.
+    await env.DB.prepare("UPDATE orders SET status = 'sent' WHERE id = ?").bind(created.order.id).run();
 
-    expect((await patchStatus(created.order.id, "sent")).status).toBe(200);
     const resCancel = await patchStatus(created.order.id, "cancelled");
     expect(resCancel.status).toBe(200);
     expect(((await resCancel.json()) as { status: string }).status).toBe("cancelled");
   });
 
-  it("never lets two simultaneous changes from ready trample each other (scenario 10)", async () => {
+  it("never lets two simultaneous changes from ready trample each other (scenario 34)", async () => {
     const { restaurant, prod, patchStatus } = await ownerWithProduct();
     const created = await createOrder(restaurant.slug, prod.id, { fulfillment: "delivery" });
     expect((await patchStatus(created.order.id, "ready")).status).toBe(200);
 
-    const [toSent, toCancelled] = await Promise.all([
-      patchStatus(created.order.id, "sent"),
+    const [toDelivered, toCancelled] = await Promise.all([
+      patchStatus(created.order.id, "delivered"),
       patchStatus(created.order.id, "cancelled"),
     ]);
     const final = (await env.DB.prepare("SELECT status FROM orders WHERE id = ?")
@@ -546,7 +549,7 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
       .first<{ status: string }>())!.status;
 
     const results = [
-      { target: "sent", status: toSent.status },
+      { target: "delivered", status: toDelivered.status },
       { target: "cancelled", status: toCancelled.status },
     ];
     for (const result of results) expect([200, 409]).toContain(result.status);
@@ -555,12 +558,12 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
     if (winners.length === 1) {
       expect(final).toBe(winners[0]!.target);
     } else {
-      // One after the other: only ready -> sent -> cancelled is valid, never cancelled -> sent.
+      // One after the other: only ready -> delivered -> cancelled would be valid, never cancelled -> delivered.
       expect(final).toBe("cancelled");
     }
   });
 
-  it("filters delivered orders by when they were last updated with dateField=updated (decision 4)", async () => {
+  it("filters delivered orders by when they were delivered with dateField=delivered (decision 4, scenario 43)", async () => {
     const { client, restaurant, prod, patchStatus } = await ownerWithProduct();
     const afterMidnight = await createOrder(restaurant.slug, prod.id);
     const fromYesterday = await createOrder(restaurant.slug, prod.id);
@@ -569,14 +572,14 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
 
     // Local times in Buenos Aires (UTC-3).
     const at = (iso: string) => new Date(iso).getTime();
-    const setDates = (id: string, createdIso: string, updatedIso: string) =>
-      env.DB.prepare("UPDATE orders SET created_at = ?, updated_at = ? WHERE id = ?")
-        .bind(at(createdIso), at(updatedIso), id)
+    const setDates = (id: string, createdIso: string, updatedIso: string, deliveredIso: string) =>
+      env.DB.prepare("UPDATE orders SET created_at = ?, updated_at = ?, delivered_at = ? WHERE id = ?")
+        .bind(at(createdIso), at(updatedIso), at(deliveredIso), id)
         .run();
     // Created 2026-11-02 23:30, delivered 2026-11-03 00:10.
-    await setDates(afterMidnight.order.id, "2026-11-03T02:30:00Z", "2026-11-03T03:10:00Z");
+    await setDates(afterMidnight.order.id, "2026-11-03T02:30:00Z", "2026-11-03T03:10:00Z", "2026-11-03T03:10:00Z");
     // Created 2026-11-02 13:00, delivered 2026-11-03 12:00.
-    await setDates(fromYesterday.order.id, "2026-11-02T16:00:00Z", "2026-11-03T15:00:00Z");
+    await setDates(fromYesterday.order.id, "2026-11-02T16:00:00Z", "2026-11-03T15:00:00Z", "2026-11-03T15:00:00Z");
 
     const idsOf = async (query: string) =>
       ((await (await client.get(`/api/orders?${query}`)).json()) as { orders: Array<{ id: string }> }).orders
@@ -584,12 +587,13 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
         .sort();
     const both = [afterMidnight.order.id, fromYesterday.order.id].sort();
 
+    expect(await idsOf("status=delivered&from=2026-11-03&to=2026-11-03&dateField=delivered")).toEqual(both);
+    expect(await idsOf("status=delivered&from=2026-11-02&to=2026-11-02&dateField=delivered")).toEqual([]);
+    // `updated` still sees them on the day of their last change.
     expect(await idsOf("status=delivered&from=2026-11-03&to=2026-11-03&dateField=updated")).toEqual(both);
-    expect(await idsOf("status=delivered&from=2026-11-02&to=2026-11-02&dateField=updated")).toEqual([]);
     // The default keeps filtering on the creation date (history and CSV are unchanged).
     expect(await idsOf("status=delivered&from=2026-11-03&to=2026-11-03")).toEqual([]);
     expect(await idsOf("status=delivered&from=2026-11-02&to=2026-11-02")).toEqual(both);
-    expect((await client.get("/api/orders?dateField=delivered")).status).toBe(422);
   });
 
   it("filters by sent, includes sent in active and labels it Enviado in the CSV (scenario 11)", async () => {
@@ -597,7 +601,8 @@ describe("Sent status (spec 11b, scenarios 10-12)", () => {
     const sent = await createOrder(restaurant.slug, prod.id, { fulfillment: "delivery" });
     const fresh = await createOrder(restaurant.slug, prod.id, { fulfillment: "delivery" });
     const delivered = await createOrder(restaurant.slug, prod.id, { fulfillment: "takeaway" });
-    expect((await patchStatus(sent.order.id, "sent")).status).toBe(200);
+    // A sent order of the older kind (no courier) is set directly.
+    await env.DB.prepare("UPDATE orders SET status = 'sent' WHERE id = ?").bind(sent.order.id).run();
     expect((await patchStatus(delivered.order.id, "delivered")).status).toBe(200);
 
     const resSent = await client.get("/api/orders?status=sent");

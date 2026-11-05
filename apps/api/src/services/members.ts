@@ -3,8 +3,9 @@ import { createAuthAdmin, EmailAlreadyRegisteredError, type AuthAdmin } from "..
 import type { Env } from "../env";
 import { UniqueViolationError } from "../repositories/errors";
 import { createMembersRepository, type MemberRecord, type MembersRepository } from "../repositories/members";
+import { createOrdersRepository, type OrdersRepository } from "../repositories/orders";
 import { createRolesRepository, type RolesRepository } from "../repositories/roles";
-import { EmailInUseError, MemberNotFoundError, OwnerImmutableError, ValidationError } from "./errors";
+import { EmailInUseError, MemberHasHistoryError, MemberNotFoundError, OwnerImmutableError, ValidationError } from "./errors";
 
 const fullName = (firstName: string, lastName: string) => `${firstName} ${lastName}`.trim();
 
@@ -27,6 +28,8 @@ export interface MembersDependencies {
   members: MembersRepository;
   roles: RolesRepository;
   authAdmin: AuthAdmin;
+  /** Only used to know whether a member has orders assigned before deleting it. */
+  orders: Pick<OrdersRepository, "countByCourier">;
   now?: () => Date;
   generateId?: () => string;
 }
@@ -39,6 +42,7 @@ export function createMembersService({
   members,
   roles,
   authAdmin,
+  orders,
   now = () => new Date(),
   generateId = () => crypto.randomUUID(),
 }: MembersDependencies) {
@@ -153,10 +157,12 @@ export function createMembersService({
     /**
      * Deletes the account first: the member row, sessions and credentials all cascade from it, so a failure
      * leaves everything intact instead of an orphan login without a membership. The email can be used again.
+     * A member with orders assigned is kept for the history: the owner deactivates it instead (decision 16).
      */
     async remove(restaurantId: string, id: string): Promise<void> {
       const current = await recordOf(restaurantId, id);
       assertNotOwner(current);
+      if ((await orders.countByCourier(restaurantId, id)) > 0) throw new MemberHasHistoryError();
       await authAdmin.deleteUser(current.member.userId);
       // Safety net in case the cascade did not remove the row (it is a no-op when it did).
       await members.delete(restaurantId, id);
@@ -172,5 +178,6 @@ export async function membersServiceFor(env: Env): Promise<MembersService> {
     members: createMembersRepository(env.DB),
     roles: createRolesRepository(env.DB),
     authAdmin: await createAuthAdmin(env),
+    orders: createOrdersRepository(env.DB),
   });
 }

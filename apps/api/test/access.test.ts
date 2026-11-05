@@ -142,7 +142,7 @@ describe("inactive members and roles (scenario 14)", () => {
 
   it("answers FORBIDDEN on every route but /me when the role is inactive", async () => {
     const { client } = await staffClient({ permissions: [...ALL_PERMISSIONS], roleActive: false });
-    for (const route of OWNER_ROUTES.filter((r) => r.declared !== "member" && r.declared !== "owner")) {
+    for (const route of OWNER_ROUTES.filter((r) => r.declared !== "member" && r.declared !== "owner" && r.declared !== "courier")) {
       const res = await call(client, route);
       expect(res.status, `${route.method} ${route.pattern}`).toBe(403);
       expect(await errorCode(res), `${route.method} ${route.pattern}`).toBe("FORBIDDEN");
@@ -192,6 +192,7 @@ describe("GET /api/restaurants/me (scenario 16)", () => {
     expect(body.access).toEqual({
       memberId: owner.memberId,
       isOwner: true,
+      isCourier: false,
       active: true,
       role: { id: expect.any(String), name: "Dueño", active: true },
       permissions: [...ALL_PERMISSIONS],
@@ -207,6 +208,7 @@ describe("GET /api/restaurants/me (scenario 16)", () => {
     expect(body.access).toEqual({
       memberId: staff.memberId,
       isOwner: false,
+      isCourier: false,
       active: true,
       role: { id: staff.roleId, name: expect.stringMatching(/^Rol /), active: true },
       permissions: ["orders.view", "orders.payment"],

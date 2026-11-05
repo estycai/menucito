@@ -12,7 +12,9 @@ export type RouteGuard =
   | { kind: "permission"; permission: PermissionKey }
   | { kind: "owner" }
   /** Any member, with no permission needed (`GET /api/restaurants/me`: the admin needs it to know what the user can do). */
-  | { kind: "member" };
+  | { kind: "member" }
+  /** A member marked as a courier (`is_courier`), active: "Mis repartos" needs no permission (decision 10). */
+  | { kind: "courier" };
 
 type GuardedMiddleware = MiddlewareHandler<AppEnv> & { guard: RouteGuard };
 
@@ -43,6 +45,7 @@ export const requireMember = createMiddleware<AppEnv>(async (c, next) => {
     userId: member.userId,
     restaurantId: member.restaurantId,
     isOwner: member.isOwner,
+    isCourier: member.isCourier,
     active: member.active,
     permissions,
     role: { id: role.id, name: role.name, active: role.active },
@@ -78,5 +81,13 @@ export const requireOwner: GuardedMiddleware = guarded({ kind: "owner" }, async 
 
 /** Declares that any member may call the route (even an inactive one or one with an inactive role). */
 export const allowAnyMember: GuardedMiddleware = guarded({ kind: "member" }, async (_c, next) => {
+  await next();
+});
+
+/** "Mis repartos": the member must be active and marked as a courier. The mark, not a permission, enables it. */
+export const requireCourier: GuardedMiddleware = guarded({ kind: "courier" }, async (c, next) => {
+  const member = c.get("member");
+  if (!member.active) return forbidden(c, "MEMBER_INACTIVE", INACTIVE_MESSAGE);
+  if (!member.isCourier) return forbidden(c, "NOT_A_COURIER", "No estás marcado como repartidor");
   await next();
 });

@@ -76,6 +76,7 @@ export function createRestaurantsService(
       const access: Access = {
         memberId: member.memberId,
         isOwner: member.isOwner,
+        isCourier: member.isCourier,
         active: member.active,
         role: member.role,
         // An inactive member keeps no permissions in what the admin sees, whatever its role says.

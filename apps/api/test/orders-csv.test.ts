@@ -18,10 +18,14 @@ function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     subtotalCents: 900_000,
     shippingCents: 0,
     discountCents: 0,
+    tipCents: 0,
     totalCents: 900_000,
     items: [],
     createdAt: Date.UTC(2026, 10, 2, 15, 0),
     updatedAt: Date.UTC(2026, 10, 2, 15, 0),
+    courier: null,
+    sentAt: null,
+    deliveredAt: null,
     ...overrides,
   };
 }

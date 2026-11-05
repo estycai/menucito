@@ -50,8 +50,10 @@ export function ordersToCsv(orders: OrderDetail[]): string {
     "Cliente",
     "Teléfono",
     "Dirección",
+    "Repartidor",
     "Subtotal",
     "Envío",
+    "Propina",
     "Total",
     "Ítems",
   ];
@@ -69,8 +71,10 @@ export function ordersToCsv(orders: OrderDetail[]): string {
       escapeCsvCell(order.customerName),
       escapeCsvCell(order.customerPhone),
       escapeCsvCell(order.deliveryAddress ?? ""),
+      escapeCsvCell(order.courier ? `${order.courier.firstName} ${order.courier.lastName}`.trim() : ""),
       escapeCsvCell(formatMoneyCsv(order.subtotalCents)),
       escapeCsvCell(formatMoneyCsv(order.shippingCents)),
+      escapeCsvCell(formatMoneyCsv(order.tipCents)),
       escapeCsvCell(formatMoneyCsv(order.totalCents)),
       escapeCsvCell(formatItemsSummary(order.items)),
     ];

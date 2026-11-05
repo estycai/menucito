@@ -34,6 +34,7 @@ const request: CreateOrderRequest = {
   paymentMethod: "cash",
   clientOrderId: "8f2c7a64-4f7e-4b55-9d3c-1a2b3c4d5e6f",
   expectedTotalCents: 100_000,
+  tipCents: 0,
   delivery: null,
 };
 
@@ -52,10 +53,14 @@ const storedOrder: OrderDetail = {
   subtotalCents: 100_000,
   shippingCents: 0,
   discountCents: 0,
+  tipCents: 0,
   totalCents: 100_000,
   items: [],
   createdAt: 0,
   updatedAt: 0,
+  courier: null,
+  sentAt: null,
+  deliveredAt: null,
 };
 
 const numberCollision = () => new UniqueViolationError("restaurant_id", "orders", ["restaurant_id", "number"]);

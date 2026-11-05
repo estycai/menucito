@@ -79,6 +79,30 @@ export class InvalidTransitionError extends DomainError {
   }
 }
 
+/** An order cannot pass to `sent` without a courier; the board must assign one first. */
+export class CourierRequiredError extends DomainError {
+  readonly code = "COURIER_REQUIRED";
+  constructor(message = "Asigná un repartidor antes de pasar el pedido a Enviado") {
+    super(message);
+  }
+}
+
+/** The order changed between the read and the write (a simultaneous assignment or status change). */
+export class ConcurrentModificationError extends DomainError {
+  readonly code = "CONCURRENT_MODIFICATION";
+  constructor(message = "Otro cambio simultáneo ganó. Recargá el pedido y probá de nuevo.") {
+    super(message);
+  }
+}
+
+/** The member has orders assigned and cannot be deleted without losing their history. */
+export class MemberHasHistoryError extends DomainError {
+  readonly code = "MEMBER_HAS_HISTORY";
+  constructor(message = "Este usuario tiene pedidos asignados. Desactivalo en lugar de eliminarlo.") {
+    super(message);
+  }
+}
+
 export class OrderNotFoundError extends DomainError {
   readonly code = "ORDER_NOT_FOUND";
   constructor(message = "Pedido no encontrado") {

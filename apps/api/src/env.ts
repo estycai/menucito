@@ -30,6 +30,8 @@ export interface MemberContext {
   userId: string;
   restaurantId: string;
   isOwner: boolean;
+  /** `true` when the member is marked as a courier (`is_courier`). */
+  isCourier: boolean;
   /** `false` when the owner deactivated the user. */
   active: boolean;
   /** Effective keys: every key for the owner, none for an inactive role, otherwise the normalized stored ones. */

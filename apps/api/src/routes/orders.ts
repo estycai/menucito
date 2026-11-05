@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { ORDER_STATUSES, PAYMENT_STATUSES, orderFiltersQuerySchema } from "@menucito/shared";
+import { ORDER_STATUSES, PAYMENT_STATUSES, assignCourierSchema, orderFiltersQuerySchema } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requirePermission, requireMember } from "../middleware/require-member";
 import { requireSession } from "../middleware/require-session";
@@ -47,6 +47,18 @@ export const ordersRoutes = new Hono<AppEnv>()
       c.get("member").restaurantId,
       c.req.param("id"),
       body.data.status,
+    );
+    return c.json(order);
+  })
+
+  // Assigning is how an order reaches `sent` (decision 5): the body picks who carries it.
+  .post("/:id/assign", requirePermission("orders.assign"), async (c) => {
+    const body = await parseJsonBody(c, assignCourierSchema);
+    if ("response" in body) return body.response;
+    const order = await ordersServiceFor(c.env.DB).assignCourier(
+      c.get("member").restaurantId,
+      c.req.param("id"),
+      body.data.courierMemberId,
     );
     return c.json(order);
   })

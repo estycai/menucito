@@ -1,9 +1,14 @@
-import { and, desc, eq, gte, inArray, lt, notExists, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, notExists, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
   type AddressLabel,
+  type CourierDelivery,
+  type CourierOption,
+  type CourierSummaryRow,
+  type CourierSummaryStatus,
   type Fulfillment,
+  type OrderCourier,
   type OrderDateField,
   type OrderDeliveryLocation,
   type OrderDetail,
@@ -20,6 +25,7 @@ import {
   customers,
   orderItems,
   orders,
+  restaurantMembers,
   type OrderDbRow,
   type OrderItemDbRow,
 } from "../db/schema";
@@ -59,6 +65,7 @@ export interface InsertOrderData {
   paymentMethod: PaymentMethod;
   subtotalCents: number;
   shippingCents: number;
+  tipCents: number;
   totalCents: number;
   createdAt: Date;
   items: {
@@ -112,6 +119,47 @@ export interface OrdersRepository {
     paymentStatus: PaymentStatus,
     updatedAt: Date,
   ): Promise<OrderDetail | null>;
+  /**
+   * Assigns `courierMemberId` to a delivery order that is `ready` or `sent`. From `ready` it also
+   * becomes `sent` and stamps `sent_at`; from `sent` the timestamp is kept. `null` when the order was
+   * not in `fromStatus` anymore (a simultaneous change won).
+   */
+  assignCourierIf(
+    restaurantId: string,
+    orderId: string,
+    courierMemberId: string,
+    fromStatus: "ready" | "sent",
+    at: Date,
+  ): Promise<OrderDetail | null>;
+  /**
+   * Passes an order from `fromStatus` to `delivered`, stamps `delivered_at` and marks cash orders
+   * paid. With `courierMemberId`, only that courier's orders match (the courier's own delivery).
+   */
+  markDeliveredIf(
+    restaurantId: string,
+    orderId: string,
+    fromStatus: OrderStatus,
+    options: { courierMemberId?: string; markPaid: boolean },
+    at: Date,
+  ): Promise<OrderDetail | null>;
+  /** The orders a courier has on the way (`sent`), oldest first. */
+  listForCourier(restaurantId: string, courierMemberId: string): Promise<CourierDelivery[]>;
+  /**
+   * Orders in `[fromMs, toMs)` grouped by courier, with their shipping and tips: delivered ones by
+   * `delivered_at`, on-the-way ones by `sent_at`, as `status` asks. The "Sin repartidor" row comes as
+   * `memberId: null`; cancelled orders never count.
+   */
+  courierSummary(
+    restaurantId: string,
+    fromMs: number,
+    toMs: number,
+    courierMemberId?: string,
+    status?: CourierSummaryStatus,
+  ): Promise<CourierSummaryRow[]>;
+  /** How many orders, in any status, are assigned to a member (deleting it would lose history). */
+  countByCourier(restaurantId: string, courierMemberId: string): Promise<number>;
+  /** Active couriers of the local, by name, with how many orders they have `sent` right now. */
+  listCouriers(restaurantId: string): Promise<CourierOption[]>;
 }
 
 export function createOrdersRepository(d1: D1Database): OrdersRepository {
@@ -153,7 +201,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     };
   }
 
-  function toOrderDetail(orderRow: OrderDbRow, itemRows: OrderItemDbRow[]): OrderDetail {
+  function toOrderDetail(orderRow: OrderDbRow, itemRows: OrderItemDbRow[], courier: OrderCourier | null): OrderDetail {
     return {
       id: orderRow.id,
       number: orderRow.number,
@@ -169,21 +217,72 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       subtotalCents: orderRow.subtotalCents,
       shippingCents: orderRow.shippingCents,
       discountCents: orderRow.discountCents,
+      tipCents: orderRow.tipCents,
       totalCents: orderRow.totalCents,
       items: itemRows.map(toOrderItem),
       createdAt: orderRow.createdAt.getTime(),
       updatedAt: orderRow.updatedAt.getTime(),
+      courier,
+      sentAt: orderRow.sentAt?.getTime() ?? null,
+      deliveredAt: orderRow.deliveredAt?.getTime() ?? null,
+    };
+  }
+
+  /** The courier a member id points to, or `null` (takeaway, not sent yet, older orders). */
+  async function courierOf(memberId: string | null): Promise<OrderCourier | null> {
+    if (!memberId) return null;
+    const row = await db
+      .select({ firstName: restaurantMembers.firstName, lastName: restaurantMembers.lastName })
+      .from(restaurantMembers)
+      .where(eq(restaurantMembers.id, memberId))
+      .get();
+    return row ? { memberId, firstName: row.firstName, lastName: row.lastName } : null;
+  }
+
+  /** Couriers of many orders in a few queries, chunked like the items. */
+  async function couriersById(memberIds: string[]): Promise<Map<string, OrderCourier>> {
+    const byId = new Map<string, OrderCourier>();
+    for (let start = 0; start < memberIds.length; start += ITEMS_QUERY_CHUNK) {
+      const chunk = memberIds.slice(start, start + ITEMS_QUERY_CHUNK);
+      if (chunk.length === 0) continue;
+      const rows = await db
+        .select({ id: restaurantMembers.id, firstName: restaurantMembers.firstName, lastName: restaurantMembers.lastName })
+        .from(restaurantMembers)
+        .where(inArray(restaurantMembers.id, chunk))
+        .all();
+      for (const row of rows) byId.set(row.id, { memberId: row.id, firstName: row.firstName, lastName: row.lastName });
+    }
+    return byId;
+  }
+
+  function toCourierDelivery(row: OrderDbRow): CourierDelivery {
+    return {
+      id: row.id,
+      number: row.number,
+      customerName: row.customerName,
+      customerPhone: row.customerPhone,
+      deliveryAddress: row.deliveryAddress,
+      deliveryLocation: toDeliveryLocation(row),
+      notes: row.notes,
+      paymentMethod: row.paymentMethod as PaymentMethod,
+      totalCents: row.totalCents,
+      shippingCents: row.shippingCents,
+      tipCents: row.tipCents,
+      sentAt: row.sentAt?.getTime() ?? null,
     };
   }
 
   async function getOrderDetail(orderRow: OrderDbRow): Promise<OrderDetail> {
-    const itemRows = await db
-      .select()
-      .from(orderItems)
-      .where(eq(orderItems.orderId, orderRow.id))
-      .orderBy(orderItems.position)
-      .all();
-    return toOrderDetail(orderRow, itemRows);
+    const [itemRows, courier] = await Promise.all([
+      db
+        .select()
+        .from(orderItems)
+        .where(eq(orderItems.orderId, orderRow.id))
+        .orderBy(orderItems.position)
+        .all(),
+      courierOf(orderRow.courierMemberId),
+    ]);
+    return toOrderDetail(orderRow, itemRows, courier);
   }
 
   async function findDetail(restaurantId: string, orderId: string): Promise<OrderDetail | null> {
@@ -243,7 +342,8 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       conditions.push(eq(orders.paymentStatus, filter.paymentStatus));
     }
 
-    const dateColumn = filter.dateField === "updated" ? orders.updatedAt : orders.createdAt;
+    const dateColumn =
+      filter.dateField === "updated" ? orders.updatedAt : filter.dateField === "delivered" ? orders.deliveredAt : orders.createdAt;
 
     if (filter.fromMs !== undefined) {
       conditions.push(gte(dateColumn, new Date(filter.fromMs)));
@@ -362,6 +462,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           subtotalCents: data.subtotalCents,
           shippingCents: data.shippingCents,
           discountCents: 0,
+          tipCents: data.tipCents,
           totalCents: data.totalCents,
           createdAt: data.createdAt,
           updatedAt: data.createdAt,
@@ -431,8 +532,11 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .select({
           order: orders,
           itemCount: sql<number>`(SELECT count(*) FROM order_items WHERE order_items.order_id = orders.id)`,
+          courierFirstName: restaurantMembers.firstName,
+          courierLastName: restaurantMembers.lastName,
         })
         .from(orders)
+        .leftJoin(restaurantMembers, eq(restaurantMembers.id, orders.courierMemberId))
         .where(whereCondition)
         .orderBy(desc(orders.number))
         .limit(limit + 1)
@@ -441,7 +545,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       const hasMore = rows.length > limit;
       const sliced = hasMore ? rows.slice(0, limit) : rows;
 
-      const orderSummaries: OrderSummary[] = sliced.map(({ order, itemCount }) => ({
+      const orderSummaries: OrderSummary[] = sliced.map(({ order, itemCount, courierFirstName, courierLastName }) => ({
         id: order.id,
         number: order.number,
         status: order.status as OrderStatus,
@@ -453,6 +557,10 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         totalCents: order.totalCents,
         itemCount: Number(itemCount),
         createdAt: order.createdAt.getTime(),
+        courier:
+          order.courierMemberId && courierFirstName
+            ? { memberId: order.courierMemberId, firstName: courierFirstName, lastName: courierLastName ?? "" }
+            : null,
         deliveryLocation:
           order.deliveryLat === null || order.deliveryLng === null
             ? null
@@ -476,7 +584,13 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .all();
 
       const items = await itemsByOrderId(rows.map((row) => row.id));
-      return rows.map((row) => toOrderDetail(row, items.get(row.id) ?? []));
+      const courierIds = [
+        ...new Set(rows.map((row) => row.courierMemberId).filter((id): id is string => id !== null)),
+      ];
+      const couriers = await couriersById(courierIds);
+      return rows.map((row) =>
+        toOrderDetail(row, items.get(row.id) ?? [], row.courierMemberId ? couriers.get(row.courierMemberId) ?? null : null),
+      );
     },
 
     async updateStatusIf(restaurantId, orderId, fromStatus, toStatus, updatedAt) {
@@ -499,6 +613,178 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .get();
 
       return updated ? findDetail(restaurantId, orderId) : null;
+    },
+
+    async assignCourierIf(restaurantId, orderId, courierMemberId, fromStatus, at) {
+      const updated = await db
+        .update(orders)
+        .set({
+          courierMemberId,
+          status: "sent",
+          updatedAt: at,
+          // From `sent` (a reassignment) the original `sent_at` is kept.
+          ...(fromStatus === "ready" ? { sentAt: at } : {}),
+        })
+        .where(
+          and(
+            eq(orders.restaurantId, restaurantId),
+            eq(orders.id, orderId),
+            eq(orders.status, fromStatus),
+            eq(orders.fulfillment, "delivery"),
+          ),
+        )
+        .returning({ id: orders.id })
+        .get();
+
+      return updated ? findDetail(restaurantId, orderId) : null;
+    },
+
+    async markDeliveredIf(restaurantId, orderId, fromStatus, options, at) {
+      const conditions = [
+        eq(orders.restaurantId, restaurantId),
+        eq(orders.id, orderId),
+        eq(orders.status, fromStatus),
+      ];
+      if (options.courierMemberId !== undefined) {
+        conditions.push(eq(orders.courierMemberId, options.courierMemberId));
+      }
+
+      const updated = await db
+        .update(orders)
+        .set({
+          status: "delivered",
+          deliveredAt: at,
+          updatedAt: at,
+          ...(options.markPaid ? { paymentStatus: "paid" } : {}),
+        })
+        .where(and(...conditions))
+        .returning({ id: orders.id })
+        .get();
+
+      return updated ? findDetail(restaurantId, orderId) : null;
+    },
+
+    async listForCourier(restaurantId, courierMemberId) {
+      const rows = await db
+        .select()
+        .from(orders)
+        .where(
+          and(
+            eq(orders.restaurantId, restaurantId),
+            eq(orders.courierMemberId, courierMemberId),
+            eq(orders.status, "sent"),
+          ),
+        )
+        .orderBy(asc(orders.sentAt), asc(orders.number))
+        .all();
+
+      return rows.map(toCourierDelivery);
+    },
+
+    async courierSummary(restaurantId, fromMs, toMs, courierMemberId, status = "delivered") {
+      const from = new Date(fromMs);
+      const to = new Date(toMs);
+      const deliveredInRange = and(eq(orders.status, "delivered"), gte(orders.deliveredAt, from), lt(orders.deliveredAt, to));
+      const sentInRange = and(eq(orders.status, "sent"), gte(orders.sentAt, from), lt(orders.sentAt, to));
+      const statusCondition =
+        status === "delivered" ? deliveredInRange : status === "sent" ? sentInRange : or(deliveredInRange, sentInRange);
+      const conditions = [eq(orders.restaurantId, restaurantId), statusCondition!];
+      if (courierMemberId !== undefined) conditions.push(eq(orders.courierMemberId, courierMemberId));
+
+      const rows = await db
+        .select({
+          memberId: orders.courierMemberId,
+          firstName: restaurantMembers.firstName,
+          lastName: restaurantMembers.lastName,
+          active: restaurantMembers.active,
+          delivered: sql<number>`coalesce(sum(CASE WHEN ${orders.status} = 'delivered' THEN 1 ELSE 0 END), 0)`,
+          inProgress: sql<number>`coalesce(sum(CASE WHEN ${orders.status} = 'sent' THEN 1 ELSE 0 END), 0)`,
+          shippingCents: sql<number>`coalesce(sum(${orders.shippingCents}), 0)`,
+          tipCents: sql<number>`coalesce(sum(${orders.tipCents}), 0)`,
+        })
+        .from(orders)
+        .leftJoin(restaurantMembers, eq(restaurantMembers.id, orders.courierMemberId))
+        .where(and(...conditions))
+        .groupBy(orders.courierMemberId, restaurantMembers.firstName, restaurantMembers.lastName, restaurantMembers.active)
+        // "Sin repartidor" (null name) goes last; the rest by lowercased name.
+        .orderBy(
+          sql`${restaurantMembers.firstName} IS NULL`,
+          asc(sql`lower(${restaurantMembers.firstName})`),
+          asc(sql`lower(${restaurantMembers.lastName})`),
+        )
+        .all();
+
+      return rows.map((row) => ({
+        memberId: row.memberId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        active: row.active,
+        delivered: Number(row.delivered),
+        inProgress: Number(row.inProgress),
+        shippingCents: Number(row.shippingCents),
+        tipCents: Number(row.tipCents),
+      }));
+    },
+
+    async countByCourier(restaurantId, courierMemberId) {
+      const res = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(orders)
+        .where(and(eq(orders.restaurantId, restaurantId), eq(orders.courierMemberId, courierMemberId)))
+        .get();
+      return Number(res?.count ?? 0);
+    },
+
+    async listCouriers(restaurantId) {
+      const rows = await db
+        .select({
+          memberId: restaurantMembers.id,
+          firstName: restaurantMembers.firstName,
+          lastName: restaurantMembers.lastName,
+        })
+        .from(restaurantMembers)
+        .where(
+          and(
+            eq(restaurantMembers.restaurantId, restaurantId),
+            eq(restaurantMembers.active, true),
+            eq(restaurantMembers.isCourier, true),
+          ),
+        )
+        .orderBy(
+          asc(sql`lower(${restaurantMembers.firstName})`),
+          asc(sql`lower(${restaurantMembers.lastName})`),
+          asc(restaurantMembers.id),
+        )
+        .all();
+
+      const inProgress = new Map<string, number>();
+      const memberIds = rows.map((row) => row.memberId);
+      for (let start = 0; start < memberIds.length; start += ITEMS_QUERY_CHUNK) {
+        const chunk = memberIds.slice(start, start + ITEMS_QUERY_CHUNK);
+        if (chunk.length === 0) continue;
+        const counts = await db
+          .select({ courierMemberId: orders.courierMemberId, count: sql<number>`count(*)` })
+          .from(orders)
+          .where(
+            and(
+              eq(orders.restaurantId, restaurantId),
+              eq(orders.status, "sent"),
+              inArray(orders.courierMemberId, chunk),
+            ),
+          )
+          .groupBy(orders.courierMemberId)
+          .all();
+        for (const count of counts) {
+          if (count.courierMemberId) inProgress.set(count.courierMemberId, Number(count.count));
+        }
+      }
+
+      return rows.map((row) => ({
+        memberId: row.memberId,
+        firstName: row.firstName,
+        lastName: row.lastName,
+        inProgressOrders: inProgress.get(row.memberId) ?? 0,
+      }));
     },
   };
 }

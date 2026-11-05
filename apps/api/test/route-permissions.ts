@@ -1,7 +1,7 @@
 import type { PermissionKey } from "@menucito/shared";
 
-/** What each route of the owner's API declares: a permission key, `owner` (owner only) or `member` (any member). */
-export type Declared = PermissionKey | "owner" | "member";
+/** What each route of the owner's API declares: a permission key, `owner` (owner only), `member` (any member) or `courier` (a member marked as a courier). */
+export type Declared = PermissionKey | "owner" | "member" | "courier";
 
 export interface RouteExpectation {
   method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -60,6 +60,14 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("GET", "/api/orders/:id", "orders.view"),
   route("PATCH", "/api/orders/:id/status", "orders.status"),
   route("PATCH", "/api/orders/:id/payment", "orders.payment"),
+  route("POST", "/api/orders/:id/assign", "orders.assign"),
+
+  route("GET", "/api/couriers", "orders.assign"),
+  route("GET", "/api/couriers/summary", "couriers.view"),
+
+  route("GET", "/api/deliveries", "courier"),
+  route("GET", "/api/deliveries/summary", "courier"),
+  route("POST", "/api/deliveries/:id/delivered", "courier"),
 
   route("GET", "/api/members", "owner"),
   route("POST", "/api/members", "owner"),

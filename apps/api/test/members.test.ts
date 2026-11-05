@@ -134,6 +134,7 @@ describe("failure after the account is created (scenario 21)", () => {
       members: { ...members, insert: async () => Promise.reject(new Error("D1 down")) },
       roles: createRolesRepository(env.DB),
       authAdmin: await createAuthAdmin(env as unknown as Env),
+      orders: { countByCourier: async () => 0 },
     });
     const users = await count("SELECT count(*) AS n FROM user");
     const email = `compensate${unique()}@example.com`;

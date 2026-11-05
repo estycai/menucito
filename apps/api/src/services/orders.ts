@@ -34,10 +34,13 @@ import {
   type OrdersRepository,
 } from "../repositories/orders";
 import { createProductsRepository, type ProductsRepository } from "../repositories/products";
+import { createMembersRepository, type MembersRepository } from "../repositories/members";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
 import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
 import {
   BelowMinimumError,
+  ConcurrentModificationError,
+  CourierRequiredError,
   DeliveryLocationRequiredError,
   ExportTooLargeError,
   FulfillmentNotOfferedError,
@@ -362,6 +365,7 @@ export function createPublicOrdersService({
       const totals = orderTotals({
         subtotalCents: priced.subtotalCents,
         shippingCents: terms.shippingCents,
+        tipCents: req.tipCents,
         fulfillment: req.fulfillment,
       });
       if (req.expectedTotalCents !== totals.totalCents) {
@@ -416,11 +420,14 @@ function toListFilter(query: OrderFiltersQuery): ListOrdersFilter {
 
 export interface OwnerOrdersDependencies {
   orders: OrdersRepository;
+  /** Needed to validate the courier of an assignment and to know if a member has orders. */
+  members: MembersRepository;
   now?: () => Date;
 }
 
 export function createOwnerOrdersService({
   orders,
+  members,
   now = () => new Date(),
 }: OwnerOrdersDependencies) {
   return {
@@ -434,6 +441,29 @@ export function createOwnerOrdersService({
       return order;
     },
 
+    /**
+     * Assigns a courier and passes the order to `sent` (decision 5). A `ready` or `sent` delivery
+     * order changes; anything else is a 409. Two simultaneous assignments: the conditional write lets
+     * one win and the other gets `CONCURRENT_MODIFICATION`.
+     */
+    async assignCourier(restaurantId: string, orderId: string, courierMemberId: string) {
+      const current = await orders.findDetail(restaurantId, orderId);
+      if (!current) throw new OrderNotFoundError();
+
+      const courier = await members.find(restaurantId, courierMemberId);
+      if (!courier || !courier.member.active || !courier.member.isCourier) {
+        throw new ValidationError("courierMemberId: elegí un repartidor activo de tu local");
+      }
+
+      if (current.fulfillment !== "delivery" || (current.status !== "ready" && current.status !== "sent")) {
+        throw new InvalidTransitionError();
+      }
+
+      const updated = await orders.assignCourierIf(restaurantId, orderId, courierMemberId, current.status, now());
+      if (!updated) throw new ConcurrentModificationError();
+      return updated;
+    },
+
     async updateStatus(restaurantId: string, orderId: string, targetStatus: OrderStatus) {
       const current = await orders.findDetail(restaurantId, orderId);
       if (!current) throw new OrderNotFoundError();
@@ -444,13 +474,14 @@ export function createOwnerOrdersService({
         throw new InvalidTransitionError();
       }
 
-      const updated = await orders.updateStatusIf(
-        restaurantId,
-        orderId,
-        current.status,
-        targetStatus,
-        now(),
-      );
+      // To `sent` only through `assignCourier`: that is the only path that picks who carries it.
+      if (targetStatus === "sent") throw new CourierRequiredError();
+
+      const at = now();
+      const updated =
+        targetStatus === "delivered"
+          ? await orders.markDeliveredIf(restaurantId, orderId, current.status, { markPaid: current.paymentMethod === "cash" }, at)
+          : await orders.updateStatusIf(restaurantId, orderId, current.status, targetStatus, at);
 
       if (!updated) {
         const fresh = await orders.findDetail(restaurantId, orderId);
@@ -496,5 +527,6 @@ export type OwnerOrdersService = ReturnType<typeof createOwnerOrdersService>;
 export function ordersServiceFor(db: D1Database): OwnerOrdersService {
   return createOwnerOrdersService({
     orders: createOrdersRepository(db),
+    members: createMembersRepository(db),
   });
 }

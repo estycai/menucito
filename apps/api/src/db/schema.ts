@@ -381,8 +381,16 @@ export const orders = sqliteTable(
     subtotalCents: integer("subtotal_cents").notNull(),
     shippingCents: integer("shipping_cents").notNull(),
     discountCents: integer("discount_cents").notNull().default(0),
+    // Courier tip, kept apart from the products subtotal and the shipping.
+    tipCents: integer("tip_cents").notNull().default(0),
     totalCents: integer("total_cents").notNull(),
     promoCodeId: text("promo_code_id").references(() => promoCodes.id, { onDelete: "set null" }),
+    // Courier who took the order (set when it goes from ready to sent). `NO ACTION` for the same
+    // reason as `restaurant_members.role_id`; deleting a member with orders is blocked by the service.
+    courierMemberId: text("courier_member_id").references(() => restaurantMembers.id, { onDelete: "no action" }),
+    // Exact time the order went out and was delivered; both `NULL` for orders older than 0012.
+    sentAt: integer("sent_at", { mode: "timestamp_ms" }),
+    deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -392,6 +400,8 @@ export const orders = sqliteTable(
     index("orders_restaurant_status_number_idx").on(t.restaurantId, t.status, t.number),
     index("orders_restaurant_created_idx").on(t.restaurantId, t.createdAt),
     index("orders_customer_idx").on(t.customerId),
+    index("orders_restaurant_courier_status_idx").on(t.restaurantId, t.courierMemberId, t.status),
+    index("orders_restaurant_delivered_idx").on(t.restaurantId, t.deliveredAt),
   ],
 );
 

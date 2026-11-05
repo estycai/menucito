@@ -1,5 +1,6 @@
 import { and, asc, desc, eq, sql, type SQL } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
+import type { CourierFilterOption } from "@menucito/shared";
 import { restaurantMembers, rolePermissions, roles, user, type MemberRow, type NewMemberRow, type RoleRow } from "../db/schema";
 import { translatingUniqueViolations } from "./errors";
 
@@ -44,6 +45,8 @@ export interface MembersRepository {
   findAccessByUserId(userId: string): Promise<MemberAccessRecord | null>;
   /** Owner first, then by name; also returns the total for the page. */
   list(restaurantId: string, filter: ListMembersFilter): Promise<{ records: MemberRecord[]; total: number }>;
+  /** Every courier of the local, active or not, by name: the options of the "Repartidores" filter. */
+  listCourierOptions(restaurantId: string): Promise<CourierFilterOption[]>;
   find(restaurantId: string, id: string): Promise<MemberRecord | null>;
   /** Throws `UniqueViolationError` when the user is already a member. */
   insert(row: NewMemberRow): Promise<MemberRecord>;
@@ -112,6 +115,24 @@ export function createMembersRepository(d1: D1Database): MembersRepository {
         db.select({ total: sql<number>`count(*)` }).from(restaurantMembers).where(where).get(),
       ]);
       return { records, total: counted?.total ?? 0 };
+    },
+
+    async listCourierOptions(restaurantId) {
+      return db
+        .select({
+          memberId: restaurantMembers.id,
+          firstName: restaurantMembers.firstName,
+          lastName: restaurantMembers.lastName,
+          active: restaurantMembers.active,
+        })
+        .from(restaurantMembers)
+        .where(and(eq(restaurantMembers.restaurantId, restaurantId), eq(restaurantMembers.isCourier, true)))
+        .orderBy(
+          asc(sql`lower(${restaurantMembers.firstName})`),
+          asc(sql`lower(${restaurantMembers.lastName})`),
+          asc(restaurantMembers.id),
+        )
+        .all();
     },
 
     find,
