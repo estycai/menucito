@@ -7,7 +7,7 @@ Monorepo (pnpm + Turborepo):
 - `apps/web` - Astro (SSR on Cloudflare through `@astrojs/cloudflare`), the public site: placeholder landing at `/` the diner's menu at `/<slug>` and the order detail at `/<slug>/pedido`. Server-rendered HTML with small Preact islands (cart, ingredient sheet, order form).
 - `packages/shared` - Zod schemas and pure helpers shared by both apps (auth forms, restaurant: slug rules, Argentine WhatsApp normalization, media limits, catalog schemas, ARS price parsing/formatting, plan limits).
 
-Docs and specs: `docs/changes/` (current change: `04-menu-catalog.md`). `Menucito/` is the Obsidian vault.
+Docs and specs: `docs/changes/` (current change: `13-repartidores-y-propinas.md`). `Menucito/` is the Obsidian vault.
 
 ## Requirements
 
@@ -79,7 +79,7 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 
 | Method and path | Response |
 | --- | --- |
-| `GET /api/restaurants/me` | 200 restaurant plus `access: {memberId, isOwner, active, role: {id, name, active}, permissions}` (normalized keys; every key of the catalog for the owner; `[]` for a deactivated member or an inactive role, which still get a 200 so the admin can show the right screen), 404 `RESTAURANT_NOT_FOUND` if the user has no restaurant and is not a member of one |
+| `GET /api/restaurants/me` | 200 restaurant plus `access: {memberId, isOwner, isCourier, active, role: {id, name, active}, permissions}` (normalized keys; every key of the catalog for the owner; `[]` for a deactivated member or an inactive role, which still get a 200 so the admin can show the right screen), 404 `RESTAURANT_NOT_FOUND` if the user has no restaurant and is not a member of one |
 | `GET /api/restaurants/slug-available?slug=` | 200 `{available, reason?: "invalid" | "reserved" | "taken"}` |
 | `POST /api/restaurants` | body `{name, slug, whatsapp, delivery, takeaway}`; 201 restaurant, 409 `SLUG_TAKEN` / `ALREADY_HAS_RESTAURANT`, 422 `VALIDATION_ERROR` |
 | `PUT /api/restaurants/me/logo` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{logoUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND` |
@@ -87,12 +87,18 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `PATCH /api/restaurants/me/appearance` | body with at least one of `{description?, bgColor?, primaryColor?}` (colors are `#RGB`/`#RRGGBB`, with or without `#`, stored as `#RRGGBB` uppercase; `null` goes back to the default). `description` is whitespace-normalized, max 120 characters, empty is valid. 200 restaurant, 403 `PLAN_FEATURE` if the body has any color key (even `null`) and the plan lacks `customColors`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR` (bad format, empty body, or the resulting pair gives the primary color less than 3:1 contrast against the background) |
 | `GET /api/restaurants/me/settings` | 200 store settings: `{acceptingOrders, minOrderCents, shippingCents, cashEnabled, transferEnabled, transferAlias, transferHolderName, updatedAt}` |
 | `PATCH /api/restaurants/me/settings` | body with subset of store settings; 200 settings, 404, 422 `VALIDATION_ERROR` (if `transferEnabled: true`, `transferHolderName` is required) |
-| `POST /api/public/menus/:slug/orders` | Public, CORS enabled for `WEB_ORIGINS`. Body `{clientOrderId, customer: {name, phone, address?}, fulfillment, paymentMethod, expectedTotalCents, items: [{productId, quantity, choices?}]}`. Recalculates total from DB, creates or deduplicates customer by `phone`, throttles customer to 3 active orders, sequential `#number`, idempotent via `clientOrderId`. 201 `{order, whatsappUrl, payment: null}`, 409 `STORE_PAUSED` / `TOTAL_MISMATCH` / `PRODUCT_UNAVAILABLE`, 429 `ORDER_THROTTLED`. Rate limit 10/min per IP |
-| `GET /api/orders` | Owner orders listing. Query params: `status`, `fulfillment`, `paymentMethod`, `paymentStatus`, `from`, `to`, `dateField` (`created`, the default, or `updated`: the timestamp `from`/`to` filter on), `limit`, `before`. Dates in `America/Argentina/Buenos_Aires`. 200 `{orders: OrderSummary[], nextBefore: string | null}` |
-| `GET /api/orders/:id` | Owner order detail with items snapshot, ingredient choices and customer information; 200 `OrderDetail`, 404 `ORDER_NOT_FOUND` |
-| `PATCH /api/orders/:id/status` | Transitions order status forward, skipping steps allowed: `new` -> `preparing` -> `ready` -> `sent` -> `delivered` for delivery orders, the same without `sent` for takeaway ones (sending a takeaway order is 409 `INVALID_TRANSITION`). `cancelled` from any active status (`new`, `preparing`, `ready`, `sent`); `delivered` and `cancelled` are final. Body `{status, expectedStatus}` (optimistic lock); 200 `OrderDetail`, 409 `CONCURRENT_MODIFICATION`, 422 |
+| `POST /api/public/menus/:slug/orders` | Public, CORS enabled for `WEB_ORIGINS`. Body `{clientOrderId, customer: {name, phone, address?}, fulfillment, paymentMethod, expectedTotalCents, tipCents?, items: [{productId, quantity, choices?}]}`. Recalculates total from DB (products + shipping + tip), creates or deduplicates customer by `phone`, throttles customer to 3 active orders, sequential `#number`, idempotent via `clientOrderId`. `tipCents` is an integer, a multiple of 100 (whole pesos), between 0 and $50.000, and only allowed on a `delivery` order paid by `transfer`; otherwise 422. 201 `{order, whatsappUrl, payment: null}`, 409 `STORE_PAUSED` / `PRICE_CHANGED` / `PRODUCT_UNAVAILABLE`, 429 `ORDER_THROTTLED`. Rate limit 10/min per IP |
+| `GET /api/orders` | Owner orders listing. Query params: `status`, `fulfillment`, `paymentMethod`, `paymentStatus`, `from`, `to`, `dateField` (`created`, the default, `updated`, or `delivered`: the timestamp `from`/`to` filter on), `limit`, `before`. Dates in `America/Argentina/Buenos_Aires`. 200 `{orders: OrderSummary[], nextBefore: string | null}`; each order carries its `courier` (`{memberId, firstName, lastName} | null`) |
+| `GET /api/orders/:id` | Owner order detail with items snapshot, ingredient choices, customer information, `courier`, `sentAt`, `deliveredAt` and `tipCents`; 200 `OrderDetail`, 404 `ORDER_NOT_FOUND` |
+| `PATCH /api/orders/:id/status` | Transitions order status forward, skipping steps allowed: `new` -> `preparing` -> `ready` -> `sent` -> `delivered` for delivery orders, the same without `sent` for takeaway ones (sending a takeaway order is 409 `INVALID_TRANSITION`; `sent` also needs an assigned courier, 409 `COURIER_REQUIRED`). `cancelled` from any active status (`new`, `preparing`, `ready`, `sent`); `delivered` and `cancelled` are final. Delivering stamps `delivered_at` and, for a cash order, marks it `paid` in the same write. Body `{status, expectedStatus}` (optimistic lock); 200 `OrderDetail`, 409 `CONCURRENT_MODIFICATION`, 422 |
+| `POST /api/orders/:id/assign` | `orders.assign`. Body `{courierMemberId}`: an active courier of the local. A `ready` delivery order becomes `sent` with `sent_at`; a `sent` order changes courier keeping `sent_at`. 200 `OrderDetail`, 404 `ORDER_NOT_FOUND`, 409 `CONCURRENT_MODIFICATION`, 422 (not a courier of this local, inactive, takeaway or wrong status) |
 | `PATCH /api/orders/:id/payment` | Updates payment status (`pending` \| `paid`). Body `{paymentStatus}`; 200 `OrderDetail`, 422 |
-| `GET /api/orders/export.csv` | Exports orders matching filters as CSV. Includes UTF-8 BOM, semicolon delimiter, comma decimal separator, and Excel formula injection protection; 200 `text/csv` |
+| `GET /api/orders/export.csv` | Exports orders matching filters as CSV, including the `Repartidor` and `Propina` columns. Includes UTF-8 BOM, semicolon delimiter, comma decimal separator, and Excel formula injection protection; 200 `text/csv` |
+| `GET /api/couriers` | `orders.assign`. 200 `{memberId, firstName, lastName}[]` of the active couriers of the local, by name, each with `inProgressOrders` (orders currently `sent`) |
+| `GET /api/couriers/summary` | `couriers.view`. Query `from`, `to` (local days, both inclusive; today by default), `status` (`delivered` by default, `sent` or `all`: delivered orders count by `delivered_at`, orders on the way by `sent_at`) and optional `courierMemberId`. 200 `{from, to, couriers: [{memberId, firstName, lastName, active}], rows: [{memberId, firstName, lastName, active, delivered, inProgress, shippingCents, tipCents}], totals}`; `couriers` lists every courier of the local (active or not) for the page's filter, so its options survive a range with no deliveries; a `memberId: null` row is "Sin repartidor", `active: false` marks a deactivated courier, and filtering by a courier with no deliveries returns his zero row. 422 for an unknown or foreign `courierMemberId` or another `status` |
+| `GET /api/deliveries` | `requireCourier`. The courier's own `sent` orders, oldest first, with the data needed to deliver them (`customerName`, `customerPhone`, `deliveryAddress`, `deliveryLocation`, `notes`, `paymentMethod`, `totalCents`, `shippingCents`, `tipCents`, `sentAt`). A stranger's order is never listed |
+| `GET /api/deliveries/summary` | `requireCourier`. Query `from`, `to` (today by default). 200 `{from, to, delivered, shippingCents, tipCents}` of the courier's own delivered orders |
+| `POST /api/deliveries/:id/delivered` | `requireCourier`. Marks one of the courier's own `sent` orders as `delivered` (stamping `delivered_at` and, for cash, paying it). 200 order, 404 for an unknown or foreign order, 409 `INVALID_TRANSITION` if it is not `sent` |
 | `PUT /api/restaurants/me/cover` | multipart/form-data, field `file` (WebP, max 1 MB); 200 `{coverUrl}`, 413 `FILE_TOO_LARGE`, 415 `UNSUPPORTED_MEDIA_TYPE`, 404 `RESTAURANT_NOT_FOUND`. No plan check |
 | `DELETE /api/restaurants/me/cover` | 204 (also when there is no cover) |
 | `PUT /api/restaurants/me/plan` | body `{plan: "basic" \| "pro"}`; 200 restaurant (the current plan is a no-op), 403 `PLAN_SWITCH_DISABLED` unless `ALLOW_PLAN_SWITCH=true`, 404 `RESTAURANT_NOT_FOUND`, 422 `VALIDATION_ERROR`. Free test switch, see "Plan switch" |
@@ -117,7 +123,7 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `PATCH /api/members/:id` | Owner only. Body with any of `{firstName, lastName, phone, roleId, isCourier}`; an `email` or `password` key is rejected. 200 member, 404 `MEMBER_NOT_FOUND`, 409 `OWNER_IMMUTABLE` (changing the owner's role), 422 |
 | `PATCH /api/members/:id/active` | Owner only. Body `{active}`. Deactivating deletes the member's sessions. 200 member, 404, 409 `OWNER_IMMUTABLE` |
 | `PUT /api/members/:id/password` | Owner only. Body `{password}`. Replaces the credential and deletes every session of that user. 204, 404, 409 `OWNER_IMMUTABLE`, 422 |
-| `DELETE /api/members/:id` | Owner only. Deletes the member and the account (sessions and credentials with it); the email can be reused. 204, 404, 409 `OWNER_IMMUTABLE` |
+| `DELETE /api/members/:id` | Owner only. Deletes the member and the account (sessions and credentials with it); the email can be reused. 204, 404, 409 `OWNER_IMMUTABLE`, 409 `MEMBER_HAS_HISTORY` (the member has orders assigned, in any status: deactivate it instead) |
 | `GET /api/roles` | Owner only. 200 `{roles: Role[]}` with `{id, name, isSystem, active, memberCount, permissions}`; the system role first (its `permissions` is `[]`: the owner check grants everything), then by name |
 | `POST /api/roles` | Owner only. Body `{name (1-40), permissions}`; unknown keys are dropped, a sub-permission without its section key is rejected. 201 role, 409 `ROLE_NAME_TAKEN` (case-insensitive, per restaurant), 422 |
 | `PATCH /api/roles/:id` | Owner only. Body with any of `{name, permissions, active}`; the permissions are replaced as a whole in one D1 batch and take effect on the member's next request. 200 role, 404 `ROLE_NOT_FOUND`, 409 `SYSTEM_ROLE` / `ROLE_NAME_TAKEN`, 422 |
@@ -127,24 +133,25 @@ Product: `{id, categoryId, name, description, priceCents, imageUrl, available, i
 
 Ingredient: `{name, includedQty, minQty, maxQty, extraPriceCents}`. `extraPriceCents` is charged for each unit above `includedQty`. Rules (shared Zod schema, enforced by the API and the admin form): name 1-40 characters and unique inside the product ignoring case, quantities are integers 0-99, `maxQty >= 1`, `minQty <= includedQty <= maxQty`, extra price is zero or more, at most 20 per product. Ingredients are deleted with their product. This change only covers saving them in the admin; ordering them from the public menu and the price calculation come with the public menu.
 
-All `/api/restaurants/*`, `/api/categories/*`, `/api/products/*`, `/api/orders/*`, `/api/members/*` and `/api/roles/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. Besides the codes listed per endpoint, any of them can answer the access errors of "Users and roles" below. The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+All `/api/restaurants/*`, `/api/categories/*`, `/api/products/*`, `/api/orders/*`, `/api/couriers/*`, `/api/deliveries/*`, `/api/members/*` and `/api/roles/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. Besides the codes listed per endpoint, any of them can answer the access errors of "Users and roles" below (the `/api/deliveries/*` ones answer 403 `NOT_A_COURIER` when the member is not marked as a courier). The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
 
 ### Users and roles
 
-A restaurant can have several people with access. Everyone is a member (`restaurant_members`, one restaurant per user); the owner (`restaurants.owner_id`) is a member too, with the system role "Dueño". The middleware `requireMember` (`apps/api/src/middleware/require-member.ts`) resolves the member, the restaurant and the effective permissions from the session on every request, so a role change shows up on the next request without signing in again. Each route of the owner's API declares one guard (`requirePermission(key)`, `requireOwner` or `allowAnyMember`); `test/route-guards.test.ts` fails when a registered route declares none.
+A restaurant can have several people with access. Everyone is a member (`restaurant_members`, one restaurant per user); the owner (`restaurants.owner_id`) is a member too, with the system role "Dueño". The middleware `requireMember` (`apps/api/src/middleware/require-member.ts`) resolves the member, the restaurant and the effective permissions from the session on every request, so a role change shows up on the next request without signing in again. Each route of the owner's API declares one guard (`requirePermission(key)`, `requireOwner`, `allowAnyMember` or `requireCourier`; the last one needs `is_courier` and opens `/api/deliveries/*`); `test/route-guards.test.ts` fails when a registered route declares none.
 
 Permissions are text keys `<section>.<action>`, defined in `packages/shared/src/permissions.ts` (adding one needs no migration; a stored key that left the catalog is ignored). Each section has a `.view` key and its sub-permissions only count with the section checked:
 
 | Section | Keys |
 | --- | --- |
 | Resumen | `summary.view` |
-| Pedidos | `orders.view`, `orders.status` (change status, cancel), `orders.payment` (mark paid or pending), `orders.export` (CSV) |
+| Pedidos | `orders.view`, `orders.status` (change status, cancel), `orders.payment` (mark paid or pending), `orders.export` (CSV), `orders.assign` (choose the courier) |
+| Repartidores | `couriers.view` (daily summary by courier; the page is `/repartidores`) |
 | Mi menú | `menu.view`, `menu.edit` |
 | Mi local | `store.view`, `store.edit` (data, appearance, hours, delivery, payments, pause; also the `/me/places/*` lookups) |
 | Link y QR | `qr.view` |
 | Estadísticas | `stats.view` |
 
-Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given.
+Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given. "Mis repartos" (`/api/deliveries/*`, admin `/mis-repartos`) is not a permission either: it follows the `is_courier` mark, so the same member keeps its role's sections and gains the courier one.
 
 New error codes (body `{"error": {"code", "message", ...}}`):
 
@@ -159,6 +166,9 @@ New error codes (body `{"error": {"code", "message", ...}}`):
 | `SYSTEM_ROLE` | 409 | Editing, deactivating or deleting the "Dueño" role |
 | `ROLE_IN_USE` | 409 | Deleting a role with members; the body carries `error.memberCount` |
 | `ROLE_NAME_TAKEN` | 409 | Another role of the restaurant has that name (case-insensitive) |
+| `COURIER_REQUIRED` | 409 | Moving a delivery order to `sent` without an assigned courier |
+| `NOT_A_COURIER` | 403 | A member without the `is_courier` mark called an `/api/deliveries/*` route |
+| `MEMBER_HAS_HISTORY` | 409 | Deleting a member with orders assigned; deactivate it instead |
 
 A user who is already a member also gets 409 `ALREADY_HAS_RESTAURANT` on `POST /api/restaurants`. Accounts created by the owner go through `apps/api/src/auth-admin.ts` (Better Auth's internal adapter): verified email, hashed password, no email sent. API error messages are in Spanish.
 
@@ -182,10 +192,10 @@ Plan flags (`PlanLimits`): `maxProducts` (Basic 40, Pro unlimited), `productPhot
 
 1. **Ordering & Validation**: The diner builds their cart in `apps/web`. In `/<slug>/pedido`, the phone number is validated with Argentine format (`normalizeArWhatsapp`). If the store has paused orders (`acceptingOrders: false`), an informative status banner is shown and submission is disabled. If subtotal is below `minOrderCents`, an alert informs the user and disables submission.
 2. **Idempotency & Submission**: On form submission, a client UUID `clientOrderId` is retrieved from or generated in `localStorage` (`getOrCreateToken`) and posted to `POST /api/public/menus/:slug/orders`.
-3. **Server Integrity**: The API recalculates all line prices and options against D1. If prices or availability changed in the interim, it responds 409 (`TOTAL_MISMATCH` or `PRODUCT_UNAVAILABLE`).
+3. **Server Integrity**: The API recalculates all line prices and options against D1. If prices or availability changed in the interim, it responds 409 (`PRICE_CHANGED` or `PRODUCT_UNAVAILABLE`).
 4. **Customer Linking & Rate Limiting**: Customers are deduplicated by `restaurant_id + phone`. If a phone has 3 or more active orders (`new`, `preparing`, `ready`), it is throttled with 429 `ORDER_THROTTLED`. IP submissions are limited to 10 requests per minute.
 5. **WhatsApp Handoff**: The order is stored with a sequential `#number` per restaurant. The API returns `{ order, whatsappUrl }`. The frontend clears the cart, removes the idempotency token, displays a confirmation screen with `#number`, and triggers handoff to WhatsApp with the pre-filled message.
-6. **Owner Operations**: The owner manages orders in `/pedidos` (polling every 30s): the "Activos" board has the columns Nuevos, En preparación, Listos, Enviados (delivery orders only) and Entregados (orders delivered today, up to 50). A toast announces new orders on any admin screen. Advance status with optimistic concurrency control (`PATCH /api/orders/:id/status`), toggle payment (`PATCH /api/orders/:id/payment`), and export history as CSV (`GET /api/orders/export.csv`).
+6. **Owner Operations**: The owner manages orders in `/pedidos` (polling every 30s): the "Activos" board has the columns Nuevos, En preparación, Listos, Enviados (delivery orders only) and Entregados (orders delivered today by `delivered_at`, up to 50). A toast announces new orders on any admin screen. Advance status with optimistic concurrency control (`PATCH /api/orders/:id/status`), choose the courier on a ready delivery order (`POST /api/orders/:id/assign`, which passes it to Enviado), toggle payment (`PATCH /api/orders/:id/payment`), and export history as CSV (`GET /api/orders/export.csv`). A member marked as a courier also sees "Mis repartos" (`/mis-repartos`): their assigned orders on the way, a one-tap delivery and their day's numbers.
 
 ### Plan switch (testing aid)
 
@@ -205,7 +215,9 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | Route | Section |
 | --- | --- |
 | `/` | Resumen (public link, WhatsApp, product and category counts) |
-| `/pedidos` | Pedidos (tablero con columnas activas, historial con filtros de fecha/estado/pago, detalle, acciones y exportación CSV) |
+| `/pedidos` | Pedidos (tablero con columnas activas, historial con filtros de fecha/estado/pago, detalle, acciones, asignación de repartidor y exportación CSV) |
+| `/repartidores` | Repartidores (resumen diario de entregados, envíos y propinas por repartidor, con filtro de repartidor y rango de fechas) |
+| `/mis-repartos` | Mis repartos (solo con `is_courier`): pedidos en camino ordenados por cercanía, "Ver ruta en Maps", llamar, marcar entregado y los números del día |
 | `/menu`, `/menu/products/new`, `/menu/products/:id` | Mi menú |
 | `/local` | Mi local |
 | `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
@@ -226,7 +238,7 @@ Login, sign-up, forgot/reset password, verify email and onboarding render outsid
 | Route | Behavior |
 | --- | --- |
 | `/` | Prerendered placeholder landing ("FUTURA LANDING"); works without the API and without client JavaScript |
-| `/<slug>/pedido` | Order detail: cart lines with steppers, shipping breakdown, total, store pause banner, minimum order check, and form (name, phone, fulfillment, address, payment method with transfer bank details). Submitting persists the order to the database via `POST /api/public/menus/:slug/orders`, clears the cart, shows confirmation card, and redirects to WhatsApp with the formatted order message |
+| `/<slug>/pedido` | Order detail: cart lines with steppers, breakdown (Productos, Envío, Propina, Total), store pause banner, minimum order check, and form (name, phone, fulfillment, address, payment method with transfer bank details). On a delivery order paid by transfer it offers the tip: 4%, 8%, 10%, 14% or another whole-pesos amount up to $50.000 (none selected by default, and the tip is added to the total without being kept in the cart). Submitting persists the order to the database via `POST /api/public/menus/:slug/orders`, clears the cart, shows confirmation card, and redirects to WhatsApp with the formatted order message |
 | `/<slug>` | Server-rendered menu. Reads `GET /api/public/menus/:slug` from the server (no CORS involved). 200 with `Cache-Control: public, max-age=60`; 404 "No encontramos este menú" for an unknown, invalid or reserved slug (the API is not called for the last two); 503 when the API is down or answers 5xx (`no-store`); 301 to the lowercase URL for an uppercase slug |
 
 The menu header shows the cover (or a soft tone of the primary color), the overlapping logo, the name and the description (no Delivery/Retiro selector, which only exists in `/<slug>/pedido`, and no opening-hours label yet). The featured category comes first as a horizontal row; the category nav is sticky and highlights the section in view (with JavaScript off the chips still work as anchors). `<meta name="description">` is the restaurant description, or "Menú de <name>" without one.

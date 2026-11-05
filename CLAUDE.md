@@ -28,7 +28,7 @@ DB changes: edit `apps/api/src/db/schema.ts`, then `pnpm --filter @menucito/api 
 
 ## Architecture
 
-- **`packages/shared`**: zod schemas and pure helpers (cart, orders, delivery quoting, hours, plans, permissions...). Consumed as source (`main: ./src/index.ts`, no build). The API validates with them, admin forms use them via react-hook-form, web uses them for cart and pricing. The API always recomputes order totals server-side (409 `TOTAL_MISMATCH`).
+- **`packages/shared`**: zod schemas and pure helpers (cart, orders, delivery quoting, hours, plans, permissions...). Consumed as source (`main: ./src/index.ts`, no build). The API validates with them, admin forms use them via react-hook-form, web uses them for cart and pricing. The API always recomputes order totals server-side (409 `PRICE_CHANGED`).
 - **`apps/api`**: Hono on Cloudflare Workers, D1 (Drizzle, SQLite) and R2 (`MEDIA`). Strict layering: `routes/` (HTTP + zod) -> `services/` (business rules, domain errors in `services/errors.ts`) -> `repositories/` (Drizzle). Only services touch `storage/media.ts`. Services and repositories are factories (`createXService(repo, now, generateId)`) so tests can inject dependencies.
 - **`apps/admin`**: React 19 + Vite + Tailwind 4 + TanStack Query + react-router. Talks to the API same-origin at `/api` (Vite proxy), Better Auth client in `lib/auth-client.ts`.
 - **`apps/web`**: Astro SSR on Cloudflare + Preact islands. Fetches the public menu server-side from the API (`PUBLIC_API_URL`); the browser posts orders cross-origin to `POST /api/public/menus/:slug/orders`. Order flow ends in a WhatsApp hand-off (`whatsappUrl`); no online payments exist yet.
@@ -39,7 +39,7 @@ Every table is keyed by `restaurant_id`. The tenant ALWAYS comes from the sessio
 ### Permissions
 - Catalog of keys (`<section>.<action>`, e.g. `orders.status`, `menu.edit`) lives in `packages/shared/src/permissions.ts`. Sub-permissions only count when the section `.view` is granted. Adding a key needs no migration.
 - The Owner is the member with the system role "Dueño" (all keys). Users/roles and plan changes are owner-only, not assignable.
-- **Every owner-API route must declare exactly one guard**: `requirePermission(key)`, `requireOwner` or `allowAnyMember`. `apps/api/test/route-guards.test.ts` fails otherwise, and new routes must be added to the `OWNER_ROUTES` table in `apps/api/test/route-permissions.ts`.
+- **Every owner-API route must declare exactly one guard**: `requirePermission(key)`, `requireOwner`, `allowAnyMember` or `requireCourier` (a member marked `is_courier`, the only way into `/api/deliveries/*`). `apps/api/test/route-guards.test.ts` fails otherwise, and new routes must be added to the `OWNER_ROUTES` table in `apps/api/test/route-permissions.ts`.
 - Admin gating mirrors this in `apps/admin/src/lib/access.ts`, `nav.ts` and `components/guards.tsx`, fed by `access` from `GET /api/restaurants/me`.
 
 ### Plans
@@ -60,7 +60,7 @@ Uploads go THROUGH the Worker (no presigned URLs). The browser normalizes to Web
 - **CORS**: the public order endpoint reads `WEB_ORIGINS` (comma-separated, e.g. `http://localhost:4321`) from `.dev.vars`. If it is missing, order submit from the local web is blocked.
 - Empty `RESEND_API_KEY` logs `[email:dev] {...link}` in the API terminal instead of sending. Empty `GOOGLE_CLIENT_ID/SECRET` disables the Google provider.
 - **D1 has no transactions**: multi-step writes use `db.batch` (role permission replace, featured category swap, ingredients replace, order creation).
-- Order status moves forward only (steps may be skipped), takeaway cannot go `sent`, `cancelled` is allowed from any active state. Concurrency uses `expectedStatus` (409 `CONCURRENT_MODIFICATION`). Rate limits: 3 active orders per phone, 10/min per IP.
+- Order status moves forward only (steps may be skipped), takeaway cannot go `sent`, `sent` needs an assigned courier (409 `COURIER_REQUIRED`), `cancelled` is allowed from any active state. Concurrency uses `expectedStatus` (409 `CONCURRENT_MODIFICATION`). Rate limits: 3 active orders per phone, 10/min per IP. Delivering a cash order marks it paid (change 13); tips (`orders.tip_cents`) exist only on transfer delivery orders and are part of the total.
 - Deactivating a member deletes its sessions; changing a password deletes all that user's sessions. One restaurant per user; email is unique across accounts (409 `EMAIL_IN_USE`).
 - Public menu: only one featured category per restaurant (partial unique index); the featured one is not repeated in `categories`; empty categories are omitted.
 - `apps/api` script `auth:schema` points to `src/auth-cli.ts`, which does not exist. Better Auth tables are hand-managed in `src/db/schema.ts` via drizzle migrations.
