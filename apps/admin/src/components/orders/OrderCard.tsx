@@ -35,15 +35,14 @@ export function OrderCardContent({ order, showStatus = false }: { order: OrderSu
         </span>
       </div>
 
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate text-sm font-semibold text-ink">{order.customerName}</span>
-          {order.notes && <OrderNoteIcon notes={order.notes} />}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5">
-          <OrderSourceBadge source={order.source} />
-          <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
-        </span>
+      {/* Name and badges on separate rows: on a narrow board column the badges would squeeze the name to nothing. */}
+      <div className="flex min-w-0 items-center gap-1.5">
+        <span className="truncate text-sm font-semibold text-ink">{order.customerName}</span>
+        {order.notes && <OrderNoteIcon notes={order.notes} />}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <OrderSourceBadge source={order.source} />
+        <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
       </div>
 
       {order.courier && (
