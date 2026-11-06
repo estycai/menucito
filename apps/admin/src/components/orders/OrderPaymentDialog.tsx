@@ -134,7 +134,7 @@ export function OrderPaymentDialog({ order, onClose }: { order: OrderDetail; onC
 
         {method === "split" && (
           <label className="flex flex-col gap-1 text-xs font-bold text-muted">
-            Pagás en efectivo
+            En efectivo
             <input
               type="text"
               inputMode="numeric"

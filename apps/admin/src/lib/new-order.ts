@@ -23,7 +23,7 @@ export const newOrderDetailsSchema = z
     customerName: z
       .string()
       .trim()
-      .min(1, ORDER_MESSAGES.nameRequired)
+      .min(1, ORDERS_MESSAGES.manualNameRequired)
       .max(ORDER_NAME_MAX_LENGTH, ORDER_MESSAGES.nameTooLong),
     customerPhone: z.string().trim(),
     address: z.string().trim().max(ORDER_ADDRESS_MAX_LENGTH, ORDER_MESSAGES.addressTooLong),
@@ -32,7 +32,7 @@ export const newOrderDetailsSchema = z
   })
   .superRefine((value, ctx) => {
     if (value.source === "whatsapp" && value.customerPhone === "") {
-      ctx.addIssue({ code: "custom", message: ORDERS_MESSAGES.phoneRequired, path: ["customerPhone"] });
+      ctx.addIssue({ code: "custom", message: ORDERS_MESSAGES.manualPhoneRequired, path: ["customerPhone"] });
     } else if (value.customerPhone !== "" && !normalizeArWhatsapp(value.customerPhone)) {
       ctx.addIssue({ code: "custom", message: ORDERS_MESSAGES.phoneInvalid, path: ["customerPhone"] });
     }
@@ -46,7 +46,7 @@ export type NewOrderDetails = z.infer<typeof newOrderDetailsSchema>;
 /** Whole form of the popup: the details plus the payment choices of the second step. */
 export interface NewOrderFormValues extends NewOrderDetails {
   paymentMethod: PaymentMethod;
-  /** Pesos typed in "Pagás en efectivo" (split). */
+  /** Pesos typed in "En efectivo" (split). */
   splitCash: string;
   /** Pesos typed in "¿Con cuánto abonás?". */
   cashTendered: string;

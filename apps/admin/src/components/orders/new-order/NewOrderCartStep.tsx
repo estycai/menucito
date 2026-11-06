@@ -323,7 +323,7 @@ export function NewOrderCartStep({
       </div>
 
       {fulfillment === "delivery" && zones && !covered && !quotePending && (
-        <Notice tone="error">Tu dirección está fuera de la zona de entrega.</Notice>
+        <Notice tone="error">La dirección está fuera de la zona de entrega.</Notice>
       )}
       {quoteFailed && <Notice tone="error">No pudimos calcular el envío. Probá de nuevo.</Notice>}
       {belowMinimum && minOrderCents !== null && (
@@ -551,7 +551,7 @@ function PaymentSection({
 
       {paymentMethod === "split" && (
         <label className="flex flex-col gap-1 text-xs font-bold text-muted">
-          Pagás en efectivo
+          En efectivo
           <Input inputMode="numeric" autoComplete="off" {...register("splitCash")} />
         </label>
       )}

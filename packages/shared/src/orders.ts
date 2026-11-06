@@ -223,6 +223,9 @@ export const ORDERS_MESSAGES = {
   clientOrderIdInvalid: "El identificador del pedido debe ser un UUID válido",
   expectedTotalInvalid: "El total esperado debe ser un número entero no negativo",
   manualSourceInvalid: "Elegí el origen del pedido",
+  /** Manual orders are typed by an employee, so their messages talk about the customer. */
+  manualNameRequired: "Ingresá el nombre del cliente",
+  manualPhoneRequired: "Ingresá el teléfono del cliente",
   notesTooLong: `El comentario puede tener hasta ${ORDER_NOTES_MAX_LENGTH} caracteres`,
 } as const;
 
@@ -448,7 +451,7 @@ export const createManualOrderCustomerSchema = z.object({
   name: z
     .string()
     .trim()
-    .min(1, ORDERS_MESSAGES.nameRequired)
+    .min(1, ORDERS_MESSAGES.manualNameRequired)
     .max(ORDER_NAME_MAX_LENGTH, ORDERS_MESSAGES.nameTooLong),
   phone: z
     .string()
@@ -508,7 +511,7 @@ export const createManualOrderRequestSchema = z
     if (val.source === "whatsapp" && val.customer.phone === "") {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: ORDERS_MESSAGES.phoneRequired,
+        message: ORDERS_MESSAGES.manualPhoneRequired,
         path: ["customer", "phone"],
       });
       return z.NEVER;
