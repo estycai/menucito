@@ -128,3 +128,34 @@ export function createPublicDeliveryService(
 export function publicDeliveryServiceFor(db: D1Database): PublicDeliveryService {
   return createPublicDeliveryService(createRestaurantsRepository(db), createDeliveryRepository(db));
 }
+
+/** Shipping quote for the admin's "Nuevo pedido": same math as the public one, store from the session. */
+export interface OwnerDeliveryService {
+  quote(restaurantId: string, request: DeliveryQuoteRequest): Promise<PublicDeliveryQuote>;
+}
+
+export function createOwnerDeliveryService(
+  restaurantsRepo: RestaurantsRepository,
+  deliveryRepo: DeliveryRepository,
+): OwnerDeliveryService {
+  return {
+    async quote(restaurantId, { lat, lng, subtotalCents }) {
+      const restaurant = await restaurantsRepo.findById(restaurantId);
+      const location = await deliveryRepo.findLocation(restaurantId);
+      if (!restaurant || !deliversByZones(restaurant, location)) throw new DeliveryZonesDisabledError();
+      const zones = await deliveryRepo.listZones(restaurantId);
+      return toPublicQuote(
+        quoteDelivery({
+          zones,
+          origin: { lat: location.lat, lng: location.lng },
+          point: { lat, lng },
+          subtotalCents,
+        }),
+      );
+    },
+  };
+}
+
+export function ownerDeliveryServiceFor(db: D1Database): OwnerDeliveryService {
+  return createOwnerDeliveryService(createRestaurantsRepository(db), createDeliveryRepository(db));
+}

@@ -55,6 +55,7 @@ const storedOrder: OrderDetail = {
   paymentBreakdown: { cashCents: 100_000, transferCents: 0, tenderedCents: null, changeCents: null },
   customerName: "Juan",
   customerPhone: "5491155551234",
+  source: "web",
   deliveryAddress: null,
   deliveryLocation: null,
   notes: null,
@@ -234,6 +235,7 @@ describe("updatePaymentMethod race (no database)", () => {
     paymentStatus: "pending",
     paymentMethod: "transfer",
     fulfillment: "delivery",
+    source: "web",
     subtotalCents: 1_000_000,
     shippingCents: 0,
     tipCents: 0,
@@ -247,6 +249,11 @@ describe("updatePaymentMethod race (no database)", () => {
       orders,
       members: {} as MembersRepository,
       cash: {} as CashRepository,
+      restaurants: {} as RestaurantsRepository,
+      settings: {} as SettingsRepository,
+      products: {} as ProductsRepository,
+      ingredients: {} as IngredientsRepository,
+      delivery: {} as DeliveryRepository,
     });
   };
   const input = { paymentMethod: "cash" as const, expectedStatus: "new" as const };

@@ -16,11 +16,14 @@ import {
   CASH_TENDERED_MAX_CENTS,
   PAYMENT_SPLIT_MESSAGES,
   splitCashProblem,
+  type CreateManualOrderRequest,
+  type CreateManualOrderResponse,
   type CreateOrderRequest,
   type CreateOrderResponse,
   type OrderDetail,
   type OrderFiltersQuery,
   type OrderPaymentInfo,
+  type OrderSource,
   type OrderStatus,
   type PaymentStatus,
   type StoreSettings,
@@ -48,6 +51,7 @@ import {
   ConcurrentModificationError,
   CourierRequiredError,
   DeliveryLocationRequiredError,
+  DomainError,
   ExportTooLargeError,
   FulfillmentNotOfferedError,
   InvalidTransitionError,
@@ -59,6 +63,7 @@ import {
   PaymentLockedError,
   PriceChangedError,
   ProductUnavailableError,
+  RestaurantNotFoundError,
   StoreClosedError,
   StorePausedError,
   TooManyOrdersError,
@@ -72,13 +77,31 @@ import { MenuNotFoundError } from "./public-menu";
 /** Attempts at inserting an order whose number keeps colliding with concurrent orders. */
 const ORDER_INSERT_ATTEMPTS = 3;
 
-export interface PublicOrdersDependencies {
-  restaurants: RestaurantsRepository;
-  settings: SettingsRepository;
+/** The part of an order request both creation paths share (public menu and manual load). */
+type OrderDraft = Pick<
+  CreateOrderRequest,
+  | "items"
+  | "customer"
+  | "fulfillment"
+  | "paymentMethod"
+  | "splitCashCents"
+  | "cashTenderedCents"
+  | "clientOrderId"
+  | "expectedTotalCents"
+  | "tipCents"
+  | "delivery"
+>;
+
+interface OrderWriteDependencies {
   orders: OrdersRepository;
   products: ProductsRepository;
   ingredients: IngredientsRepository;
   delivery: DeliveryRepository;
+}
+
+export interface PublicOrdersDependencies extends OrderWriteDependencies {
+  restaurants: RestaurantsRepository;
+  settings: SettingsRepository;
   hours: HoursRepository;
   now?: () => Date;
   generateId?: () => string;
@@ -194,6 +217,188 @@ function priceItems({ items, productsById, ingredientsByProduct, withIngredients
   return { items: rows, subtotalCents };
 }
 
+/**
+ * Shipping, minimum and address of the order. A store in `zones` mode quotes the geocoded address
+ * (`OUT_OF_COVERAGE` when no active zone covers it); a `flat` store charges its single price and keeps
+ * the typed address, taking the geocoded one only when there is none.
+ */
+async function deliveryTerms(
+  delivery: DeliveryRepository,
+  restaurant: RestaurantRow,
+  storeSettings: StoreSettings,
+  req: OrderDraft,
+  subtotalCents: number,
+  generateId: () => string,
+): Promise<DeliveryTerms> {
+  const flat: DeliveryTerms = {
+    shippingCents: storeSettings.shippingCents,
+    minOrderCents: storeSettings.minOrderCents,
+    deliveryAddress: null,
+    delivery: null,
+  };
+  if (req.fulfillment !== "delivery") return flat;
+
+  const location = await delivery.findLocation(restaurant.id);
+  if (!deliversByZones(restaurant, location)) {
+    return { ...flat, deliveryAddress: req.customer.address ?? req.delivery?.formattedAddress ?? null };
+  }
+
+  const address = req.delivery;
+  if (!address) throw new DeliveryLocationRequiredError();
+  const quote = quoteDelivery({
+    zones: await delivery.listZones(restaurant.id),
+    origin: { lat: location.lat, lng: location.lng },
+    point: { lat: address.lat, lng: address.lng },
+    subtotalCents,
+  });
+  if (!quote.covered) throw new OutOfCoverageError();
+
+  return {
+    shippingCents: quote.shippingCents,
+    minOrderCents: quote.minOrderCents ?? storeSettings.minOrderCents,
+    deliveryAddress: address.formattedAddress,
+    delivery: {
+      addressId: generateId(),
+      lat: address.lat,
+      lng: address.lng,
+      placeId: address.placeId,
+      formattedAddress: address.formattedAddress,
+      locality: address.locality,
+      unit: address.unit,
+      betweenStreets: address.betweenStreets,
+      label: address.label,
+      zoneId: quote.zoneId,
+      zoneName: quote.zoneName,
+      distanceM: quote.distanceM,
+    },
+  };
+}
+
+/**
+ * Inserts the order, retrying when its number collides with a concurrent order. A token collision
+ * means a concurrent request with the same `clientOrderId` won: its order is returned as resent (a
+ * replay is a 200). Any other failure is rethrown untouched.
+ */
+async function insertOrder(
+  orders: OrdersRepository,
+  data: InsertOrderData,
+): Promise<{ order: OrderDetail; resent: boolean }> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return { order: await orders.insertOrder(data), resent: false };
+    } catch (error) {
+      if (!(error instanceof UniqueViolationError)) throw error;
+      if (error.columns.includes("client_token")) {
+        const raced = await orders.findByToken(data.restaurantId, data.clientToken);
+        if (raced) return { order: raced, resent: true };
+        throw error;
+      }
+      if (!error.columns.includes("number")) throw error;
+      if (attempt >= ORDER_INSERT_ATTEMPTS) throw new OrderNumberConflictError();
+    }
+  }
+}
+
+/**
+ * Steps shared by every order-creation path: offered fulfillment and payment method, prices from the
+ * database, delivery terms, minimum, totals, expected total, split and insert. Pause, hours and rate
+ * limits stay in the public path: an employee loading a counter order skips them.
+ */
+async function writeOrder(
+  deps: OrderWriteDependencies,
+  restaurant: RestaurantRow,
+  storeSettings: StoreSettings,
+  req: OrderDraft,
+  extra: { source: OrderSource; notes: string | null },
+  now: () => Date,
+  generateId: () => string,
+): Promise<{ order: OrderDetail; resent: boolean }> {
+  // 1. Fulfillment check
+  if (req.fulfillment === "delivery" && !restaurant.delivery) throw new FulfillmentNotOfferedError();
+  if (req.fulfillment === "takeaway" && !restaurant.takeaway) throw new FulfillmentNotOfferedError();
+
+  // 2. Payment method check: split also needs cash and transfer enabled.
+  const chosenMethod = storeSettings.paymentMethods.find((pm) => pm.method === req.paymentMethod);
+  const splitReady =
+    req.paymentMethod !== "split" ||
+    (storeSettings.paymentMethods.some((pm) => pm.method === "cash" && pm.enabled) &&
+      storeSettings.paymentMethods.some((pm) => pm.method === "transfer" && pm.enabled));
+  if (req.paymentMethod === "split" && (!chosenMethod?.enabled || !splitReady)) {
+    throw new ValidationError(PAYMENT_SPLIT_MESSAGES.splitNeedsBoth);
+  }
+  if (!chosenMethod || !chosenMethod.enabled) throw new PaymentMethodNotAcceptedError();
+
+  // 3. Products and ingredient choices
+  const allProducts = await deps.products.list(restaurant.id);
+  const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
+  const allIngredients = withIngredients ? await deps.ingredients.listByRestaurant(restaurant.id) : [];
+  const ingredientsByProduct = new Map<string, IngredientRow[]>();
+  for (const row of allIngredients) {
+    const list = ingredientsByProduct.get(row.productId) ?? [];
+    list.push(row);
+    ingredientsByProduct.set(row.productId, list);
+  }
+
+  const priced = priceItems({
+    items: req.items,
+    productsById: new Map(allProducts.map((p) => [p.id, p])),
+    ingredientsByProduct,
+    withIngredients,
+    generateId,
+  });
+
+  // 4. Delivery terms: the flat price, or the quote of the address's zone (the subtotal decides free
+  // shipping, so it goes after pricing)
+  const terms = await deliveryTerms(deps.delivery, restaurant, storeSettings, req, priced.subtotalCents, generateId);
+
+  // 5. Minimum order check against the subtotal, not the total with shipping; a zone's minimum
+  // replaces the store's.
+  if (terms.minOrderCents !== null && priced.subtotalCents < terms.minOrderCents) {
+    throw new BelowMinimumError();
+  }
+
+  // 6. Total calculation and expected total check
+  const totals = orderTotals({
+    subtotalCents: priced.subtotalCents,
+    shippingCents: terms.shippingCents,
+    tipCents: req.tipCents,
+    fulfillment: req.fulfillment,
+  });
+  if (req.expectedTotalCents !== totals.totalCents) throw new PriceChangedError();
+  // The split is validated against the total recalculated from the database, not the client's.
+  if (req.paymentMethod === "split") {
+    const splitProblem =
+      typeof req.splitCashCents !== "number"
+        ? "splitRange"
+        : splitCashProblem(req.splitCashCents, totals.totalCents, totals.tipCents);
+    if (splitProblem) throw new ValidationError(PAYMENT_SPLIT_MESSAGES[splitProblem]);
+  }
+  if (req.cashTenderedCents !== null && req.cashTenderedCents > CASH_TENDERED_MAX_CENTS) {
+    throw new ValidationError(PAYMENT_SPLIT_MESSAGES.tenderedTooHigh);
+  }
+
+  // 7. Write the order
+  return insertOrder(deps.orders, {
+    orderId: generateId(),
+    restaurantId: restaurant.id,
+    clientToken: req.clientOrderId,
+    customerId: generateId(),
+    customerName: req.customer.name,
+    customerPhone: req.customer.phone,
+    deliveryAddress: terms.deliveryAddress,
+    delivery: terms.delivery,
+    fulfillment: req.fulfillment,
+    paymentMethod: req.paymentMethod,
+    source: extra.source,
+    notes: extra.notes,
+    splitCashCents: req.splitCashCents,
+    cashTenderedCents: req.cashTenderedCents,
+    ...totals,
+    createdAt: now(),
+    items: priced.items,
+  });
+}
+
 export function createPublicOrdersService({
   restaurants,
   settings,
@@ -205,84 +410,6 @@ export function createPublicOrdersService({
   now = () => new Date(),
   generateId = () => crypto.randomUUID(),
 }: PublicOrdersDependencies) {
-  /**
-   * Shipping, minimum and address of the order. A store in `zones` mode quotes the geocoded address
-   * (`OUT_OF_COVERAGE` when no active zone covers it); a `flat` store charges its single price and
-   * keeps the typed address, taking the geocoded one only when there is none (a page opened while
-   * the store was still in `zones` mode).
-   */
-  async function deliveryTerms(
-    restaurant: RestaurantRow,
-    storeSettings: StoreSettings,
-    req: CreateOrderRequest,
-    subtotalCents: number,
-  ): Promise<DeliveryTerms> {
-    const flat: DeliveryTerms = {
-      shippingCents: storeSettings.shippingCents,
-      minOrderCents: storeSettings.minOrderCents,
-      deliveryAddress: null,
-      delivery: null,
-    };
-    if (req.fulfillment !== "delivery") return flat;
-
-    const location = await delivery.findLocation(restaurant.id);
-    if (!deliversByZones(restaurant, location)) {
-      return { ...flat, deliveryAddress: req.customer.address ?? req.delivery?.formattedAddress ?? null };
-    }
-
-    const address = req.delivery;
-    if (!address) throw new DeliveryLocationRequiredError();
-    const quote = quoteDelivery({
-      zones: await delivery.listZones(restaurant.id),
-      origin: { lat: location.lat, lng: location.lng },
-      point: { lat: address.lat, lng: address.lng },
-      subtotalCents,
-    });
-    if (!quote.covered) throw new OutOfCoverageError();
-
-    return {
-      shippingCents: quote.shippingCents,
-      minOrderCents: quote.minOrderCents ?? storeSettings.minOrderCents,
-      deliveryAddress: address.formattedAddress,
-      delivery: {
-        addressId: generateId(),
-        lat: address.lat,
-        lng: address.lng,
-        placeId: address.placeId,
-        formattedAddress: address.formattedAddress,
-        locality: address.locality,
-        unit: address.unit,
-        betweenStreets: address.betweenStreets,
-        label: address.label,
-        zoneId: quote.zoneId,
-        zoneName: quote.zoneName,
-        distanceM: quote.distanceM,
-      },
-    };
-  }
-
-  /**
-   * Inserts the order, retrying when its number collides with a concurrent order. A token collision
-   * means a concurrent request with the same `clientOrderId` won: its order is returned as resent
-   * (scenario 25: the replay is a 200). Any other failure is rethrown untouched.
-   */
-  async function insertOrder(data: InsertOrderData): Promise<{ order: OrderDetail; resent: boolean }> {
-    for (let attempt = 1; ; attempt++) {
-      try {
-        return { order: await orders.insertOrder(data), resent: false };
-      } catch (error) {
-        if (!(error instanceof UniqueViolationError)) throw error;
-        if (error.columns.includes("client_token")) {
-          const raced = await orders.findByToken(data.restaurantId, data.clientToken);
-          if (raced) return { order: raced, resent: true };
-          throw error;
-        }
-        if (!error.columns.includes("number")) throw error;
-        if (attempt >= ORDER_INSERT_ATTEMPTS) throw new OrderNumberConflictError();
-      }
-    }
-  }
-
   return {
     async createOrder(
       slug: string,
@@ -327,99 +454,16 @@ export function createPublicOrdersService({
         throw new TooManyOrdersError();
       }
 
-      // 6. Fulfillment check
-      if (req.fulfillment === "delivery" && !restaurant.delivery) {
-        throw new FulfillmentNotOfferedError();
-      }
-      if (req.fulfillment === "takeaway" && !restaurant.takeaway) {
-        throw new FulfillmentNotOfferedError();
-      }
-
-      // 7. Payment method check: split also needs cash and transfer enabled.
-      const chosenMethod = storeSettings.paymentMethods.find((pm) => pm.method === req.paymentMethod);
-      const splitReady =
-        req.paymentMethod !== "split" ||
-        (storeSettings.paymentMethods.some((pm) => pm.method === "cash" && pm.enabled) &&
-          storeSettings.paymentMethods.some((pm) => pm.method === "transfer" && pm.enabled));
-      if (req.paymentMethod === "split" && (!chosenMethod?.enabled || !splitReady)) {
-        throw new ValidationError(PAYMENT_SPLIT_MESSAGES.splitNeedsBoth);
-      }
-      if (!chosenMethod || !chosenMethod.enabled) {
-        throw new PaymentMethodNotAcceptedError();
-      }
-
-      // 8. Products and ingredient choices
-      const allProducts = await products.list(restaurant.id);
-      const withIngredients = planLimitsFor(restaurant.plan).customIngredients;
-      const allIngredients = withIngredients ? await ingredients.listByRestaurant(restaurant.id) : [];
-      const ingredientsByProduct = new Map<string, IngredientRow[]>();
-      for (const row of allIngredients) {
-        const list = ingredientsByProduct.get(row.productId) ?? [];
-        list.push(row);
-        ingredientsByProduct.set(row.productId, list);
-      }
-
-      const priced = priceItems({
-        items: req.items,
-        productsById: new Map(allProducts.map((p) => [p.id, p])),
-        ingredientsByProduct,
-        withIngredients,
+      // 6-12. Offered options, prices from the database, delivery terms, minimum, totals and insert.
+      const { order, resent } = await writeOrder(
+        { orders, products, ingredients, delivery },
+        restaurant,
+        storeSettings,
+        req,
+        { source: "web", notes: null },
+        now,
         generateId,
-      });
-
-      // 9. Delivery terms: the flat price, or the quote of the address's zone (the diner's subtotal
-      // decides free shipping, so it goes after pricing)
-      const terms = await deliveryTerms(restaurant, storeSettings, req, priced.subtotalCents);
-
-      // 10. Minimum order check (against the subtotal, not the total with shipping); a zone's minimum
-      // replaces the store's
-      if (terms.minOrderCents !== null && priced.subtotalCents < terms.minOrderCents) {
-        throw new BelowMinimumError();
-      }
-
-      // 11. Total calculation and expected total check
-      const totals = orderTotals({
-        subtotalCents: priced.subtotalCents,
-        shippingCents: terms.shippingCents,
-        tipCents: req.tipCents,
-        fulfillment: req.fulfillment,
-      });
-      if (req.expectedTotalCents !== totals.totalCents) {
-        throw new PriceChangedError();
-      }
-      // The split is validated against the total recalculated from the database, not the client's.
-      if (req.paymentMethod === "split") {
-        const splitProblem =
-          typeof req.splitCashCents !== "number"
-            ? "splitRange"
-            : splitCashProblem(req.splitCashCents, totals.totalCents, totals.tipCents);
-        if (splitProblem) throw new ValidationError(PAYMENT_SPLIT_MESSAGES[splitProblem]);
-      }
-      if (
-        req.cashTenderedCents !== null &&
-        req.cashTenderedCents > CASH_TENDERED_MAX_CENTS
-      ) {
-        throw new ValidationError(PAYMENT_SPLIT_MESSAGES.tenderedTooHigh);
-      }
-
-      // 12. Write the order
-      const { order, resent } = await insertOrder({
-        orderId: generateId(),
-        restaurantId: restaurant.id,
-        clientToken: req.clientOrderId,
-        customerId: generateId(),
-        customerName: req.customer.name,
-        customerPhone: req.customer.phone,
-        deliveryAddress: terms.deliveryAddress,
-        delivery: terms.delivery,
-        fulfillment: req.fulfillment,
-        paymentMethod: req.paymentMethod,
-        splitCashCents: req.splitCashCents ?? null,
-        cashTenderedCents: req.cashTenderedCents ?? null,
-        ...totals,
-        createdAt: now(),
-        items: priced.items,
-      });
+      );
 
       // 13. Build response
       return { status: resent ? 200 : 201, response: buildCreateOrderResponse(order, restaurant, storeSettings) };
@@ -450,8 +494,9 @@ function toListFilter(query: OrderFiltersQuery): ListOrdersFilter {
   return filter;
 }
 
-export interface OwnerOrdersDependencies {
-  orders: OrdersRepository;
+export interface OwnerOrdersDependencies extends OrderWriteDependencies {
+  restaurants: RestaurantsRepository;
+  settings: SettingsRepository;
   /** Needed to validate the courier of an assignment and to know if a member has orders. */
   members: MembersRepository;
   cash: CashRepository;
@@ -461,11 +506,73 @@ export interface OwnerOrdersDependencies {
 
 export function createOwnerOrdersService({
   orders,
+  restaurants,
+  settings,
+  products,
+  ingredients,
+  delivery,
   members,
   cash,
   now = () => new Date(),
   generateId = () => crypto.randomUUID(),
 }: OwnerOrdersDependencies) {
+  /**
+   * Marks an order paid or pending. Paid enters the open cash when the money lands there: any
+   * transfer, and cash or split takeaway. Delivery cash and split orders stay "to settle" until
+   * someone taps "Ingresar a la caja" (change 14b). Shared by the owner route and the manual creation.
+   */
+  async function updatePayment(
+    restaurantId: string,
+    member: { memberId: string },
+    orderId: string,
+    targetPaymentStatus: PaymentStatus,
+  ) {
+    const current = await orders.findDetail(restaurantId, orderId);
+    if (!current) throw new OrderNotFoundError();
+
+    if (current.paymentStatus === targetPaymentStatus) return current;
+
+    if (targetPaymentStatus === "pending") {
+      if (current.cashSessionId || current.settledAt != null) {
+        if (current.cashSessionId) {
+          const session = await cash.findSession(restaurantId, current.cashSessionId);
+          if (!session || session.closedAt) throw new CashSessionClosedError();
+        }
+        throw new OrderSettledError();
+      }
+      const reverted = await orders.updatePaymentStatus(restaurantId, orderId, "pending", now());
+      if (!reverted) throw new OrderNotFoundError();
+      return reverted;
+    }
+
+    const open = await cash.findOpenSession(restaurantId);
+    // A cancelled order is never money that reached the drawer.
+    const entersCash =
+      current.status !== "cancelled" &&
+      (current.paymentMethod === "transfer" || current.fulfillment === "takeaway");
+    const cashSessionId = entersCash ? (open?.id ?? null) : null;
+    const paidAt = now();
+    let rows: ReturnType<typeof buildOrderSplitIncomeRows> = [];
+    if (current.paymentMethod === "split" && cashSessionId) {
+      const record = await members.find(restaurantId, member.memberId);
+      const name = record ? `${record.member.firstName} ${record.member.lastName}`.trim() || "Usuario" : "Usuario";
+      rows = buildOrderSplitIncomeRows(
+        current,
+        restaurantId,
+        cashSessionId,
+        member,
+        name,
+        paidAt,
+        generateId,
+      );
+    }
+    await cash.markOrderPaid(restaurantId, orderId, cashSessionId, paidAt, rows);
+
+    const updated = await orders.findDetail(restaurantId, orderId);
+    if (!updated) throw new OrderNotFoundError();
+    return updated;
+  }
+
   return {
     async list(restaurantId: string, query: OrderFiltersQuery) {
       return orders.list(restaurantId, toListFilter(query));
@@ -543,61 +650,50 @@ export function createOwnerOrdersService({
     },
 
     /**
-     * Marks an order paid or pending. Paid enters the open cash when the money lands there: any
-     * transfer, and cash or split takeaway. Delivery cash and split orders stay "to settle" until
-     * someone taps "Ingresar a la caja" (change 14b).
+     * Creates an order loaded by an employee (counter or WhatsApp). It skips pause, opening hours and
+     * the phone throttle; the rest of the rules are the public ones. `markPaid` marks it paid after
+     * inserting: if that fails the order stays created and the response carries `paymentError`.
      */
-    async updatePayment(
+    async createManualOrder(
       restaurantId: string,
       member: { memberId: string },
-      orderId: string,
-      targetPaymentStatus: PaymentStatus,
-    ) {
-      const current = await orders.findDetail(restaurantId, orderId);
-      if (!current) throw new OrderNotFoundError();
+      req: CreateManualOrderRequest,
+    ): Promise<{ status: 200 | 201; order: CreateManualOrderResponse }> {
+      const restaurant = await restaurants.findById(restaurantId);
+      if (!restaurant) throw new RestaurantNotFoundError();
 
-      if (current.paymentStatus === targetPaymentStatus) return current;
+      const existing = await orders.findByToken(restaurantId, req.clientOrderId);
+      if (existing) return { status: 200, order: existing };
 
-      if (targetPaymentStatus === "pending") {
-        if (current.cashSessionId || current.settledAt != null) {
-          if (current.cashSessionId) {
-            const session = await cash.findSession(restaurantId, current.cashSessionId);
-            if (!session || session.closedAt) throw new CashSessionClosedError();
-          }
-          throw new OrderSettledError();
-        }
-        const reverted = await orders.updatePaymentStatus(restaurantId, orderId, "pending", now());
-        if (!reverted) throw new OrderNotFoundError();
-        return reverted;
+      const storedSettings = await settings.findSettings(restaurantId);
+      if (!storedSettings) {
+        console.warn(`[orders] restaurant ${restaurantId} missing settings row, using safe defaults`);
       }
+      const storeSettings = storedSettings ?? DEFAULT_SETTINGS;
 
-      const open = await cash.findOpenSession(restaurantId);
-      // A cancelled order is never money that reached the drawer.
-      const entersCash =
-        current.status !== "cancelled" &&
-        (current.paymentMethod === "transfer" || current.fulfillment === "takeaway");
-      const cashSessionId = entersCash ? (open?.id ?? null) : null;
-      const paidAt = now();
-      let rows: ReturnType<typeof buildOrderSplitIncomeRows> = [];
-      if (current.paymentMethod === "split" && cashSessionId) {
-        const record = await members.find(restaurantId, member.memberId);
-        const name = record ? `${record.member.firstName} ${record.member.lastName}`.trim() || "Usuario" : "Usuario";
-        rows = buildOrderSplitIncomeRows(
-          current,
-          restaurantId,
-          cashSessionId,
-          member,
-          name,
-          paidAt,
-          generateId,
-        );
+      const { order, resent } = await writeOrder(
+        { orders, products, ingredients, delivery },
+        restaurant,
+        storeSettings,
+        req,
+        { source: req.source, notes: req.notes },
+        now,
+        generateId,
+      );
+      // A concurrent retry with the same token won: return its order without marking anything again.
+      if (resent) return { status: 200, order };
+
+      if (!req.markPaid) return { status: 201, order };
+
+      try {
+        return { status: 201, order: await updatePayment(restaurantId, member, order.id, "paid") };
+      } catch (error) {
+        const code = error instanceof DomainError ? error.code : "PAYMENT_FAILED";
+        return { status: 201, order: { ...order, paymentError: code } };
       }
-      await cash.markOrderPaid(restaurantId, orderId, cashSessionId, paidAt, rows);
-
-      const updated = await orders.findDetail(restaurantId, orderId);
-      if (!updated) throw new OrderNotFoundError();
-      return updated;
     },
+
+    updatePayment,
 
     /**
      * Changes the payment method of an order that is not paid nor cancelled. Moving to cash drops the
@@ -681,6 +777,11 @@ export type OwnerOrdersService = ReturnType<typeof createOwnerOrdersService>;
 export function ordersServiceFor(db: D1Database): OwnerOrdersService {
   return createOwnerOrdersService({
     orders: createOrdersRepository(db),
+    restaurants: createRestaurantsRepository(db),
+    settings: createSettingsRepository(db),
+    products: createProductsRepository(db),
+    ingredients: createIngredientsRepository(db),
+    delivery: createDeliveryRepository(db),
     members: createMembersRepository(db),
     cash: createCashRepository(db),
   });

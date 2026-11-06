@@ -14,6 +14,7 @@ import {
   type OrderDetail,
   type OrderItem,
   type OrderItemOption,
+  type OrderSource,
   type OrderStatus,
   type OrderStatusFilter,
   type OrderSummary,
@@ -64,6 +65,10 @@ export interface InsertOrderData {
   delivery: InsertOrderDelivery | null;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
+  /** `web` for the public menu; `local` or `whatsapp` for the orders loaded by an employee. */
+  source: OrderSource;
+  /** Comment of the whole order; `null` when there is none. */
+  notes: string | null;
   /** Cash part of a `split` order; `null` otherwise. */
   splitCashCents: number | null;
   /** "¿Con cuánto abonás?"; `null` when the diner left it empty. */
@@ -238,6 +243,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       paymentStatus: orderRow.paymentStatus as PaymentStatus,
       fulfillment: orderRow.fulfillment as Fulfillment,
       paymentMethod: payment.paymentMethod,
+      source: orderRow.source as OrderSource,
       splitCashCents: payment.splitCashCents,
       cashTenderedCents: payment.cashTenderedCents,
       paymentBreakdown: paymentBreakdown(payment),
@@ -499,11 +505,13 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           paymentStatus: "pending",
           fulfillment: data.fulfillment,
           paymentMethod: data.paymentMethod,
+          source: data.source,
           splitCashCents: data.splitCashCents,
           cashTenderedCents: data.cashTenderedCents,
           customerName: data.customerName,
           customerPhone: data.customerPhone,
           deliveryAddress: data.deliveryAddress,
+          notes: data.notes,
           deliveryLat: data.delivery?.lat ?? null,
           deliveryLng: data.delivery?.lng ?? null,
           deliveryPlaceId: data.delivery?.placeId ?? null,
@@ -606,6 +614,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         paymentStatus: order.paymentStatus as PaymentStatus,
         fulfillment: order.fulfillment as Fulfillment,
         paymentMethod: order.paymentMethod as PaymentMethod,
+        source: order.source as OrderSource,
         splitCashCents: order.splitCashCents,
         cashTenderedCents: order.cashTenderedCents,
         paymentBreakdown: paymentBreakdown({
@@ -619,6 +628,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         settledAt: order.settledAt?.getTime() ?? null,
         customerName: order.customerName,
         customerPhone: order.customerPhone,
+        notes: order.notes,
         totalCents: order.totalCents,
         itemCount: Number(itemCount),
         createdAt: order.createdAt.getTime(),

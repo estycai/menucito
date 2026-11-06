@@ -362,6 +362,8 @@ export const orders = sqliteTable(
     paymentStatus: text("payment_status").notNull().default("pending"),
     fulfillment: text("fulfillment").notNull(),
     paymentMethod: text("payment_method").notNull(),
+    // `web` for orders placed from the public menu; `local` or `whatsapp` for the ones loaded by hand.
+    source: text("source").notNull().default("web"),
     // Cash part of a `split` order and "¿Con cuánto abonás?"; both `NULL` unless they apply.
     splitCashCents: integer("split_cash_cents"),
     cashTenderedCents: integer("cash_tendered_cents"),
@@ -435,6 +437,24 @@ export const orderItems = sqliteTable(
   },
   (t) => [index("order_items_order_idx").on(t.orderId)],
 );
+
+// Messages the store keeps for each order status change, one per fulfillment and destination status.
+// `fulfillment = takeaway` never has a `sent` row (a takeaway order is not sent).
+export const orderMessageTemplates = sqliteTable(
+  "order_message_templates",
+  {
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    fulfillment: text("fulfillment").notNull(),
+    targetStatus: text("target_status").notNull(),
+    body: text("body").notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.restaurantId, t.fulfillment, t.targetStatus] })],
+);
+
+export type OrderMessageTemplateRow = typeof orderMessageTemplates.$inferSelect;
 
 // Fixed-window request counters of the public endpoints that cost money (address search). One row
 // per key (e.g. `places:<slug>:<ip>`); `window_start` is the epoch ms the current window began.

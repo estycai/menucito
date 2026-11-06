@@ -15,6 +15,7 @@ function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     paymentBreakdown: { cashCents: 900_000, transferCents: 0, tenderedCents: null, changeCents: null },
     customerName: "Juan",
     customerPhone: "5491155551234",
+    source: "web",
     deliveryAddress: null,
     deliveryLocation: null,
     notes: null,
@@ -69,5 +70,12 @@ describe("ordersToCsv (scenario 37)", () => {
       ]),
     );
     expect(row).toContain("1x Hamburguesa (Bacon x2 (+$1.500), Sin cebolla)");
+  });
+
+  it("adds Origen and Comentario at the end of the row", () => {
+    const csv = ordersToCsv([order({ source: "whatsapp", notes: "timbre 2B" })]);
+    const [headers, row] = csv.slice(1).split("\r\n");
+    expect(headers!.split(";").slice(-2)).toEqual(["Origen", "Comentario"]);
+    expect(row!.split(";").slice(-2)).toEqual(["WhatsApp", "timbre 2B"]);
   });
 });

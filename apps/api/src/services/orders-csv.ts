@@ -1,5 +1,6 @@
 import {
   FULFILLMENT_LABELS,
+  ORDER_SOURCE_LABELS,
   ORDER_STATUS_LABELS,
   PAYMENT_LABELS,
   PAYMENT_STATUS_LABELS,
@@ -8,6 +9,7 @@ import {
   type Fulfillment,
   type OrderDetail,
   type OrderItem,
+  type OrderSource,
   type OrderStatus,
   type PaymentMethod,
   type PaymentStatus,
@@ -60,6 +62,8 @@ export function ordersToCsv(orders: OrderDetail[]): string {
     "Propina",
     "Total",
     "Ítems",
+    "Origen",
+    "Comentario",
   ];
 
   const lines: string[] = [headers.map(escapeCsvCell).join(";")];
@@ -85,6 +89,8 @@ export function ordersToCsv(orders: OrderDetail[]): string {
       escapeCsvCell(formatMoneyCsv(order.tipCents)),
       escapeCsvCell(formatMoneyCsv(order.totalCents)),
       escapeCsvCell(formatItemsSummary(order.items)),
+      escapeCsvCell(ORDER_SOURCE_LABELS[order.source as OrderSource] ?? order.source),
+      escapeCsvCell(order.notes ?? ""),
     ];
     lines.push(row.join(";"));
   }
