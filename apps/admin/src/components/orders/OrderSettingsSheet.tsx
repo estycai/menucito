@@ -186,7 +186,7 @@ export function OrderSettingsSheet({ onClose }: { onClose: () => void }) {
           setConfirmClose(true);
         }}
         {...backdropClose}
-        className="fixed inset-y-0 right-0 m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto border-0 bg-white p-5 text-ink shadow-2xl backdrop:bg-black/40 open:block sm:w-[480px] sm:p-6"
+        className="fixed inset-y-0 right-0 left-auto m-0 h-dvh max-h-none w-full max-w-none overflow-y-auto border-0 bg-white p-5 text-ink shadow-2xl backdrop:bg-black/40 open:block sm:w-[480px] sm:p-6"
       >
         <div className="flex flex-col gap-5">
           <div className="flex items-start justify-between gap-4 border-b border-line pb-3">
