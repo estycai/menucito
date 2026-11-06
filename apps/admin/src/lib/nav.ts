@@ -21,6 +21,7 @@ export interface NavItem {
 export const NAV_ITEMS: readonly NavItem[] = [
   { id: "summary", label: "Resumen", to: "/", title: "Resumen", permission: "summary.view" },
   { id: "orders", label: "Pedidos", to: "/pedidos", title: "Pedidos", permission: "orders.view" },
+  { id: "cash", label: "Cajas", to: "/cajas", title: "Cajas", permission: "cash.view" },
   { id: "couriers", label: "Repartidores", to: "/repartidores", title: "Repartidores", permission: "couriers.view" },
   { id: "deliveries", label: "Mis repartos", to: "/mis-repartos", title: "Mis repartos", courierOnly: true },
   { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú", permission: "menu.view" },

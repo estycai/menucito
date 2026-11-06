@@ -4,6 +4,10 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { AdminShell } from "@/components/shell/AdminShell";
 import { GuestOnly, RequireAuth, RequireCourier, RequireNoRestaurant, RequirePermission, RequireRestaurant } from "@/components/guards";
+import { CashHistoryPage } from "@/pages/CashHistoryPage";
+import { CashPage } from "@/pages/CashPage";
+import { CashPrintPage } from "@/pages/CashPrintPage";
+import { CashSessionDetailPage } from "@/pages/CashSessionDetailPage";
 import { ComingSoonPage } from "@/pages/ComingSoonPage";
 import { CouriersPage } from "@/pages/CouriersPage";
 import { DeliveriesPage } from "@/pages/DeliveriesPage";
@@ -63,6 +67,13 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 <Route element={<RequirePermission permission="orders.view" />}>
                   <Route path="/pedidos" element={<OrdersPage />} />
                 </Route>
+                <Route element={<RequirePermission permission="cash.view" />}>
+                  <Route path="/cajas" element={<CashPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="cash.history" />}>
+                  <Route path="/cajas/historial" element={<CashHistoryPage />} />
+                  <Route path="/cajas/:id" element={<CashSessionDetailPage />} />
+                </Route>
                 <Route element={<RequirePermission permission="couriers.view" />}>
                   <Route path="/repartidores" element={<CouriersPage />} />
                 </Route>
@@ -102,6 +113,10 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 <Route element={<RequirePermission ownerOnly />}>
                   <Route path="/plan" element={<PlanPage />} />
                 </Route>
+              </Route>
+              {/* The printed arqueo lives outside the panel shell: a plain A4 page. */}
+              <Route element={<RequirePermission permission="cash.history" />}>
+                <Route path="/cajas/:id/imprimir" element={<CashPrintPage />} />
               </Route>
             </Route>
             <Route element={<RequireNoRestaurant />}>

@@ -34,6 +34,9 @@ export interface OrderFilters {
   fulfillment?: string;
   paymentMethod?: string;
   paymentStatus?: string;
+  /** Orders entered into this cash session (the "N ventas" link of Cajas). */
+  cashSessionId?: string;
+  settled?: boolean;
   preset?: DatePreset;
   from?: string;
   to?: string;
@@ -85,6 +88,12 @@ export function filtersFromSearchParams(params: URLSearchParams): OrderFilters {
   const paymentStatus = params.get("paymentStatus");
   if (paymentStatus) filters.paymentStatus = paymentStatus;
 
+  const cashSessionId = params.get("cashSessionId");
+  if (cashSessionId) filters.cashSessionId = cashSessionId;
+
+  const settled = params.get("settled");
+  if (settled === "true" || settled === "false") filters.settled = settled === "true";
+
   const preset = params.get("preset") as DatePreset | null;
   if (preset) filters.preset = preset;
 
@@ -104,6 +113,8 @@ export function filtersToSearchParams(filters: OrderFilters): URLSearchParams {
   if (filters.fulfillment) params.set("fulfillment", filters.fulfillment);
   if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
   if (filters.paymentStatus) params.set("paymentStatus", filters.paymentStatus);
+  if (filters.cashSessionId) params.set("cashSessionId", filters.cashSessionId);
+  if (filters.settled !== undefined) params.set("settled", String(filters.settled));
   if (filters.preset) params.set("preset", filters.preset);
   if (filters.from) params.set("from", filters.from);
   if (filters.to) params.set("to", filters.to);
@@ -119,6 +130,8 @@ export function buildQueryString(filters: OrderFilters, before?: number): string
   if (filters.fulfillment) params.set("fulfillment", filters.fulfillment);
   if (filters.paymentMethod) params.set("paymentMethod", filters.paymentMethod);
   if (filters.paymentStatus) params.set("paymentStatus", filters.paymentStatus);
+  if (filters.cashSessionId) params.set("cashSessionId", filters.cashSessionId);
+  if (filters.settled !== undefined) params.set("settled", String(filters.settled));
 
   // If preset is active and not custom, calculate effective dates
   if (filters.preset && filters.preset !== "custom") {

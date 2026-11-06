@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router";
+import { Notice } from "@/components/AuthLayout";
 import { useAccess } from "@/lib/access";
+import { useCashCurrent } from "@/lib/cash";
 import { useCatalog } from "@/lib/catalog";
 import { publicMenuHref } from "@/lib/public-link";
 import { PUBLIC_BASE, publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
@@ -33,7 +36,10 @@ export function SummaryPage() {
   const { can } = useAccess();
   // The product and category counts come from the menu: only members who can see it get them.
   const canSeeMenu = can("menu.view");
+  const canSeeCash = can("cash.view");
+  const canCloseCash = can("cash.close");
   const { data: catalog } = useCatalog(canSeeMenu);
+  const cash = useCashCurrent(canSeeCash);
   if (!restaurant) return null;
 
   const firstName = session?.user.name?.trim().split(/\s+/)[0];
@@ -48,6 +54,15 @@ export function SummaryPage() {
         <h1 className="m-0 font-display text-[28px] font-extrabold sm:text-[32px]">Resumen</h1>
         <p className="m-0 text-[15px] text-muted">{firstName ? `Hola, ${firstName}` : "Hola"}</p>
       </div>
+
+      {canCloseCash && cash.data?.session && cash.data.storeClosed && (
+        <Notice tone="warning">
+          <b>El local ya cerró.</b> Cerrá la caja para hacer el arqueo.{" "}
+          <Link to="/cajas" className="font-bold underline">
+            Ir a Cajas
+          </Link>
+        </Notice>
+      )}
 
       <section aria-label="Tu link y tu WhatsApp" className="flex flex-col gap-2 rounded-2xl border border-line bg-white p-6">
         <p className="m-0 text-sm text-muted">Tu link</p>

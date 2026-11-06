@@ -21,7 +21,7 @@ import { useUpdateAppearance } from "@/lib/restaurant";
 const MESSAGES = {
   saved: "Cambios guardados",
   saveFailed: "No pudimos guardar los cambios. Probá de nuevo.",
-  basicNote: "En el Plan Básico se usan los colores por defecto de Menucito.",
+  basicNote: "En el Plan Free se usan los colores por defecto de Menucito.",
 } as const;
 
 /** Collapses whitespace like the API does, so the preview shows what will be saved. */

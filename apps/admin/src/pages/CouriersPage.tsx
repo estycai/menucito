@@ -7,7 +7,13 @@ import {
   type CourierSummaryStatus,
 } from "@menucito/shared";
 import { QueryError } from "@/components/QueryError";
+import { ActionsMenu } from "@/components/users/ActionsMenu";
+import { CourierChangeDialog } from "@/components/cash/CourierChangeDialog";
+import { NewMovementDialog } from "@/components/cash/NewMovementDialog";
+import { Notice } from "@/components/AuthLayout";
 import { Badge } from "@/components/ui/badge";
+import { useAccess } from "@/lib/access";
+import { useCashCurrent } from "@/lib/cash";
 import {
   courierName,
   courierTotals,
@@ -32,6 +38,13 @@ const COURIERS_UI_MESSAGES = {
  */
 export function CouriersPage() {
   useDocumentTitle("Repartidores");
+  const { can } = useAccess();
+  const canPay = can("cash.movements");
+  const canChange = can("cash.settle");
+  const cash = useCashCurrent(can("cash.view"));
+  const [payCourierId, setPayCourierId] = useState<string | null>(null);
+  const [changeCourierId, setChangeCourierId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [range, setRange] = useState<DateRange>(() => todayRange());
   const [courierId, setCourierId] = useState<string | null>(null);
   const [status, setStatus] = useState<CourierSummaryStatus>("delivered");
@@ -45,6 +58,16 @@ export function CouriersPage() {
   // Every courier of the local, not only the ones with deliveries in the range: the options of the
   // filter must survive a date change. "Sin repartidor" is a row, not a filter option.
   const options = summary?.couriers ?? [];
+  const showActions = canPay || canChange;
+
+  function openAction(setId: (id: string) => void, memberId: string) {
+    if (!cash.data?.session) {
+      setActionError("Abrí la caja primero para pagar o dar cambio.");
+      return;
+    }
+    setActionError(null);
+    setId(memberId);
+  }
 
   return (
     <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-5">
@@ -112,6 +135,8 @@ export function CouriersPage() {
         </div>
       </div>
 
+      {actionError && <Notice tone="warning">{actionError}</Notice>}
+
       <section className={cn("grid grid-cols-1 gap-4", status === "all" ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3")}>
         {showDelivered && <TotalCard label="Entregados" value={String(totals.delivered)} loading={summaryQuery.isLoading} />}
         {showInProgress && <TotalCard label="En camino" value={String(totals.inProgress)} loading={summaryQuery.isLoading} />}
@@ -137,6 +162,7 @@ export function CouriersPage() {
                   {showInProgress && <th className="px-4 py-3.5 text-right font-bold">En camino</th>}
                   <th className="px-4 py-3.5 text-right font-bold">Envíos</th>
                   <th className="px-4 py-3.5 text-right font-bold">Propinas</th>
+                  {showActions && <th className="px-4 py-3.5 text-right font-bold">Acciones</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -149,6 +175,23 @@ export function CouriersPage() {
                     {showInProgress && <td className="px-4 py-3.5 text-right tabular-nums">{row.inProgress}</td>}
                     <td className="px-4 py-3.5 text-right tabular-nums">{formatArs(row.shippingCents)}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums">{formatArs(row.tipCents)}</td>
+                    {showActions && (
+                      <td className="px-4 py-3.5 text-right">
+                        {row.memberId && (
+                          <ActionsMenu
+                            label={`Acciones de ${courierName(row)}`}
+                            items={[
+                              ...(canPay
+                                ? [{ label: "Pagar", onSelect: () => openAction(setPayCourierId, row.memberId!) }]
+                                : []),
+                              ...(canChange
+                                ? [{ label: "Dar cambio", onSelect: () => openAction(setChangeCourierId, row.memberId!) }]
+                                : []),
+                            ]}
+                          />
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 <tr className="bg-bg">
@@ -157,6 +200,7 @@ export function CouriersPage() {
                   {showInProgress && <td className="px-4 py-3.5 text-right font-extrabold tabular-nums">{totals.inProgress}</td>}
                   <td className="px-4 py-3.5 text-right font-extrabold tabular-nums">{formatArs(totals.shippingCents)}</td>
                   <td className="px-4 py-3.5 text-right font-extrabold tabular-nums">{formatArs(totals.tipCents)}</td>
+                  {showActions && <td />}
                 </tr>
               </tbody>
             </table>
@@ -175,6 +219,17 @@ export function CouriersPage() {
                   <SummaryNumber label="Envíos" value={formatArs(row.shippingCents)} />
                   <SummaryNumber label="Propinas" value={formatArs(row.tipCents)} />
                 </div>
+                {showActions && row.memberId && (
+                  <div className="self-end">
+                    <ActionsMenu
+                      label={`Acciones de ${courierName(row)}`}
+                      items={[
+                        ...(canPay ? [{ label: "Pagar", onSelect: () => openAction(setPayCourierId, row.memberId!) }] : []),
+                        ...(canChange ? [{ label: "Dar cambio", onSelect: () => openAction(setChangeCourierId, row.memberId!) }] : []),
+                      ]}
+                    />
+                  </div>
+                )}
               </article>
             ))}
             <article className="flex items-center justify-between rounded-2xl border border-line bg-bg p-4">
@@ -194,6 +249,17 @@ export function CouriersPage() {
         Con un repartidor elegido, la tabla y los totales muestran solo los suyos. Los entregados cuentan según la hora en que
         se marcaron entregados y los que están en camino según la hora en que salieron. Los cancelados no suman. Para un turno que pasa la medianoche, elegí desde hoy hasta mañana.
       </p>
+
+      {payCourierId && cash.data?.session && (
+        <NewMovementDialog current={cash.data} initialCourierId={payCourierId} onClose={() => setPayCourierId(null)} />
+      )}
+      {changeCourierId && cash.data?.session && (
+        <CourierChangeDialog
+          accounts={cash.data.courierAccounts}
+          initialCourierId={changeCourierId}
+          onClose={() => setChangeCourierId(null)}
+        />
+      )}
     </div>
   );
 }

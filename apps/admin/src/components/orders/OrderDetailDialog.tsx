@@ -15,6 +15,7 @@ import {
 } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { QueryError } from "@/components/QueryError";
+import { cashErrorMessage, useCashCurrent, useSettleOrders, useUnsettleOrder } from "@/lib/cash";
 import { CourierPickerDialog } from "@/components/orders/CourierPickerDialog";
 import { OrderPaymentDialog } from "@/components/orders/OrderPaymentDialog";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
@@ -33,6 +34,7 @@ import {
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 import { useBackdropClose } from "@/lib/backdrop-close";
+import { orderCashNote } from "@/lib/order-cash-note";
 
 /** Modal with the full order and its actions: next status, payment toggle and cancel. */
 export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClose: () => void }) {
@@ -44,8 +46,12 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const canChangeStatus = can("orders.status");
   const canChangePayment = can("orders.payment");
   const canAssign = can("orders.assign");
+  const canSettle = can("cash.settle");
   const statusMutation = useChangeOrderStatus();
   const paymentMutation = useChangeOrderPayment();
+  const cash = useCashCurrent(canSettle);
+  const settleMutation = useSettleOrders();
+  const unsettleMutation = useUnsettleOrder();
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -82,12 +88,24 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
     const nextPayment: PaymentStatus = order.paymentStatus === "pending" ? "paid" : "pending";
     try {
       await paymentMutation.mutateAsync({ id: order.id, paymentStatus: nextPayment });
-    } catch {
-      setErrorMsg(ORDERS_UI_MESSAGES.updateFailed);
+    } catch (err) {
+      setErrorMsg(cashErrorMessage(err));
     }
   }
 
-  const isPendingAction = statusMutation.isPending || paymentMutation.isPending;
+  async function handleSettlement() {
+    if (!order) return;
+    setErrorMsg(null);
+    try {
+      if (order.settledAt !== null) await unsettleMutation.mutateAsync(order.id);
+      else await settleMutation.mutateAsync({ orderIds: [order.id] });
+    } catch (err) {
+      setErrorMsg(cashErrorMessage(err));
+    }
+  }
+
+  const isPendingAction =
+    statusMutation.isPending || paymentMutation.isPending || settleMutation.isPending || unsettleMutation.isPending;
   const loadFailed = isError && !order;
   // The next step depends on the fulfillment: only a delivery order is "Enviado" (spec 11b).
   const next = order ? nextStatus(order.status, order.fulfillment) : null;
@@ -140,6 +158,8 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
               </Badge>
             </div>
 
+            {orderCashNote(order) && <p className="m-0 text-xs text-muted">{orderCashNote(order)}</p>}
+
             <OrderCustomer order={order} />
             <OrderItems order={order} />
             <OrderTotals order={order} />
@@ -180,6 +200,32 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                   Cambiar repartidor
                 </Button>
               )}
+
+              {canSettle &&
+                order.fulfillment === "delivery" &&
+                (order.paymentMethod === "cash" || order.paymentMethod === "split") &&
+                order.status === "delivered" &&
+                !showCancelConfirm &&
+                (order.settledAt !== null || cash.data?.session ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isPendingAction}
+                    onClick={() => void handleSettlement()}
+                    className="min-h-11 w-full text-sm font-bold"
+                  >
+                    {order.settledAt !== null ? "Deshacer ingreso" : "Ingresar a la caja"}
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled
+                    className="min-h-11 w-full text-sm font-bold"
+                  >
+                    Abrí la caja primero
+                  </Button>
+                ))}
 
               {canChangePayment && !showCancelConfirm && (
                 <Button

@@ -19,6 +19,7 @@ describe("NAV_ITEMS", () => {
     expect(NAV_ITEMS.map((item) => item.label)).toEqual([
       "Resumen",
       "Pedidos",
+      "Cajas",
       "Repartidores",
       "Mis repartos",
       "Mi menú",
@@ -39,6 +40,9 @@ describe("activeNavItem", () => {
   it.each([
     ["/", "Resumen"],
     ["/pedidos", "Pedidos"],
+    ["/cajas", "Cajas"],
+    ["/cajas/historial", "Cajas"],
+    ["/cajas/abc123", "Cajas"],
     ["/repartidores", "Repartidores"],
     ["/mis-repartos", "Mis repartos"],
     ["/menu", "Mi menú"],

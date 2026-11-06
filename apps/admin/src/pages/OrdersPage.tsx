@@ -35,11 +35,12 @@ export function OrdersPage() {
   const canMove = can("orders.status");
   const canAssign = can("orders.assign");
   const canExport = can("orders.export");
-  const [tab, setTab] = useState<OrdersTab>("active");
   const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   // History filters live in the URL so they survive a reload and can be shared.
   const [searchParams, setSearchParams] = useSearchParams();
+  // Cajas links to the history of one session with `?tab=historial`.
+  const [tab, setTab] = useState<OrdersTab>(() => (searchParams.get("tab") === "historial" ? "history" : "active"));
   const historyFilters = filtersFromSearchParams(searchParams);
   // "Activos" shows the board or, with `?vista=mapa`, the map.
   const showMap = tab === "active" && searchParams.get(ORDERS_VIEW_PARAM) === ORDERS_MAP_VIEW;
@@ -131,9 +132,27 @@ export function OrdersPage() {
               if (tab === "active") refreshBoard();
               else void historyQuery.refetch();
             }}
-            className="min-h-11 px-4 text-sm font-bold"
+            aria-label="Actualizar"
+            title="Actualizar"
+            className="size-11 min-h-11 p-0"
           >
-            Actualizar
+            <svg
+              aria-hidden="true"
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className={activeQuery.isRefetching || deliveredQuery.isRefetching || historyQuery.isRefetching ? "animate-spin" : ""}
+            >
+              <path d="M21 12a9 9 0 0 1-15.5 6.2L3 16" />
+              <path d="M3 21v-5h5" />
+              <path d="M3 12a9 9 0 0 1 15.5-6.2L21 8" />
+              <path d="M21 3v5h-5" />
+            </svg>
           </Button>
         </div>
       </div>
