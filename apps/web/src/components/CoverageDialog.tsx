@@ -1,5 +1,6 @@
 import { useRef } from "preact/hooks";
 import { useModalDialog } from "../lib/use-modal-dialog";
+import { useBackdropClose } from "../lib/backdrop-close";
 
 interface CoverageDialogProps {
   /** Whether the store also offers takeaway, so the diner can switch to it. */
@@ -20,6 +21,7 @@ export function CoverageDialog({ canTakeaway, onTakeaway, onChangeAddress, onClo
     onClose();
   };
 
+  const backdropClose = useBackdropClose(close);
   return (
     <dialog
       ref={dialogRef}
@@ -27,9 +29,7 @@ export function CoverageDialog({ canTakeaway, onTakeaway, onChangeAddress, onClo
       aria-labelledby="coverage-title"
       aria-describedby="coverage-text"
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
+      {...backdropClose}
     >
       <div class="popup-panel">
         <h2 class="popup-title" id="coverage-title">

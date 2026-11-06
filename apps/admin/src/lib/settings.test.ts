@@ -82,6 +82,35 @@ describe("checkSettings", () => {
     expect(check.hasIncompleteTransferWarning).toBe(true);
   });
 
+  describe("14a: split payment", () => {
+    const splitSettings: StoreSettings = {
+      ...sampleSettings,
+      paymentMethods: [
+        { method: "cash", enabled: true, alias: null, holderName: null },
+        { method: "transfer", enabled: true, alias: "marta.mp", holderName: "Marta Gomez" },
+        { method: "split", enabled: true, alias: null, holderName: null },
+      ],
+    };
+
+    it("rejects enabling split without cash and transfer", () => {
+      const check = checkSettings(sampleSettings, { ...savedValues, transferEnabled: false, splitEnabled: true });
+      expect(check.invalid).toBe(true);
+      expect(check.errors.methods).toBeDefined();
+    });
+
+    it("lets the user disable cash while split is saved, so the API turns split off", () => {
+      const values = valuesFromSettings(splitSettings);
+      const check = checkSettings(splitSettings, { ...values, cashEnabled: false });
+      expect(check.invalid).toBe(false);
+      expect(check.changes?.paymentMethods).toContainEqual({
+        method: "split",
+        enabled: true,
+        alias: null,
+        holderName: null,
+      });
+    });
+  });
+
   describe("backfilled store with transfer enabled and no alias (scenario 48)", () => {
     const incompleteSettings: StoreSettings = {
       ...sampleSettings,
@@ -127,6 +156,7 @@ describe("sectionValues (one save per card)", () => {
     expect(sectionValues("payments", savedValues)).toEqual({
       cashEnabled: true,
       transferEnabled: true,
+      splitEnabled: false,
       transferAlias: "marta.mp",
       transferHolderName: "Marta Gomez",
     });

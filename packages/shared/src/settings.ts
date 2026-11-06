@@ -7,11 +7,12 @@ export const MIN_ORDER_CENTS_MIN = 1;
 export const MAX_MONEY_CENTS = 100_000_000;
 
 export const SETTINGS_MESSAGES = {
-  atLeastOnePaymentMethod: "Elegí al menos una forma de pago",
+  atLeastOnePaymentMethod: "Elegí al menos una forma de pago: Efectivo o Transferencia",
   transferAliasRequired: "Ingresá el alias de la cuenta",
   transferAliasTooLong: `El alias puede tener hasta ${ALIAS_MAX_LENGTH} caracteres`,
   transferHolderRequired: "Ingresá el titular de la cuenta",
   transferHolderTooLong: `El titular puede tener hasta ${HOLDER_NAME_MAX_LENGTH} caracteres`,
+  splitNeedsBoth: "Para dividir el pago necesitás Efectivo y Transferencia habilitados",
   minOrderInvalid: "El pedido mínimo debe ser un número entero positivo de hasta $1.000.000",
   shippingInvalid: "El costo de envío debe ser de hasta $1.000.000",
   emptyUpdate: "Enviá al menos un cambio",
@@ -41,8 +42,14 @@ export const DEFAULT_SETTINGS: StoreSettings = {
   paymentMethods: [
     { method: "cash", enabled: true, alias: null, holderName: null },
     { method: "transfer", enabled: false, alias: null, holderName: null },
+    { method: "split", enabled: false, alias: null, holderName: null },
   ],
 };
+
+/** Settings as the PATCH returns them; `splitDisabled` warns that the change turned split off. */
+export interface StoreSettingsResponse extends StoreSettings {
+  splitDisabled?: boolean;
+}
 
 export interface SettingsProblem {
   field: "paymentMethods" | "alias" | "holderName" | "minOrderCents" | "shippingCents";
@@ -62,8 +69,15 @@ export function settingsProblem(
   state: StoreSettings,
   { transferDetails = true }: SettingsProblemOptions = {},
 ): SettingsProblem | null {
-  if (!state.paymentMethods.some((pm) => pm.enabled)) {
+  const enabled = (method: PaymentMethod) =>
+    state.paymentMethods.find((pm) => pm.method === method)?.enabled ?? false;
+  if (!enabled("cash") && !enabled("transfer")) {
     return { field: "paymentMethods", message: SETTINGS_MESSAGES.atLeastOnePaymentMethod };
+  }
+
+  // Only when the change touches the payment methods: an unrelated save never blocks on it.
+  if (transferDetails && enabled("split") && (!enabled("cash") || !enabled("transfer"))) {
+    return { field: "paymentMethods", message: SETTINGS_MESSAGES.splitNeedsBoth };
   }
 
   const transfer = state.paymentMethods.find((pm) => pm.method === "transfer");

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { NavPanel } from "./NavPanel";
 import { DRAWER_ID } from "./MobileTopBar";
+import { useBackdropClose } from "@/lib/backdrop-close";
 
 const DESKTOP_QUERY = "(min-width: 1024px)";
 
@@ -40,6 +41,7 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
     return () => query.removeEventListener("change", onChange);
   }, [open, onClose]);
 
+  const backdropClose = useBackdropClose(onClose);
   return (
     <dialog
       ref={dialogRef}
@@ -47,10 +49,7 @@ export function NavDrawer({ open, onClose }: { open: boolean; onClose: () => voi
       aria-label="Menú de navegación"
       // Escape fires `close`, which keeps the React state in sync.
       onClose={onClose}
-      // A click on the backdrop targets the dialog itself; the panel fills the rest of it.
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...backdropClose}
       className="fixed inset-y-0 left-0 m-0 h-dvh max-h-none w-[280px] max-w-[85vw] overflow-hidden border-0 bg-white p-0 text-ink shadow-xl backdrop:bg-black/40 open:block motion-safe:open:animate-[drawer-in_.2s_ease-out]"
     >
       {/* Mounted only while open, so the page never has two live copies of the navigation. */}

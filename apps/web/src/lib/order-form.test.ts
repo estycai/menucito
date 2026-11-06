@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DELIVERY_ADDRESS_MESSAGES, ORDER_MESSAGES, ORDERS_MESSAGES } from "@menucito/shared";
+import { DELIVERY_ADDRESS_MESSAGES, ORDER_MESSAGES, ORDERS_MESSAGES, PAYMENT_SPLIT_MESSAGES } from "@menucito/shared";
 import type { StorageLike } from "./cart-store";
 import {
   EMPTY_ORDER_FORM,
@@ -29,7 +29,7 @@ function fakeStorage(initial: Record<string, string> = {}): StorageLike & { data
 describe("order form storage (scenario 11)", () => {
   it("remembers the values per restaurant including phone, but never the address", () => {
     const storage = fakeStorage();
-    const values = { name: "Juan", phone: "11 5555 1234", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
+    const values = { name: "Juan", phone: "11 5555 1234", fulfillment: "delivery", address: "Calle 1", payment: "cash", splitCash: "", cashTendered: "" } as const;
     writeOrderForm(storage, "a", values);
     expect(Object.keys(storage.data)).toEqual(["menucito:order-form:a"]);
     expect(storage.data["menucito:order-form:a"]).not.toContain("Calle 1");
@@ -45,13 +45,13 @@ describe("order form storage (scenario 11)", () => {
 
   it("drops a fulfillment the restaurant no longer offers", () => {
     const storage = fakeStorage();
-    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "cash" });
+    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "cash", splitCash: "", cashTendered: "" });
     expect(readOrderForm(storage, "a", ["takeaway"]).fulfillment).toBe("");
   });
 
   it("drops a payment method the restaurant no longer offers", () => {
     const storage = fakeStorage();
-    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "transfer" });
+    writeOrderForm(storage, "a", { name: "Juan", phone: "", fulfillment: "delivery", address: "Calle 1", payment: "transfer", splitCash: "", cashTendered: "" });
     expect(readOrderForm(storage, "a", ["delivery"], ["cash"]).payment).toBe("");
   });
 
@@ -66,7 +66,7 @@ describe("order form storage (scenario 11)", () => {
       }),
       "a",
     );
-    expect(loaded).toEqual({ name: "n".repeat(60), phone: "", fulfillment: "", address: "", payment: "" });
+    expect(loaded).toEqual({ ...EMPTY_ORDER_FORM, name: "n".repeat(60) });
     expect(readOrderForm(null, "a")).toEqual(EMPTY_ORDER_FORM);
   });
 });
@@ -93,6 +93,8 @@ describe("getFormErrors", () => {
     fulfillment: "delivery",
     address: "Calle 1",
     payment: "cash",
+    splitCash: "",
+    cashTendered: "",
   } as const;
   const both = ["takeaway", "delivery"] as const;
   const methods = ["cash", "transfer"] as const;
@@ -108,8 +110,7 @@ describe("getFormErrors", () => {
       phone: ORDERS_MESSAGES.phoneRequired,
       fulfillment: ORDER_MESSAGES.fulfillmentRequired,
       payment: ORDER_MESSAGES.paymentRequired,
-    });
-  });
+    });  });
 
   it("treats whitespace as empty and checks the length limits", () => {
     expect(getFormErrors({ ...valid, name: "   " }, both, methods).name).toBe(ORDER_MESSAGES.nameRequired);
@@ -146,6 +147,38 @@ describe("getFormErrors", () => {
     const errors = getFormErrors(valid, ["takeaway"], ["transfer"]);
     expect(errors.fulfillment).toBe(ORDER_MESSAGES.fulfillmentRequired);
     expect(errors.payment).toBe(ORDER_MESSAGES.paymentRequired);
+  });
+
+  it("keeps the tip in the transfer part of a split", () => {
+    const split = { ...valid, payment: "split" as const, splitCash: "10500", cashTendered: "" };
+    const amounts = { totalCents: 1_080_000, tipCents: 80_000 };
+    expect(getFormErrors(split, both, methods, undefined, amounts).splitCash).toBe(
+      PAYMENT_SPLIT_MESSAGES.splitCoversTip,
+    );
+    expect(getFormErrors({ ...split, splitCash: "9999" }, both, methods, undefined, amounts).splitCash).toBeUndefined();
+  });
+
+  it("validates the split cash part and the tendered amount", () => {
+    const split = { ...valid, payment: "split" as const, splitCash: "", cashTendered: "" };
+    const amounts = { totalCents: 1_000_000 };
+    expect(getFormErrors(split, both, methods, undefined, amounts).splitCash).toBe(
+      PAYMENT_SPLIT_MESSAGES.splitRequired,
+    );
+
+    const zero = { ...split, splitCash: "0" };
+    expect(getFormErrors(zero, both, methods, undefined, amounts).splitCash).toBe(
+      PAYMENT_SPLIT_MESSAGES.splitRange,
+    );
+
+    const validSplit = { ...split, splitCash: "4000", cashTendered: "3000" };
+    expect(getFormErrors(validSplit, both, methods, undefined, amounts).cashTendered).toBe(
+      PAYMENT_SPLIT_MESSAGES.tenderedTooLow,
+    );
+
+    const paidCash = { ...valid, cashTendered: "5000" };
+    expect(getFormErrors(paidCash, both, methods, undefined, amounts).cashTendered).toBe(
+      PAYMENT_SPLIT_MESSAGES.tenderedTooLow,
+    );
   });
 });
 

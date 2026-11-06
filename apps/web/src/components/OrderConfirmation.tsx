@@ -72,7 +72,7 @@ export function OrderConfirmation({ response }: { response: CreateOrderResponse 
           </dd>
         </div>
       </dl>
-      {order.paymentMethod === "transfer" && (
+      {(order.paymentMethod === "transfer" || order.paymentMethod === "split") && (
         <div class="order-transfer-box">
           {payment?.alias || payment?.holderName ? (
             <>

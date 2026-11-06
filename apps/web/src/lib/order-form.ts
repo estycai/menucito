@@ -1,4 +1,5 @@
 import {
+  CASH_TENDERED_MAX_CENTS,
   DELIVERY_ADDRESS_MESSAGES,
   FULFILLMENTS,
   ORDER_ADDRESS_MAX_LENGTH,
@@ -6,7 +7,9 @@ import {
   ORDER_NAME_MAX_LENGTH,
   ORDERS_MESSAGES,
   PAYMENT_METHODS,
+  PAYMENT_SPLIT_MESSAGES,
   normalizeArWhatsapp,
+  splitCashProblem,
   type Fulfillment,
   type OrderDelivery,
   type PaymentMethod,
@@ -20,9 +23,21 @@ export interface OrderFormValues {
   fulfillment: Fulfillment | "";
   address: string;
   payment: PaymentMethod | "";
+  /** Cash part of a split payment, in whole pesos as typed. */
+  splitCash: string;
+  /** "¿Con cuánto abonás?", in whole pesos as typed. */
+  cashTendered: string;
 }
 
-export const EMPTY_ORDER_FORM: OrderFormValues = { name: "", phone: "", fulfillment: "", address: "", payment: "" };
+export const EMPTY_ORDER_FORM: OrderFormValues = {
+  name: "",
+  phone: "",
+  fulfillment: "",
+  address: "",
+  payment: "",
+  splitCash: "",
+  cashTendered: "",
+};
 
 export const ORDER_FORM_STORAGE_VERSION = 1;
 
@@ -58,6 +73,8 @@ export function readOrderForm(
       fulfillment,
       address: "",
       payment,
+      splitCash: "",
+      cashTendered: "",
     };
   } catch {
     return EMPTY_ORDER_FORM;
@@ -83,19 +100,51 @@ export function offeredPaymentMethods(restaurant: { paymentMethods: Array<{ meth
   return restaurant.paymentMethods.map((p) => p.method);
 }
 
-export type OrderFormField = "name" | "phone" | "fulfillment" | "address" | "payment";
+export type OrderFormField =
+  | "name"
+  | "phone"
+  | "fulfillment"
+  | "address"
+  | "payment"
+  | "splitCash"
+  | "cashTendered";
 
 export type OrderFormErrors = Partial<Record<OrderFormField, string>>;
 
 /**
+ * Whole pesos typed in a cash field, in cents: `undefined` when empty, `null` when it is not a whole
+ * number. The cap is checked by the caller, which also knows the cash part it must cover.
+ */
+export function pesosInputCents(value: string): number | null | undefined {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  if (!/^\d+$/.test(trimmed)) return null;
+  return Number(trimmed) * 100;
+}
+
+/** The cash part the diner must cover when paying in cash or splitting the payment. */
+export function cashPartCents(
+  values: Pick<OrderFormValues, "payment" | "splitCash">,
+  totalCents: number,
+): number | null {
+  if (values.payment === "cash") return totalCents;
+  if (values.payment !== "split") return null;
+  const split = pesosInputCents(values.splitCash);
+  return typeof split === "number" ? split : null;
+}
+
+/**
  * Validates the form against what the restaurant offers; an empty object means it can be sent. In
- * `zones` mode pass the chosen geocoded address (or `null`): it replaces the typed one.
+ * `zones` mode pass the chosen geocoded address (or `null`): it replaces the typed one. `amounts` is
+ * the order total (and its tip, which always goes by transfer), needed by the split and "¿Con cuánto
+ * abonás?" fields.
  */
 export function getFormErrors(
   values: OrderFormValues,
   offered: readonly Fulfillment[],
   offeredMethods: readonly PaymentMethod[],
   zones?: { address: OrderDelivery | null },
+  amounts?: { totalCents: number; tipCents?: number },
 ): OrderFormErrors {
   const errors: OrderFormErrors = {};
 
@@ -130,6 +179,33 @@ export function getFormErrors(
 
   if (!values.payment || !offeredMethods.includes(values.payment)) {
     errors.payment = ORDER_MESSAGES.paymentRequired;
+  }
+
+  const totalCents = amounts?.totalCents ?? 0;
+  const splitCents = pesosInputCents(values.splitCash);
+  if (values.payment === "split") {
+    if (!values.splitCash.trim()) {
+      errors.splitCash = PAYMENT_SPLIT_MESSAGES.splitRequired;
+    } else if (typeof splitCents !== "number") {
+      errors.splitCash = PAYMENT_SPLIT_MESSAGES.splitInvalid;
+    } else {
+      const splitProblem = splitCashProblem(splitCents, totalCents, amounts?.tipCents ?? 0);
+      if (splitProblem) errors.splitCash = PAYMENT_SPLIT_MESSAGES[splitProblem];
+    }
+  }
+
+  if (values.payment === "cash" || values.payment === "split") {
+    const tenderedCents = pesosInputCents(values.cashTendered);
+    if (tenderedCents === null) {
+      errors.cashTendered = PAYMENT_SPLIT_MESSAGES.tenderedInvalid;
+    } else if (tenderedCents !== undefined) {
+      const cashCents = cashPartCents(values, totalCents);
+      if (tenderedCents > CASH_TENDERED_MAX_CENTS) {
+        errors.cashTendered = PAYMENT_SPLIT_MESSAGES.tenderedTooHigh;
+      } else if (cashCents !== null && tenderedCents < cashCents) {
+        errors.cashTendered = PAYMENT_SPLIT_MESSAGES.tenderedTooLow;
+      }
+    }
   }
 
   return errors;

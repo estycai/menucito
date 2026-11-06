@@ -26,6 +26,7 @@ import {
 import { newToken } from "../lib/order-attempt";
 import { useModalDialog } from "../lib/use-modal-dialog";
 import { AddressMap } from "./AddressMap";
+import { useBackdropClose } from "../lib/backdrop-close";
 
 interface AddressDialogProps {
   apiUrl: string;
@@ -176,15 +177,14 @@ export function AddressDialog({ apiUrl, slug, origin, initial, onClose, onConfir
   const mapCenter: LatLng = place ?? initial ?? origin;
   const titleId = "address-dialog-title";
 
+  const backdropClose = useBackdropClose(close);
   return (
     <dialog
       ref={dialogRef}
       class="sheet address-dialog"
       aria-labelledby={titleId}
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
+      {...backdropClose}
     >
       <div class="sheet-panel">
         <header class="sheet-header">

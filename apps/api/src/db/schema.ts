@@ -362,6 +362,9 @@ export const orders = sqliteTable(
     paymentStatus: text("payment_status").notNull().default("pending"),
     fulfillment: text("fulfillment").notNull(),
     paymentMethod: text("payment_method").notNull(),
+    // Cash part of a `split` order and "¿Con cuánto abonás?"; both `NULL` unless they apply.
+    splitCashCents: integer("split_cash_cents"),
+    cashTenderedCents: integer("cash_tendered_cents"),
     customerName: text("customer_name").notNull(),
     customerPhone: text("customer_phone").notNull(),
     deliveryAddress: text("delivery_address"),

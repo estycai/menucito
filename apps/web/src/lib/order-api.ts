@@ -8,6 +8,7 @@ import type {
   PublicMenu,
 } from "@menucito/shared";
 import type { OrderFormValues } from "./order-form";
+import { pesosInputCents } from "./order-form";
 
 /** How long the order request (headers and body) may take before it counts as a network error. */
 export const ORDER_SUBMIT_TIMEOUT_MS = 15000;
@@ -27,11 +28,19 @@ export function buildOrderRequest(
   delivery: OrderDelivery | null = null,
   tipCents = 0,
 ): CreateOrderRequestInput {
+  const split = pesosInputCents(values.splitCash);
+  const tendered = pesosInputCents(values.cashTendered);
   const common = {
     clientOrderId,
     paymentMethod: values.payment as PaymentMethod,
     expectedTotalCents,
-    ...(values.fulfillment === "delivery" && values.payment === "transfer" ? { tipCents } : {}),
+    ...(values.payment === "split" && typeof split === "number" ? { splitCashCents: split } : {}),
+    ...((values.payment === "cash" || values.payment === "split") && typeof tendered === "number"
+      ? { cashTenderedCents: tendered }
+      : {}),
+    ...(values.fulfillment === "delivery" && (values.payment === "transfer" || values.payment === "split")
+      ? { tipCents }
+      : {}),
     items: lines.map((line) => ({ productId: line.productId, quantity: line.quantity, choices: { ...line.choices } })),
   };
   const name = values.name.trim();

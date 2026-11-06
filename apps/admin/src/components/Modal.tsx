@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 import { cn } from "@/lib/utils";
+import { useBackdropClose } from "@/lib/backdrop-close";
 
 interface ModalProps {
   title: string;
@@ -25,14 +26,13 @@ export function Modal({ title, onClose, children, size = "md" }: ModalProps) {
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
 
+  const backdropClose = useBackdropClose(onClose);
   return (
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
+      {...backdropClose}
       className={cn(
         "fixed inset-0 m-auto h-fit max-h-[90dvh] w-[calc(100%-2rem)] overflow-y-auto rounded-2xl border border-line bg-white p-5 text-ink shadow-2xl backdrop:bg-black/40 open:block sm:p-6",
         size === "sm" ? "max-w-[440px]" : "max-w-[550px]",

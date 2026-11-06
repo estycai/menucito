@@ -62,6 +62,7 @@ describe("GET /api/restaurants/me/settings (scenario 10)", () => {
     expect(body.paymentMethods).toEqual([
       { method: "cash", enabled: true, alias: null, holderName: null },
       { method: "transfer", enabled: false, alias: null, holderName: null },
+      { method: "split", enabled: false, alias: null, holderName: null },
     ]);
   });
 });
@@ -326,6 +327,59 @@ describe("public menu publishes store settings (scenario 13)", () => {
       { method: "transfer", alias: "mi.alias.mp", holderName: "Marta Gómez" },
     ]);
   });
+
+describe("14a: split payment settings", () => {
+  const patch = (client: Client, body: unknown) =>
+    client.patch("/api/restaurants/me/settings", body);
+
+  it("enables split only with cash and transfer, and turns it off with either of them", async () => {
+    const client = await loggedInClient();
+    await createRestaurant(client);
+
+    const withoutBoth = await patch(client, { paymentMethods: [{ method: "split", enabled: true }] });
+    expect(withoutBoth.status).toBe(422);
+    expect(await errorCode(withoutBoth)).toBe("VALIDATION_ERROR");
+
+    await patch(client, {
+      paymentMethods: [
+        { method: "cash", enabled: true },
+        { method: "transfer", enabled: true, alias: "mi.alias", holderName: "Marta" },
+      ],
+    });
+
+    const enabled = await patch(client, { paymentMethods: [{ method: "split", enabled: true }] });
+    expect(enabled.status).toBe(200);
+    const withSplit = (await enabled.json()) as StoreSettings;
+    expect(withSplit.paymentMethods.find((pm) => pm.method === "split")?.enabled).toBe(true);
+
+    const disabled = await patch(client, { paymentMethods: [{ method: "cash", enabled: false }] });
+    expect(disabled.status).toBe(200);
+    const body = (await disabled.json()) as StoreSettings & { splitDisabled?: boolean };
+    expect(body.splitDisabled).toBe(true);
+    expect(body.paymentMethods.find((pm) => pm.method === "split")?.enabled).toBe(false);
+    expect(body.paymentMethods.find((pm) => pm.method === "transfer")?.enabled).toBe(true);
+  });
+
+  it("publishes split in the public menu only when it is enabled and valid", async () => {
+    const client = await loggedInClient();
+    const restaurant = await createRestaurant(client);
+    const cat = (await (await client.post("/api/categories", { name: "Platos" })).json()) as { id: string };
+    await client.post("/api/products", { categoryId: cat.id, name: "Milanesa", priceCents: 500_000 });
+
+    const menu = async () =>
+      ((await (await new Client().get(`/api/public/menus/${restaurant.slug}`)).json()) as PublicMenu).restaurant
+        .paymentMethods;
+    expect((await menu()).map((pm) => pm.method)).toEqual(["cash"]);
+
+    await patch(client, {
+      paymentMethods: [
+        { method: "transfer", enabled: true, alias: "mi.alias", holderName: "Marta" },
+        { method: "split", enabled: true },
+      ],
+    });
+    expect((await menu()).map((pm) => pm.method)).toEqual(["cash", "transfer", "split"]);
+  });
+});
 
   it("uses safe defaults if settings row is missing in the database", async () => {
     const client = await loggedInClient();

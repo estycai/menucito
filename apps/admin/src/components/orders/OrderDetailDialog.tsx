@@ -16,6 +16,7 @@ import {
 import { Notice } from "@/components/AuthLayout";
 import { QueryError } from "@/components/QueryError";
 import { CourierPickerDialog } from "@/components/orders/CourierPickerDialog";
+import { OrderPaymentDialog } from "@/components/orders/OrderPaymentDialog";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { PaymentStatusBadge } from "@/components/orders/PaymentStatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -31,6 +32,7 @@ import {
 } from "@/lib/orders";
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
 import { useScrollLock } from "@/lib/use-scroll-lock";
+import { useBackdropClose } from "@/lib/backdrop-close";
 
 /** Modal with the full order and its actions: next status, payment toggle and cancel. */
 export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClose: () => void }) {
@@ -48,6 +50,7 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showCourierPicker, setShowCourierPicker] = useState(false);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -89,15 +92,14 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   // The next step depends on the fulfillment: only a delivery order is "Enviado" (spec 11b).
   const next = order ? nextStatus(order.status, order.fulfillment) : null;
 
+  const backdropClose = useBackdropClose(onClose);
   return (
     <>
     <dialog
       ref={dialogRef}
       aria-labelledby={titleId}
       onClose={onClose}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...backdropClose}
       className="fixed inset-0 m-auto h-fit max-h-[90vh] w-full max-w-[550px] overflow-y-auto rounded-2xl border border-line bg-white p-5 text-ink shadow-2xl backdrop:bg-black/40 open:block sm:p-6"
     >
       <div className="flex flex-col gap-5">
@@ -191,6 +193,22 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
                 </Button>
               )}
 
+              {canChangePayment &&
+                order.paymentStatus !== "paid" &&
+                order.status !== "cancelled" &&
+                order.status !== "delivered" &&
+                !showCancelConfirm && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isPendingAction}
+                    onClick={() => setShowPaymentDialog(true)}
+                    className="min-h-11 w-full text-sm font-bold"
+                  >
+                    Cambiar medio de pago
+                  </Button>
+                )}
+
               {canChangeStatus &&
                 order.status !== "delivered" &&
                 order.status !== "cancelled" &&
@@ -251,6 +269,10 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
         onClose={() => setShowCourierPicker(false)}
         onAssigned={() => setShowCourierPicker(false)}
       />
+    )}
+
+    {showPaymentDialog && order && (
+      <OrderPaymentDialog order={order} onClose={() => setShowPaymentDialog(false)} />
     )}
     </>
   );
@@ -347,6 +369,30 @@ function OrderTotals({ order }: { order: OrderDetail }) {
           <span>Propina</span>
           <span>{formatArs(order.tipCents)}</span>
         </div>
+      )}
+      {order.paymentMethod === "split" && (
+        <>
+          <div className="flex justify-between text-muted">
+            <span>Efectivo</span>
+            <span>{formatArs(order.paymentBreakdown.cashCents)}</span>
+          </div>
+          <div className="flex justify-between text-muted">
+            <span>Transferencia</span>
+            <span>{formatArs(order.paymentBreakdown.transferCents)}</span>
+          </div>
+        </>
+      )}
+      {order.paymentBreakdown.tenderedCents !== null && (
+        <>
+          <div className="flex justify-between text-muted">
+            <span>Abona con</span>
+            <span>{formatArs(order.paymentBreakdown.tenderedCents)}</span>
+          </div>
+          <div className="flex justify-between text-muted">
+            <span>Vuelto</span>
+            <span>{formatArs(order.paymentBreakdown.changeCents ?? 0)}</span>
+          </div>
+        </>
       )}
       <div className="flex justify-between pt-1 text-base font-extrabold text-ink">
         <span>Total</span>

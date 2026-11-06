@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
-import { ORDER_STATUSES, PAYMENT_STATUSES, assignCourierSchema, orderFiltersQuerySchema } from "@menucito/shared";
+import { ORDER_STATUSES, PAYMENT_STATUSES, assignCourierSchema, orderFiltersQuerySchema, updateOrderPaymentMethodSchema } from "@menucito/shared";
 import type { AppEnv } from "../env";
 import { requirePermission, requireMember } from "../middleware/require-member";
 import { requireSession } from "../middleware/require-session";
@@ -70,6 +70,17 @@ export const ordersRoutes = new Hono<AppEnv>()
       c.get("member").restaurantId,
       c.req.param("id"),
       body.data.paymentStatus,
+    );
+    return c.json(order);
+  })
+
+  .patch("/:id/payment-method", requirePermission("orders.payment"), async (c) => {
+    const body = await parseJsonBody(c, updateOrderPaymentMethodSchema);
+    if ("response" in body) return body.response;
+    const order = await ordersServiceFor(c.env.DB).updatePaymentMethod(
+      c.get("member").restaurantId,
+      c.req.param("id"),
+      body.data,
     );
     return c.json(order);
   })

@@ -13,7 +13,9 @@ import type { ProductsRepository } from "../src/repositories/products";
 import type { RestaurantsRepository } from "../src/repositories/restaurants";
 import type { SettingsRepository } from "../src/repositories/settings";
 import { domainErrorHandler } from "../src/routes/http";
-import { createPublicOrdersService } from "../src/services/orders";
+import { createOwnerOrdersService, createPublicOrdersService } from "../src/services/orders";
+import type { MembersRepository } from "../src/repositories/members";
+import { InvalidTransitionError, PaymentLockedError } from "../src/services/errors";
 
 const restaurant = {
   id: "rest-1",
@@ -34,6 +36,8 @@ const request: CreateOrderRequest = {
   paymentMethod: "cash",
   clientOrderId: "8f2c7a64-4f7e-4b55-9d3c-1a2b3c4d5e6f",
   expectedTotalCents: 100_000,
+  splitCashCents: null,
+  cashTenderedCents: null,
   tipCents: 0,
   delivery: null,
 };
@@ -45,6 +49,9 @@ const storedOrder: OrderDetail = {
   paymentStatus: "pending",
   fulfillment: "takeaway",
   paymentMethod: "cash",
+  splitCashCents: null,
+  cashTenderedCents: null,
+  paymentBreakdown: { cashCents: 100_000, transferCents: 0, tenderedCents: null, changeCents: null },
   customerName: "Juan",
   customerPhone: "5491155551234",
   deliveryAddress: null,
@@ -213,5 +220,38 @@ describe("domainErrorHandler logging", () => {
     for (const secret of ["Juana Secreta", "5491199998888", "Calle Privada 742"]) {
       expect(logged).not.toContain(secret);
     }
+  });
+});
+
+describe("updatePaymentMethod race (no database)", () => {
+  const base = {
+    id: "order-1",
+    status: "new",
+    paymentStatus: "pending",
+    paymentMethod: "transfer",
+    fulfillment: "delivery",
+    subtotalCents: 1_000_000,
+    shippingCents: 0,
+    tipCents: 0,
+    totalCents: 1_000_000,
+  } as unknown as OrderDetail;
+
+  const serviceWhere = (fresh: Partial<OrderDetail>) => {
+    const findDetail = vi.fn().mockResolvedValueOnce(base).mockResolvedValueOnce({ ...base, ...fresh });
+    const orders = { findDetail, updatePaymentMethodIf: vi.fn().mockResolvedValue(null) } as unknown as OrdersRepository;
+    return createOwnerOrdersService({ orders, members: {} as MembersRepository });
+  };
+  const input = { paymentMethod: "cash" as const, expectedStatus: "new" as const };
+
+  it("answers INVALID_TRANSITION when the order was cancelled between the read and the write", async () => {
+    await expect(serviceWhere({ status: "cancelled" }).updatePaymentMethod("rest-1", "order-1", input)).rejects.toBeInstanceOf(
+      InvalidTransitionError,
+    );
+  });
+
+  it("answers PAYMENT_LOCKED when the order was paid between the read and the write", async () => {
+    await expect(serviceWhere({ paymentStatus: "paid" }).updatePaymentMethod("rest-1", "order-1", input)).rejects.toBeInstanceOf(
+      PaymentLockedError,
+    );
   });
 });

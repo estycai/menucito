@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CreateOrderRequest, CreateOrderResponse } from "@menucito/shared";
+import type { CreateOrderRequestInput, CreateOrderResponse } from "@menucito/shared";
 import {
   ORDER_SUBMIT_MESSAGES,
   ORDER_SUBMIT_TIMEOUT_MS,
@@ -9,7 +9,7 @@ import {
   submitOrder,
 } from "./order-api";
 
-const sampleBody: CreateOrderRequest = {
+const sampleBody: CreateOrderRequestInput = {
   items: [{ productId: "p1", quantity: 1, choices: {} }],
   customer: { name: "Juan", phone: "5491155551234", address: "Calle 1" },
   fulfillment: "delivery",
@@ -25,6 +25,9 @@ const sampleSuccessResponse: CreateOrderResponse = {
     number: 1,
     fulfillment: "delivery",
     paymentMethod: "cash",
+    splitCashCents: null,
+    cashTenderedCents: null,
+    paymentBreakdown: { cashCents: 500_000, transferCents: 0, tenderedCents: null, changeCents: null },
     customerName: "Juan",
     customerPhone: "5491155551234",
     deliveryAddress: "Calle 1",
@@ -185,7 +188,7 @@ describe("buildOrderRequest", () => {
   const token = "10000000-0000-4000-8000-000000000001";
 
   it("builds a delivery order with trimmed text and the address", () => {
-    const values = { name: " Juan ", phone: " 11 5555 1234 ", fulfillment: "delivery", address: " Calle 1 ", payment: "cash" } as const;
+    const values = { name: " Juan ", phone: " 11 5555 1234 ", fulfillment: "delivery", address: " Calle 1 ", payment: "cash", splitCash: "", cashTendered: "" } as const;
     expect(buildOrderRequest(values, lines, token, 123_000)).toEqual({
       clientOrderId: token,
       customer: { name: "Juan", phone: "11 5555 1234", address: "Calle 1" },
@@ -198,7 +201,7 @@ describe("buildOrderRequest", () => {
   });
 
   it("sends the geocoded address instead of the typed one", () => {
-    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "ignored", payment: "cash" } as const;
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "ignored", payment: "cash", splitCash: "", cashTendered: "" } as const;
     const delivery = {
       placeId: "ChIJ-1",
       lat: -34.6,
@@ -216,13 +219,13 @@ describe("buildOrderRequest", () => {
   });
 
   it("never sends a geocoded address with a takeaway order", () => {
-    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash" } as const;
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash", splitCash: "", cashTendered: "" } as const;
     const delivery = { placeId: null, lat: 0, lng: 0, formattedAddress: "x", locality: null, unit: null, betweenStreets: null, label: null };
     expect(buildOrderRequest(values, lines, token, 100, delivery).delivery).toBeNull();
   });
 
   it("drops the address on takeaway orders", () => {
-    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "Calle 1", payment: "transfer" } as const;
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "Calle 1", payment: "transfer", splitCash: "", cashTendered: "" } as const;
     const request = buildOrderRequest(values, lines, token, 100);
     expect(request.fulfillment).toBe("takeaway");
     expect(request.customer.address).toBeNull();
@@ -230,24 +233,24 @@ describe("buildOrderRequest", () => {
   });
 
   it("copies the choices instead of sharing the cart object", () => {
-    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash" } as const;
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "cash", splitCash: "", cashTendered: "" } as const;
     const request = buildOrderRequest(values, lines, token, 100);
     expect(request.items[0]?.choices).toEqual(lines[0]?.choices);
     expect(request.items[0]?.choices).not.toBe(lines[0]?.choices);
   });
 
   it("sends the tip the diner picked (13 scenario 35)", () => {
-    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "transfer" } as const;
+    const values = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "transfer", splitCash: "", cashTendered: "" } as const;
     const request = buildOrderRequest(values, lines, token, 112_350, null, 12_350);
     expect(request.tipCents).toBe(12_350);
     expect(request.expectedTotalCents).toBe(112_350);
   });
 
   it("sends no tip field on cash or takeaway orders, even when the amount is 0 (13 scenario 36)", () => {
-    const cash = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "cash" } as const;
+    const cash = { name: "Juan", phone: "1155551234", fulfillment: "delivery", address: "Calle 1", payment: "cash", splitCash: "", cashTendered: "" } as const;
     expect(buildOrderRequest(cash, lines, token, 100)).not.toHaveProperty("tipCents");
 
-    const takeaway = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "transfer" } as const;
+    const takeaway = { name: "Juan", phone: "1155551234", fulfillment: "takeaway", address: "", payment: "transfer", splitCash: "", cashTendered: "" } as const;
     expect(buildOrderRequest(takeaway, lines, token, 100)).not.toHaveProperty("tipCents");
   });
 });

@@ -18,6 +18,7 @@ import {
   type OrderStatus,
   type OrderSummary,
   type PaymentStatus,
+  type UpdateOrderPaymentMethodInput,
 } from "@menucito/shared";
 import { ApiError, api } from "./restaurant";
 
@@ -452,6 +453,22 @@ export function useChangeOrderPayment() {
       api<OrderDetail>(`/api/orders/${id}/payment`, {
         method: "PATCH",
         body: JSON.stringify({ paymentStatus }),
+      }),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+    },
+  });
+}
+
+/** `PATCH /api/orders/:id/payment-method`: changes the method, the split and the tendered amount. */
+export function useChangeOrderPaymentMethod() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...input }: { id: string } & UpdateOrderPaymentMethodInput) =>
+      api<OrderDetail>(`/api/orders/${id}/payment-method`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
       }),
     onSuccess: (updated) => {
       queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);

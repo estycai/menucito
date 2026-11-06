@@ -29,9 +29,11 @@ import { addressLines, deliveryPricing, type QuoteState } from "../lib/delivery-
 import { buildOrderRequest } from "../lib/order-api";
 import {
   EMPTY_ORDER_FORM,
+  cashPartCents,
   getFormErrors,
   minOrderShortfallCents,
   offeredFulfillments,
+  pesosInputCents,
   readOrderForm,
   writeOrderForm,
   type OrderFormField,
@@ -105,6 +107,8 @@ const FIELD_IDS: Record<OrderFormField, string> = {
   fulfillment: "order-fulfillment",
   address: "order-address",
   payment: "order-payment",
+  splitCash: "order-split-cash",
+  cashTendered: "order-cash-tendered",
 };
 
 /** Order review, store policy validation, and submission with WhatsApp handoff. */
@@ -220,10 +224,6 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     enabled: zonesDelivery,
   });
 
-  const errors = getFormErrors(values, offered, offeredMethods, storeLocation ? { address: deliveryAddress } : undefined);
-  const visibleError = (field: OrderFormField) => (submitted || touched.has(field) ? errors[field] : undefined);
-  const describedBy = (field: OrderFormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
-
   if (successOrder) return <OrderConfirmation response={successOrder} />;
 
   if (!state.ready) return <p class="order-status">Cargando tu pedido…</p>;
@@ -250,6 +250,28 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
     // Until a fulfillment is picked, the total is shown without shipping.
     fulfillment: values.fulfillment === "delivery" ? "delivery" : "takeaway",
   });
+  const errors = getFormErrors(
+    values,
+    offered,
+    offeredMethods,
+    storeLocation ? { address: deliveryAddress } : undefined,
+    { totalCents: totals.totalCents, tipCents: totals.tipCents },
+  );
+  const visibleError = (field: OrderFormField) => (submitted || touched.has(field) ? errors[field] : undefined);
+  const describedBy = (field: OrderFormField) => (visibleError(field) ? `${FIELD_IDS[field]}-error` : undefined);
+
+  // Live change and transfer part of the chosen payment method.
+  const splitCents = pesosInputCents(values.splitCash);
+  const tenderedCents = pesosInputCents(values.cashTendered);
+  const cashDueCents = cashPartCents(values, totals.totalCents);
+  const changeCents =
+    typeof tenderedCents === "number" && cashDueCents !== null && tenderedCents >= cashDueCents
+      ? tenderedCents - cashDueCents
+      : null;
+  const splitTransferCents =
+    values.payment === "split" && typeof splitCents === "number" && splitCents < totals.totalCents
+      ? totals.totalCents - splitCents
+      : null;
   // A zone's minimum only applies to deliveries.
   const effectiveMinCents = values.fulfillment === "delivery" ? pricing.minOrderCents : minOrderCents;
   const shortfall = minOrderShortfallCents(totals.subtotalCents, effectiveMinCents);
@@ -528,7 +550,63 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
           </fieldset>
         )}
 
-        {values.payment === "transfer" && (
+        {(values.payment === "cash" || values.payment === "split") && (
+          <div class="order-cash-fields">
+            {values.payment === "split" && (
+              <div class="field">
+                <label for={FIELD_IDS.splitCash}>Pagás en efectivo</label>
+                <input
+                  id={FIELD_IDS.splitCash}
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  placeholder="$"
+                  value={values.splitCash}
+                  required
+                  aria-required="true"
+                  aria-invalid={visibleError("splitCash") ? "true" : undefined}
+                  aria-describedby={describedBy("splitCash")}
+                  onInput={(event) => change({ splitCash: event.currentTarget.value })}
+                  onBlur={() => touch("splitCash")}
+                />
+                <FieldError id={`${FIELD_IDS.splitCash}-error`} message={visibleError("splitCash")} />
+              </div>
+            )}
+
+            <div class="field">
+              <label for={FIELD_IDS.cashTendered}>
+                ¿Con cuánto abonás?{" "}
+                <span class="tip-optional">{values.payment === "split" ? "(opcional)" : "(opcional si pagás justo)"}</span>
+              </label>
+              <input
+                id={FIELD_IDS.cashTendered}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="$"
+                value={values.cashTendered}
+                aria-invalid={visibleError("cashTendered") ? "true" : undefined}
+                aria-describedby={describedBy("cashTendered")}
+                onInput={(event) => change({ cashTendered: event.currentTarget.value })}
+                onBlur={() => touch("cashTendered")}
+              />
+              <FieldError id={`${FIELD_IDS.cashTendered}-error`} message={visibleError("cashTendered")} />
+            </div>
+
+            {changeCents !== null && changeCents > 0 && (
+              <p class="order-change">
+                Vuelto: <strong>{formatArs(changeCents)}</strong>
+              </p>
+            )}
+            {values.payment === "split" && splitTransferCents !== null && (
+              <p class="order-split-transfer">
+                Por transferencia: <strong>{formatArs(splitTransferCents)}</strong>
+              </p>
+            )}
+          </div>
+        )}
+
+        {(values.payment === "transfer" || values.payment === "split") && (
           <div class="order-transfer-box">
             {transferMethod && (transferMethod.alias || transferMethod.holderName) ? (
               <p>

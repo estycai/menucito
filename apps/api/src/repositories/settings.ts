@@ -2,7 +2,6 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   PAYMENT_METHODS,
-  type PaymentMethod,
   type PaymentMethodSetting,
   type StoreSettings,
 } from "@menucito/shared";
@@ -32,18 +31,15 @@ export function createSettingsRepository(d1: D1Database): SettingsRepository {
       .where(eq(restaurantPaymentMethods.restaurantId, restaurantId))
       .all();
 
-    const methods: PaymentMethodSetting[] = methodRows.map((row) => ({
-      method: row.method as PaymentMethod,
-      enabled: Boolean(row.enabled),
-      alias: row.alias,
-      holderName: row.holderName,
-    }));
-
-    for (const m of PAYMENT_METHODS) {
-      if (!methods.some((pm) => pm.method === m)) {
-        methods.push({ method: m, enabled: false, alias: null, holderName: null });
-      }
-    }
+    const methods: PaymentMethodSetting[] = PAYMENT_METHODS.map((method) => {
+      const row = methodRows.find((candidate) => candidate.method === method);
+      return {
+        method,
+        enabled: Boolean(row?.enabled),
+        alias: row?.alias ?? null,
+        holderName: row?.holderName ?? null,
+      };
+    });
 
     return {
       acceptingOrders: Boolean(settingsRow.acceptingOrders),

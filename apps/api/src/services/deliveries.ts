@@ -53,12 +53,12 @@ export function createDeliveriesService({ orders, now = () => new Date() }: Deli
 
       if (current.status !== "sent") throw new InvalidTransitionError();
 
-      // A cash order is collected at the door, so delivering it marks it paid (decision 12).
+      // A cash (or split) order is collected at the door, so delivering it marks it paid (decision 12).
       const updated = await orders.markDeliveredIf(
         restaurantId,
         orderId,
         "sent",
-        { courierMemberId, markPaid: current.paymentMethod === "cash" },
+        { courierMemberId, markPaid: current.paymentMethod === "cash" || current.paymentMethod === "split" },
         now(),
       );
       if (!updated) {

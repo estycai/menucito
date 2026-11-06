@@ -6,6 +6,7 @@ import {
   parseArsPrice,
   type PaymentMethodSetting,
   type StoreSettings,
+  type StoreSettingsResponse,
   type UpdateSettingsInput,
 } from "@menucito/shared";
 import { api } from "./restaurant";
@@ -19,6 +20,7 @@ export interface StoreSettingsValues {
   shipping: string;
   cashEnabled: boolean;
   transferEnabled: boolean;
+  splitEnabled: boolean;
   transferAlias: string;
   transferHolderName: string;
 }
@@ -26,12 +28,14 @@ export interface StoreSettingsValues {
 export function valuesFromSettings(settings: StoreSettings): StoreSettingsValues {
   const cash = settings.paymentMethods.find((p) => p.method === "cash");
   const transfer = settings.paymentMethods.find((p) => p.method === "transfer");
+  const split = settings.paymentMethods.find((p) => p.method === "split");
 
   return {
     minOrder: settings.minOrderCents !== null ? formatArs(settings.minOrderCents).replace("$", "").trim() : "",
     shipping: formatArs(settings.shippingCents).replace("$", "").trim(),
     cashEnabled: cash?.enabled ?? true,
     transferEnabled: transfer?.enabled ?? false,
+    splitEnabled: split?.enabled ?? false,
     transferAlias: transfer?.alias ?? "",
     transferHolderName: transfer?.holderName ?? "",
   };
@@ -44,7 +48,7 @@ export function valuesFromSettings(settings: StoreSettings): StoreSettingsValues
 export const SETTINGS_SECTION_FIELDS = {
   minOrder: ["minOrder"],
   shipping: ["shipping"],
-  payments: ["cashEnabled", "transferEnabled", "transferAlias", "transferHolderName"],
+  payments: ["cashEnabled", "transferEnabled", "splitEnabled", "transferAlias", "transferHolderName"],
 } as const satisfies Record<string, readonly (keyof StoreSettingsValues)[]>;
 
 export type SettingsSection = keyof typeof SETTINGS_SECTION_FIELDS;
@@ -74,6 +78,7 @@ export function checkSettings(saved: StoreSettings, values: StoreSettingsValues)
 
   const currentCash = saved.paymentMethods.find((p) => p.method === "cash");
   const currentTransfer = saved.paymentMethods.find((p) => p.method === "transfer");
+  const currentSplit = saved.paymentMethods.find((p) => p.method === "split");
 
   // Warning if transfer is currently enabled but missing alias or holder (e.g. from migration backfill)
   const hasIncompleteTransferWarning = Boolean(
@@ -114,13 +119,21 @@ export function checkSettings(saved: StoreSettings, values: StoreSettingsValues)
   const aliasTrimmed = values.transferAlias.trim();
   const holderTrimmed = values.transferHolderName.trim();
 
+  // Enabling split needs both bases; disabling one of them while split is already saved is allowed:
+  // the API turns split off in the same save and reports it.
+  const splitSavedEnabled = currentSplit?.enabled ?? false;
+  if (values.splitEnabled && (!values.cashEnabled || !values.transferEnabled) && !splitSavedEnabled) {
+    errors.methods = SETTINGS_MESSAGES.splitNeedsBoth;
+  }
+
   // Did payment methods change?
   const cashChanged = (currentCash?.enabled ?? true) !== values.cashEnabled;
   const transferChanged =
     (currentTransfer?.enabled ?? false) !== values.transferEnabled ||
     (currentTransfer?.alias ?? "") !== (values.transferEnabled ? aliasTrimmed : "") ||
     (currentTransfer?.holderName ?? "") !== (values.transferEnabled ? holderTrimmed : "");
-  const methodsChanged = cashChanged || transferChanged;
+  const splitChanged = splitSavedEnabled !== values.splitEnabled;
+  const methodsChanged = cashChanged || transferChanged || splitChanged;
 
   // Alias and holder are required only when the change includes the payment methods: a backfilled
   // store (transfer enabled, no data) can still save its minimum or shipping (scenario 48).
@@ -146,6 +159,7 @@ export function checkSettings(saved: StoreSettings, values: StoreSettingsValues)
         alias: values.transferEnabled ? aliasTrimmed : null,
         holderName: values.transferEnabled ? holderTrimmed : null,
       },
+      { method: "split", enabled: values.splitEnabled, alias: null, holderName: null },
     ];
     changes.paymentMethods = methods;
   }
@@ -171,7 +185,7 @@ export function useUpdateStoreSettings() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (changes: UpdateSettingsInput) =>
-      api<StoreSettings>("/api/restaurants/me/settings", {
+      api<StoreSettingsResponse>("/api/restaurants/me/settings", {
         method: "PATCH",
         body: JSON.stringify(changes),
       }),

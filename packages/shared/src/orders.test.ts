@@ -10,6 +10,8 @@ import {
   TIP_MAX_CENTS,
   TIP_MESSAGES,
   TIP_PERCENTAGES,
+  CASH_TENDERED_MAX_CENTS,
+  PAYMENT_SPLIT_MESSAGES,
   buildOrderMessage,
   canTransition,
   createOrderRequestSchema,
@@ -17,8 +19,11 @@ import {
   nextStatus,
   orderFiltersQuerySchema,
   orderTotals,
+  paymentBreakdown,
   tipFromPercent,
   type OrderStatus,
+  splitCashProblem,
+  updateOrderPaymentMethodSchema,
 } from "./orders";
 import {
   ALIAS_MAX_LENGTH,
@@ -651,5 +656,150 @@ describe("isCalendarDateKey", () => {
     expect(isCalendarDateKey("2028-02-29")).toBe(true);
     expect(isCalendarDateKey("2026-02-29")).toBe(false);
     expect(isCalendarDateKey("2026-1-01")).toBe(false);
+  });
+});
+
+describe("14a: paymentBreakdown", () => {
+  it("puts the whole total in cash or transfer", () => {
+    expect(paymentBreakdown({ totalCents: 10_000, paymentMethod: "cash" })).toEqual({
+      cashCents: 10_000,
+      transferCents: 0,
+      tenderedCents: null,
+      changeCents: null,
+    });
+    expect(paymentBreakdown({ totalCents: 10_000, paymentMethod: "transfer" })).toEqual({
+      cashCents: 0,
+      transferCents: 10_000,
+      tenderedCents: null,
+      changeCents: null,
+    });
+  });
+
+  it("calculates the remaining transfer part and the change of a split", () => {
+    expect(
+      paymentBreakdown({
+        totalCents: 10_000,
+        paymentMethod: "split",
+        splitCashCents: 4_000,
+        cashTenderedCents: 5_000,
+      }),
+    ).toEqual({ cashCents: 4_000, transferCents: 6_000, tenderedCents: 5_000, changeCents: 1_000 });
+  });
+
+  it("keeps the change null when the diner pays exactly or leaves the field empty", () => {
+    expect(
+      paymentBreakdown({ totalCents: 10_000, paymentMethod: "cash", cashTenderedCents: 10_000 }).changeCents,
+    ).toBe(0);
+    expect(paymentBreakdown({ totalCents: 10_000, paymentMethod: "cash" }).tenderedCents).toBeNull();
+  });
+});
+
+describe("14a: createOrderRequestSchema with split and tendered cash", () => {
+  const base = {
+    items: [{ productId: "prod-1", quantity: 1 }],
+    customer: { name: "Juan", phone: "11 5555-1234", address: "Calle 1" },
+    fulfillment: "delivery",
+    paymentMethod: "split",
+    splitCashCents: 400_000,
+    clientOrderId: "123e4567-e89b-12d3-a456-426614174000",
+    expectedTotalCents: 1_000_000,
+  };
+
+  it("accepts a valid split with a tendered amount", () => {
+    const parsed = createOrderRequestSchema.parse({ ...base, cashTenderedCents: 500_000 });
+    expect(parsed.splitCashCents).toBe(400_000);
+    expect(parsed.cashTenderedCents).toBe(500_000);
+  });
+
+  it("rejects a split of 0, all the total or without a cash part", () => {
+    expect(createOrderRequestSchema.safeParse({ ...base, splitCashCents: 0 }).success).toBe(false);
+    expect(createOrderRequestSchema.safeParse({ ...base, splitCashCents: 1_000_000 }).success).toBe(false);
+    expect(createOrderRequestSchema.safeParse({ ...base, splitCashCents: undefined }).success).toBe(false);
+  });
+
+  it("rejects a tendered amount below the cash part or above the cap", () => {
+    const low = createOrderRequestSchema.safeParse({ ...base, cashTenderedCents: 300_000 });
+    expect(low.success).toBe(false);
+    if (!low.success) expect(low.error.issues[0]?.message).toBe(PAYMENT_SPLIT_MESSAGES.tenderedTooLow);
+    expect(
+      createOrderRequestSchema.safeParse({ ...base, cashTenderedCents: CASH_TENDERED_MAX_CENTS + 100 }).success,
+    ).toBe(false);
+  });
+
+  it("allows a tip on a split delivery and drops the tendered amount of a transfer", () => {
+    expect(createOrderRequestSchema.safeParse({ ...base, tipCents: 10_000 }).success).toBe(true);
+    const transfer = createOrderRequestSchema.parse({
+      ...base,
+      paymentMethod: "transfer",
+      cashTenderedCents: 500_000,
+    });
+    expect(transfer.cashTenderedCents).toBeNull();
+    expect(transfer.splitCashCents).toBeNull();
+  });
+});
+
+describe("14a: buildOrderMessage with a split", () => {
+  it("shows both parts, the tendered amount and the change", () => {
+    const message = buildOrderMessage({
+      number: 1,
+      subtotalCents: 900_000,
+      shippingCents: 100_000,
+      totalCents: 1_000_000,
+      fulfillment: "delivery",
+      paymentMethod: "split",
+      splitCashCents: 400_000,
+      cashTenderedCents: 500_000,
+      customerName: "Juan",
+      customerPhone: "5491155551234",
+      deliveryAddress: "Calle 1",
+      items: [],
+    });
+    expect(message).toContain("Pago: Dividir pago — Efectivo $4.000 (abona con $5.000, vuelto $1.000) + Transferencia $6.000");
+  });
+});
+
+describe("14a: settingsProblem with split", () => {
+  const withMethods = (cash: boolean, transfer: boolean, split: boolean): StoreSettings => ({
+    acceptingOrders: true,
+    acceptOrdersOutsideHours: false,
+    minOrderCents: null,
+    shippingCents: 0,
+    paymentMethods: [
+      { method: "cash", enabled: cash, alias: null, holderName: null },
+      { method: "transfer", enabled: transfer, alias: "alias", holderName: "Titular" },
+      { method: "split", enabled: split, alias: null, holderName: null },
+    ],
+  });
+
+  it("accepts split only with cash and transfer", () => {
+    expect(settingsProblem(withMethods(true, true, true))).toBeNull();
+    expect(settingsProblem(withMethods(true, true, false))).toBeNull();
+    expect(settingsProblem(withMethods(true, false, true))?.field).toBe("paymentMethods");
+    expect(settingsProblem(withMethods(false, true, true))?.field).toBe("paymentMethods");
+  });
+
+  it("requires at least cash or transfer, even with split on", () => {
+    expect(settingsProblem(withMethods(false, false, true))?.field).toBe("paymentMethods");
+  });
+});
+
+describe("splitCashProblem", () => {
+  it("accepts a cash part between $0 and the total without the tip", () => {
+    expect(splitCashProblem(400_000, 1_000_000)).toBeNull();
+    expect(splitCashProblem(999_900, 1_080_000, 80_000)).toBeNull();
+  });
+
+  it("rejects zero, the whole total, and a cash part that eats into the tip", () => {
+    expect(splitCashProblem(0, 1_000_000)).toBe("splitRange");
+    expect(splitCashProblem(1_000_000, 1_000_000)).toBe("splitRange");
+    expect(splitCashProblem(1_000_000, 1_080_000, 80_000)).toBe("splitCoversTip");
+    expect(splitCashProblem(1_050_000, 1_080_000, 80_000)).toBe("splitCoversTip");
+  });
+});
+
+describe("updateOrderPaymentMethodSchema", () => {
+  it("requires expectedStatus for the optimistic lock", () => {
+    expect(updateOrderPaymentMethodSchema.safeParse({ paymentMethod: "cash" }).success).toBe(false);
+    expect(updateOrderPaymentMethodSchema.safeParse({ paymentMethod: "cash", expectedStatus: "new" }).success).toBe(true);
   });
 });

@@ -88,6 +88,7 @@ export function OrderFiltersBar({ filters, onFilterChange }: { filters: OrderFil
               <option value="">Todas</option>
               <option value="cash">Efectivo</option>
               <option value="transfer">Transferencia</option>
+              <option value="split">Dividir pago</option>
             </select>
           )}
         </FilterField>

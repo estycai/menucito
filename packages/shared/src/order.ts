@@ -6,12 +6,25 @@ export const ORDER_ADDRESS_MAX_LENGTH = 120;
 export const FULFILLMENTS = ["takeaway", "delivery"] as const;
 export type Fulfillment = (typeof FULFILLMENTS)[number];
 
-/** Fixed list until restaurants can configure their own payment methods. */
-export const PAYMENT_METHODS = ["cash", "transfer"] as const;
+/** Payment methods an order can have; `split` means part cash and part transfer. */
+export const PAYMENT_METHODS = ["cash", "transfer", "split"] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
 
+/** Payment methods shown in the admin as "Próximamente"; they cannot be enabled yet. */
+export const UPCOMING_PAYMENT_METHODS = [
+  { id: "debit", label: "Tarjeta de débito" },
+  { id: "credit", label: "Tarjeta de crédito" },
+  { id: "mercadopago", label: "Mercado Pago" },
+  { id: "modo", label: "MODO" },
+  { id: "cuenta-dni", label: "Cuenta DNI" },
+] as const;
+
 export const FULFILLMENT_LABELS: Readonly<Record<Fulfillment, string>> = { takeaway: "Retiro", delivery: "Envío" };
-export const PAYMENT_LABELS: Readonly<Record<PaymentMethod, string>> = { cash: "Efectivo", transfer: "Transferencia" };
+export const PAYMENT_LABELS: Readonly<Record<PaymentMethod, string>> = {
+  cash: "Efectivo",
+  transfer: "Transferencia",
+  split: "Dividir pago",
+};
 
 export const ORDER_MESSAGES = {
   nameRequired: "Ingresá tu nombre",

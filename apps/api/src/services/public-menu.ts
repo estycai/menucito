@@ -123,8 +123,11 @@ export function createPublicMenuService({
       // Saved colors stay dormant (not deleted) on a plan without custom colors.
       const customColors = planLimitsFor(restaurant.plan).customColors;
 
+      // Split needs both cash and transfer enabled; a stored split without them is never published.
+      const cashEnabled = storeSettings.paymentMethods.some((pm) => pm.method === "cash" && pm.enabled);
+      const transferEnabled = storeSettings.paymentMethods.some((pm) => pm.method === "transfer" && pm.enabled);
       const enabledPaymentMethods: PublicMenuPaymentMethod[] = storeSettings.paymentMethods
-        .filter((pm) => pm.enabled)
+        .filter((pm) => pm.enabled && (pm.method !== "split" || (cashEnabled && transferEnabled)))
         .map((pm) => ({
           method: pm.method,
           alias: pm.method === "transfer" ? pm.alias : null,

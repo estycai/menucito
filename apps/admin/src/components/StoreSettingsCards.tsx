@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { UPCOMING_PAYMENT_METHODS } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { FormField } from "@/components/FormField";
 import { QueryError } from "@/components/QueryError";
@@ -119,6 +120,7 @@ const SETTINGS_CARD_MESSAGES = {
   saved: "Cambios guardados",
   saveFailed: "No pudimos guardar los cambios. Probá de nuevo.",
   incompleteTransferWarning: "Completá el alias y el titular para que tus clientes sepan dónde transferir.",
+  splitDisabled: "Se desactivó Dividir pago porque deshabilitaste Efectivo o Transferencia.",
 } as const;
 
 /**
@@ -127,7 +129,7 @@ const SETTINGS_CARD_MESSAGES = {
  */
 function useSettingsSection<S extends SettingsSection>(section: S, settings: StoreSettings) {
   const update = useUpdateStoreSettings();
-  const [status, setStatus] = useState<"saved" | "error" | null>(null);
+  const [status, setStatus] = useState<"saved" | "error" | "splitDisabled" | null>(null);
   const [draft, setDraft] = useState<SectionValues<S>>(() => sectionValues(section, valuesFromSettings(settings)));
 
   const check = checkSettings(settings, { ...valuesFromSettings(settings), ...draft });
@@ -146,7 +148,7 @@ function useSettingsSection<S extends SettingsSection>(section: S, settings: Sto
       const updated = await update.mutateAsync(check.changes);
       // Show the values as the API saved them (formatted amounts, trimmed alias).
       setDraft(sectionValues(section, valuesFromSettings(updated)));
-      setStatus("saved");
+      setStatus(updated.splitDisabled ? "splitDisabled" : "saved");
     } catch {
       setStatus("error");
     }
@@ -163,12 +165,13 @@ function useSettingsSection<S extends SettingsSection>(section: S, settings: Sto
 }
 
 /** Footer of a settings card: the saved notice and "Guardar cambios", then the save error. */
-function SaveRow({ status, canSave }: { status: "saved" | "error" | null; canSave: boolean }) {
+function SaveRow({ status, canSave }: { status: "saved" | "error" | "splitDisabled" | null; canSave: boolean }) {
   return (
     <>
       <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
         <div className="min-w-0" aria-live="polite">
           {status === "saved" && <Notice tone="success">{SETTINGS_CARD_MESSAGES.saved}</Notice>}
+          {status === "splitDisabled" && <Notice tone="warning">{SETTINGS_CARD_MESSAGES.splitDisabled}</Notice>}
         </div>
         <Button type="submit" className="min-h-12 rounded-xl px-[26px] text-[15px]" disabled={!canSave}>
           Guardar cambios
@@ -229,55 +232,105 @@ export function PaymentMethodsCard({ settings }: { settings: StoreSettings }) {
   const { draft, check, change, handleSubmit, status, canSave } = useSettingsSection("payments", settings);
 
   return (
-    <SectionCard title="Formas de pago" description="Elegí cómo te pueden pagar tus clientes.">
+    <SectionCard title="Métodos de pago" description="Tildá los que aceptás. Tus clientes solo ven estos al hacer el pedido.">
       <form noValidate onSubmit={handleSubmit} className="flex flex-col gap-5">
         <div className="flex flex-col gap-3">
           {check.hasIncompleteTransferWarning && (
             <Notice tone="warning">{SETTINGS_CARD_MESSAGES.incompleteTransferWarning}</Notice>
           )}
 
-          <div className="flex flex-col gap-3">
-            <label className="flex min-h-[44px] cursor-pointer items-center gap-3">
+          <ul className="m-0 list-none overflow-hidden rounded-xl border border-line p-0">
+            <li className="flex min-h-[56px] items-center gap-3 bg-primary-soft px-4">
               <input
+                id="payment-cash"
                 type="checkbox"
                 checked={draft.cashEnabled}
                 onChange={(e) => change("cashEnabled", e.target.checked)}
                 className="size-5 cursor-pointer rounded border-line accent-primary"
               />
-              <span className="text-sm font-semibold">Efectivo</span>
-            </label>
+              <label htmlFor="payment-cash" className="flex flex-1 cursor-pointer flex-col gap-0.5">
+                <span className="text-sm font-bold">Efectivo</span>
+                <span className="text-xs text-muted">El cliente puede decir con cuánto abona</span>
+              </label>
+            </li>
 
-            <label className="flex min-h-[44px] cursor-pointer items-center gap-3">
+            <li className="flex flex-col gap-3 border-t border-line/60 bg-primary-soft px-4 py-3.5">
+              <span className="flex items-center gap-3">
+                <input
+                  id="payment-transfer"
+                  type="checkbox"
+                  checked={draft.transferEnabled}
+                  onChange={(e) => change("transferEnabled", e.target.checked)}
+                  className="size-5 cursor-pointer rounded border-line accent-primary"
+                />
+                <label htmlFor="payment-transfer" className="cursor-pointer text-sm font-bold">
+                  Transferencia
+                </label>
+              </span>
+              {draft.transferEnabled && (
+                <div className="ml-8 flex flex-col gap-3">
+                  <FormField
+                    label="Alias"
+                    placeholder="ej: marta.hamburguesas"
+                    value={draft.transferAlias}
+                    onChange={(e) => change("transferAlias", e.target.value)}
+                    error={check.errors.transferAlias}
+                  />
+                  <FormField
+                    label="Titular de la cuenta"
+                    placeholder="ej: Marta Gómez"
+                    value={draft.transferHolderName}
+                    onChange={(e) => change("transferHolderName", e.target.value)}
+                    error={check.errors.transferHolderName}
+                  />
+                </div>
+              )}
+            </li>
+
+            <li className="flex min-h-[64px] items-center gap-3 border-t border-line/60 bg-primary-soft px-4 py-2">
               <input
+                id="payment-split"
                 type="checkbox"
-                checked={draft.transferEnabled}
-                onChange={(e) => change("transferEnabled", e.target.checked)}
+                checked={draft.splitEnabled}
+                onChange={(e) => change("splitEnabled", e.target.checked)}
                 className="size-5 cursor-pointer rounded border-line accent-primary"
               />
-              <span className="text-sm font-semibold">Transferencia</span>
-            </label>
-          </div>
+              <label htmlFor="payment-split" className="flex flex-1 cursor-pointer flex-col gap-0.5">
+                <span className="text-sm font-bold">Dividir pago</span>
+                <span className="text-xs text-muted">
+                  Una parte en efectivo y el resto por transferencia. Necesita Efectivo y Transferencia habilitados.
+                </span>
+              </label>
+            </li>
+          </ul>
 
           {check.errors.methods && <p className="m-0 text-[13px] text-danger">{check.errors.methods}</p>}
 
-          {draft.transferEnabled && (
-            <div className="mt-2 flex flex-col gap-3 rounded-xl border border-line bg-bg/50 p-3.5 sm:p-4">
-              <FormField
-                label="Alias"
-                placeholder="ej: marta.hamburguesas"
-                value={draft.transferAlias}
-                onChange={(e) => change("transferAlias", e.target.value)}
-                error={check.errors.transferAlias}
-              />
-              <FormField
-                label="Titular de la cuenta"
-                placeholder="ej: Marta Gómez"
-                value={draft.transferHolderName}
-                onChange={(e) => change("transferHolderName", e.target.value)}
-                error={check.errors.transferHolderName}
-              />
-            </div>
+          {draft.cashEnabled || draft.transferEnabled ? (
+            <p className="m-0 text-xs text-muted">
+              Si destildás Efectivo o Transferencia, Dividir pago se desactiva solo y te lo avisamos al guardar.
+            </p>
+          ) : (
+            <p className="m-0 text-xs text-danger">Tiene que quedar habilitado al menos Efectivo o Transferencia.</p>
           )}
+
+          <div className="flex flex-col gap-2">
+            <span className="text-xs font-bold text-muted">Próximamente</span>
+            <ul className="m-0 list-none overflow-hidden rounded-xl border border-line bg-bg/50 p-0">
+              {UPCOMING_PAYMENT_METHODS.map((method) => (
+                <li
+                  key={method.id}
+                  aria-disabled="true"
+                  className="flex min-h-[52px] items-center gap-3 border-t border-line/60 px-4 text-sm text-muted first:border-t-0"
+                >
+                  <span aria-hidden="true" className="size-[22px] flex-none rounded-md border-2 border-line-strong bg-bg" />
+                  <span className="flex-1">{method.label}</span>
+                  <span className="rounded-full border border-line bg-bg px-2.5 py-1 text-xs font-bold">Próximamente</span>
+                </li>
+              ))}
+            </ul>
+            <span className="text-xs text-muted">Todavía no se pueden habilitar. Te avisamos cuando estén.</span>
+          </div>
         </div>
 
         <SaveRow status={status} canSave={canSave} />

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, notExists, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lt, ne, notExists, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
@@ -19,6 +19,7 @@ import {
   type OrderSummary,
   type PaymentMethod,
   type PaymentStatus,
+  paymentBreakdown,
 } from "@menucito/shared";
 import {
   customerAddresses,
@@ -63,6 +64,10 @@ export interface InsertOrderData {
   delivery: InsertOrderDelivery | null;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
+  /** Cash part of a `split` order; `null` otherwise. */
+  splitCashCents: number | null;
+  /** "¿Con cuánto abonás?"; `null` when the diner left it empty. */
+  cashTenderedCents: number | null;
   subtotalCents: number;
   shippingCents: number;
   tipCents: number;
@@ -120,6 +125,17 @@ export interface OrdersRepository {
     updatedAt: Date,
   ): Promise<OrderDetail | null>;
   /**
+   * Changes the payment method, split and tendered amount of an order still in `fromStatus` and not
+   * paid. `null` when it changed meanwhile (paid, cancelled or another status).
+   */
+  updatePaymentMethodIf(
+    restaurantId: string,
+    orderId: string,
+    fromStatus: OrderStatus,
+    data: Pick<InsertOrderData, "paymentMethod" | "splitCashCents" | "cashTenderedCents" | "tipCents" | "totalCents">,
+    updatedAt: Date,
+  ): Promise<OrderDetail | null>;
+  /**
    * Assigns `courierMemberId` to a delivery order that is `ready` or `sent`. From `ready` it also
    * becomes `sent` and stamps `sent_at`; from `sent` the timestamp is kept. `null` when the order was
    * not in `fromStatus` anymore (a simultaneous change won).
@@ -132,8 +148,9 @@ export interface OrdersRepository {
     at: Date,
   ): Promise<OrderDetail | null>;
   /**
-   * Passes an order from `fromStatus` to `delivered`, stamps `delivered_at` and marks cash orders
-   * paid. With `courierMemberId`, only that courier's orders match (the courier's own delivery).
+   * Passes an order from `fromStatus` to `delivered`, stamps `delivered_at` and, when `markPaid`, marks
+   * it paid (cash and split orders). With `courierMemberId`, only that courier's orders match (the
+   * courier's own delivery).
    */
   markDeliveredIf(
     restaurantId: string,
@@ -202,13 +219,22 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
   }
 
   function toOrderDetail(orderRow: OrderDbRow, itemRows: OrderItemDbRow[], courier: OrderCourier | null): OrderDetail {
+    const payment = {
+      totalCents: orderRow.totalCents,
+      paymentMethod: orderRow.paymentMethod as PaymentMethod,
+      splitCashCents: orderRow.splitCashCents,
+      cashTenderedCents: orderRow.cashTenderedCents,
+    };
     return {
       id: orderRow.id,
       number: orderRow.number,
       status: orderRow.status as OrderStatus,
       paymentStatus: orderRow.paymentStatus as PaymentStatus,
       fulfillment: orderRow.fulfillment as Fulfillment,
-      paymentMethod: orderRow.paymentMethod as PaymentMethod,
+      paymentMethod: payment.paymentMethod,
+      splitCashCents: payment.splitCashCents,
+      cashTenderedCents: payment.cashTenderedCents,
+      paymentBreakdown: paymentBreakdown(payment),
       customerName: orderRow.customerName,
       customerPhone: orderRow.customerPhone,
       deliveryAddress: orderRow.deliveryAddress,
@@ -256,6 +282,12 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
   }
 
   function toCourierDelivery(row: OrderDbRow): CourierDelivery {
+    const payment = {
+      totalCents: row.totalCents,
+      paymentMethod: row.paymentMethod as PaymentMethod,
+      splitCashCents: row.splitCashCents,
+      cashTenderedCents: row.cashTenderedCents,
+    };
     return {
       id: row.id,
       number: row.number,
@@ -264,7 +296,10 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       deliveryAddress: row.deliveryAddress,
       deliveryLocation: toDeliveryLocation(row),
       notes: row.notes,
-      paymentMethod: row.paymentMethod as PaymentMethod,
+      paymentMethod: payment.paymentMethod,
+      splitCashCents: payment.splitCashCents,
+      cashTenderedCents: payment.cashTenderedCents,
+      paymentBreakdown: paymentBreakdown(payment),
       totalCents: row.totalCents,
       shippingCents: row.shippingCents,
       tipCents: row.tipCents,
@@ -447,6 +482,8 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           paymentStatus: "pending",
           fulfillment: data.fulfillment,
           paymentMethod: data.paymentMethod,
+          splitCashCents: data.splitCashCents,
+          cashTenderedCents: data.cashTenderedCents,
           customerName: data.customerName,
           customerPhone: data.customerPhone,
           deliveryAddress: data.deliveryAddress,
@@ -552,6 +589,14 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         paymentStatus: order.paymentStatus as PaymentStatus,
         fulfillment: order.fulfillment as Fulfillment,
         paymentMethod: order.paymentMethod as PaymentMethod,
+        splitCashCents: order.splitCashCents,
+        cashTenderedCents: order.cashTenderedCents,
+        paymentBreakdown: paymentBreakdown({
+          totalCents: order.totalCents,
+          paymentMethod: order.paymentMethod as PaymentMethod,
+          splitCashCents: order.splitCashCents,
+          cashTenderedCents: order.cashTenderedCents,
+        }),
         customerName: order.customerName,
         customerPhone: order.customerPhone,
         totalCents: order.totalCents,
@@ -609,6 +654,31 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .update(orders)
         .set({ paymentStatus, updatedAt })
         .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
+        .returning({ id: orders.id })
+        .get();
+
+      return updated ? findDetail(restaurantId, orderId) : null;
+    },
+
+    async updatePaymentMethodIf(restaurantId, orderId, fromStatus, data, updatedAt) {
+      const updated = await db
+        .update(orders)
+        .set({
+          paymentMethod: data.paymentMethod,
+          splitCashCents: data.splitCashCents,
+          cashTenderedCents: data.cashTenderedCents,
+          tipCents: data.tipCents,
+          totalCents: data.totalCents,
+          updatedAt,
+        })
+        .where(
+          and(
+            eq(orders.restaurantId, restaurantId),
+            eq(orders.id, orderId),
+            eq(orders.status, fromStatus),
+            ne(orders.paymentStatus, "paid"),
+          ),
+        )
         .returning({ id: orders.id })
         .get();
 

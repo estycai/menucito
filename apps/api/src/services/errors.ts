@@ -110,6 +110,14 @@ export class OrderNotFoundError extends DomainError {
   }
 }
 
+/** The order is already paid or entered in a cash drawer: its payment method cannot change. */
+export class PaymentLockedError extends DomainError {
+  readonly code = "PAYMENT_LOCKED";
+  constructor(message = "El pedido ya está pagado o ingresado a la caja: no se puede cambiar el medio de pago") {
+    super(message);
+  }
+}
+
 export class TooManyOrdersError extends DomainError {
   readonly code = "TOO_MANY_ORDERS";
   constructor(message = "Demasiados pedidos en poco tiempo") {

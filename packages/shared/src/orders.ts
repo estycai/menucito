@@ -72,9 +72,23 @@ export const TIP_PERCENTAGES = [4, 8, 10, 14] as const;
 /** Cap of a custom tip, in ARS cents ($50.000). */
 export const TIP_MAX_CENTS = 5_000_000;
 
+/** Cap of "¿Con cuánto abonás?", in ARS cents ($10.000.000). */
+export const CASH_TENDERED_MAX_CENTS = 1_000_000_000;
+
 export const TIP_MESSAGES = {
-  onlyDeliveryTransfer: "La propina solo se puede dejar en pedidos con envío pagados por transferencia.",
+  onlyDeliveryTransfer: "La propina solo se puede dejar en pedidos con envío pagados por transferencia o divididos.",
   invalidAmount: "La propina tiene que ser un monto entero en pesos, de $0 a $50.000",
+} as const;
+
+export const PAYMENT_SPLIT_MESSAGES = {
+  splitRequired: "Ingresá cuánto pagás en efectivo",
+  splitInvalid: "Tiene que ser un monto entero en pesos",
+  splitRange: "Tiene que ser mayor a $0 y menor al total del pedido",
+  splitCoversTip: "La propina va por transferencia: el efectivo tiene que ser menor al total sin la propina",
+  tenderedInvalid: "Tiene que ser un monto entero en pesos",
+  tenderedTooHigh: "El monto máximo es $10.000.000",
+  tenderedTooLow: "Tiene que ser igual o mayor a lo que pagás en efectivo",
+  splitNeedsBoth: "Para dividir el pago necesitás Efectivo y Transferencia habilitados",
 } as const;
 
 /**
@@ -85,9 +99,62 @@ export function tipFromPercent(subtotalCents: number, percent: number): number {
   return Math.round((subtotalCents * percent) / 10_000) * 100;
 }
 
-/** A tip only exists on delivery orders paid by transfer (decision 1). */
+/** A tip only exists on delivery orders paid by transfer or split. */
 export function canHaveTip(fulfillment: Fulfillment, paymentMethod: PaymentMethod): boolean {
-  return fulfillment === "delivery" && paymentMethod === "transfer";
+  return fulfillment === "delivery" && (paymentMethod === "transfer" || paymentMethod === "split");
+}
+
+/** How much of an order goes in cash and how much by transfer, with the change. */
+export interface PaymentBreakdown {
+  cashCents: number;
+  transferCents: number;
+  /** "¿Con cuánto abonás?", or `null` when the diner left it empty (or paid by transfer). */
+  tenderedCents: number | null;
+  /** `tenderedCents - cashCents`, or `null` when there is no tendered amount. */
+  changeCents: number | null;
+}
+
+export interface PaymentBreakdownInput {
+  totalCents: number;
+  paymentMethod: PaymentMethod;
+  splitCashCents?: number | null;
+  cashTenderedCents?: number | null;
+}
+
+/**
+ * Checks the cash part of a `split` order. The tip always travels in the transfer part, so the cash
+ * must stay below `total - tip` (the transfer then covers the whole tip plus part of the order).
+ * Returns the message key to show, or `null` when the amount is valid.
+ */
+export function splitCashProblem(
+  splitCashCents: number,
+  totalCents: number,
+  tipCents = 0,
+): "splitRange" | "splitCoversTip" | null {
+  if (splitCashCents <= 0 || splitCashCents >= totalCents) return "splitRange";
+  if (splitCashCents >= totalCents - tipCents) return "splitCoversTip";
+  return null;
+}
+
+/** Splits the total of any order: all cash, all transfer, or the diner's cash part. */
+export function paymentBreakdown(order: PaymentBreakdownInput): PaymentBreakdown {
+  const total = Math.max(0, Math.round(order.totalCents));
+  const cashCents =
+    order.paymentMethod === "cash"
+      ? total
+      : order.paymentMethod === "split"
+        ? Math.min(total, Math.max(0, Math.round(order.splitCashCents ?? 0)))
+        : 0;
+  const tenderedCents =
+    order.paymentMethod === "transfer" || order.cashTenderedCents == null
+      ? null
+      : Math.round(order.cashTenderedCents);
+  return {
+    cashCents,
+    transferCents: total - cashCents,
+    tenderedCents,
+    changeCents: tenderedCents === null ? null : Math.max(0, tenderedCents - cashCents),
+  };
 }
 
 export interface OrderTotalsInput {
@@ -202,6 +269,19 @@ export const createOrderRequestSchema = z
     paymentMethod: z.enum(PAYMENT_METHODS, {
       message: ORDERS_MESSAGES.paymentMethodInvalid,
     }),
+    /** Cash part of a `split` order, in ARS cents. */
+    splitCashCents: z
+      .number(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+      .int(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+      .min(0, PAYMENT_SPLIT_MESSAGES.splitInvalid)
+      .optional(),
+    /** "¿Con cuánto abonás?", in ARS cents; optional even on cash and split. */
+    cashTenderedCents: z
+      .number(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+      .int(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+      .min(0, PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+      .max(CASH_TENDERED_MAX_CENTS, PAYMENT_SPLIT_MESSAGES.tenderedTooHigh)
+      .optional(),
     clientOrderId: z.string().uuid(ORDERS_MESSAGES.clientOrderIdInvalid),
     expectedTotalCents: z
       .number()
@@ -209,7 +289,7 @@ export const createOrderRequestSchema = z
       .min(0, ORDERS_MESSAGES.expectedTotalInvalid),
     /**
      * Courier tip in ARS cents, already rounded to whole pesos by the diner's front. Optional; `0`
-     * when absent. Only valid on a delivery order paid by transfer (`canHaveTip`).
+     * when absent. Only valid on a delivery order paid by transfer or split (`canHaveTip`).
      */
     tipCents: z
       .number(TIP_MESSAGES.invalidAmount)
@@ -226,6 +306,42 @@ export const createOrderRequestSchema = z
     delivery: orderDeliverySchema.nullish(),
   })
   .transform((val, ctx) => {
+    // The split and the cash tendered are validated against the total the client expects; the service
+    // repeats the split check against its own recalculated total.
+    const splitCashCents = val.paymentMethod === "split" ? val.splitCashCents : null;
+    if (val.paymentMethod === "split") {
+      if (typeof splitCashCents !== "number") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: PAYMENT_SPLIT_MESSAGES.splitRequired,
+          path: ["splitCashCents"],
+        });
+        return z.NEVER;
+      }
+      const splitProblem = splitCashProblem(splitCashCents, val.expectedTotalCents, val.tipCents);
+      if (splitProblem) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: PAYMENT_SPLIT_MESSAGES[splitProblem],
+          path: ["splitCashCents"],
+        });
+        return z.NEVER;
+      }
+    }
+    const cashTenderedCents =
+      val.paymentMethod === "transfer" ? null : (val.cashTenderedCents ?? null);
+    if (cashTenderedCents !== null) {
+      const cashCents = val.paymentMethod === "cash" ? val.expectedTotalCents : (splitCashCents ?? 0);
+      if (cashTenderedCents < cashCents) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: PAYMENT_SPLIT_MESSAGES.tenderedTooLow,
+          path: ["cashTenderedCents"],
+        });
+        return z.NEVER;
+      }
+    }
+
     // No client HTTP is trusted: a tip on takeaway or cash is rejected even if the front never sent it.
     if (val.tipCents > 0 && !canHaveTip(val.fulfillment, val.paymentMethod)) {
       ctx.addIssue({
@@ -249,6 +365,8 @@ export const createOrderRequestSchema = z
       }
       return {
         ...val,
+        splitCashCents,
+        cashTenderedCents,
         customer: {
           ...val.customer,
           address: addr || null,
@@ -258,6 +376,8 @@ export const createOrderRequestSchema = z
     } else {
       return {
         ...val,
+        splitCashCents,
+        cashTenderedCents,
         customer: {
           ...val.customer,
           address: null,
@@ -349,6 +469,27 @@ export const assignCourierSchema = z.object({
 
 export type AssignCourierInput = z.infer<typeof assignCourierSchema>;
 
+/** Body of `PATCH /api/orders/:id/payment-method`. */
+export const updateOrderPaymentMethodSchema = z.object({
+  paymentMethod: z.enum(PAYMENT_METHODS, { message: ORDERS_MESSAGES.paymentMethodInvalid }),
+  splitCashCents: z
+    .number(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+    .int(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+    .min(0, PAYMENT_SPLIT_MESSAGES.splitInvalid)
+    .nullable()
+    .optional(),
+  cashTenderedCents: z
+    .number(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+    .int(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+    .min(0, PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+    .max(CASH_TENDERED_MAX_CENTS, PAYMENT_SPLIT_MESSAGES.tenderedTooHigh)
+    .nullable()
+    .optional(),
+  expectedStatus: z.enum(ORDER_STATUSES, "Estado desconocido"),
+});
+
+export type UpdateOrderPaymentMethodInput = z.infer<typeof updateOrderPaymentMethodSchema>;
+
 const dateRangeFields = {
   from: dateKeyParam(ORDER_FILTER_MESSAGES.fromInvalid),
   to: dateKeyParam(ORDER_FILTER_MESSAGES.toInvalid),
@@ -422,6 +563,12 @@ export interface OrderSummary {
   paymentStatus: PaymentStatus;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
+  /** Cash part of a `split` order; `null` on cash and transfer. */
+  splitCashCents: number | null;
+  /** "¿Con cuánto abonás?"; `null` when the diner left it empty. */
+  cashTenderedCents: number | null;
+  /** The order's total split into cash and transfer, with the change. */
+  paymentBreakdown: PaymentBreakdown;
   customerName: string;
   customerPhone: string;
   totalCents: number;
@@ -467,6 +614,12 @@ export interface OrderDetail {
   paymentStatus: PaymentStatus;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
+  /** Cash part of a `split` order; `null` on cash and transfer. */
+  splitCashCents: number | null;
+  /** "¿Con cuánto abonás?"; `null` when the diner left it empty. */
+  cashTenderedCents: number | null;
+  /** The order's total split into cash and transfer, with the change. */
+  paymentBreakdown: PaymentBreakdown;
   customerName: string;
   customerPhone: string;
   deliveryAddress: string | null;
@@ -501,6 +654,12 @@ export interface CourierDelivery {
   deliveryLocation: OrderDeliveryLocation | null;
   notes: string | null;
   paymentMethod: PaymentMethod;
+  /** Cash part of a `split` order; `null` on cash and transfer. */
+  splitCashCents: number | null;
+  /** "¿Con cuánto abonás?"; `null` when the diner left it empty. */
+  cashTenderedCents: number | null;
+  /** The order's total split into cash and transfer, with the change. */
+  paymentBreakdown: PaymentBreakdown;
   totalCents: number;
   shippingCents: number;
   tipCents: number;
@@ -569,6 +728,9 @@ export interface PublicOrder {
   number: number;
   fulfillment: Fulfillment;
   paymentMethod: PaymentMethod;
+  splitCashCents: number | null;
+  cashTenderedCents: number | null;
+  paymentBreakdown: PaymentBreakdown;
   customerName: string;
   customerPhone: string;
   deliveryAddress: string | null;
@@ -586,6 +748,9 @@ export function toPublicOrder(order: OrderDetail): PublicOrder {
     number: order.number,
     fulfillment: order.fulfillment,
     paymentMethod: order.paymentMethod,
+    splitCashCents: order.splitCashCents,
+    cashTenderedCents: order.cashTenderedCents,
+    paymentBreakdown: order.paymentBreakdown,
     customerName: order.customerName,
     customerPhone: order.customerPhone,
     deliveryAddress: order.deliveryAddress,
@@ -647,6 +812,8 @@ export function buildOrderMessage(
     totalCents: number;
     fulfillment: Fulfillment;
     paymentMethod: PaymentMethod;
+    splitCashCents?: number | null;
+    cashTenderedCents?: number | null;
     customerName: string;
     customerPhone: string;
     deliveryAddress?: string | null;
@@ -688,8 +855,17 @@ export function buildOrderMessage(
   }
 
   const paymentInfo = options?.payment ?? order.payment;
+  const breakdown = paymentBreakdown(order);
+  const tendered =
+    breakdown.tenderedCents === null
+      ? ""
+      : ` (abona con ${formatArs(breakdown.tenderedCents)}, vuelto ${formatArs(breakdown.changeCents ?? 0)})`;
   if (order.paymentMethod === "cash") {
-    lines.push("Pago: Efectivo");
+    lines.push(`Pago: Efectivo${tendered}`);
+  } else if (order.paymentMethod === "split") {
+    lines.push(
+      `Pago: Dividir pago — Efectivo ${formatArs(breakdown.cashCents)}${tendered} + Transferencia ${formatArs(breakdown.transferCents)}`,
+    );
   } else {
     if (paymentInfo?.alias && paymentInfo?.holderName) {
       lines.push(`Pago: Transferencia (alias ${paymentInfo.alias}, titular ${paymentInfo.holderName})`);

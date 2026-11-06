@@ -10,6 +10,7 @@ import {
 } from "@menucito/shared";
 import { useModalDialog } from "../lib/use-modal-dialog";
 import { Stepper } from "./Stepper";
+import { useBackdropClose } from "../lib/backdrop-close";
 
 interface IngredientSheetProps {
   product: PricedProduct & { id: string; name: string };
@@ -39,16 +40,14 @@ export function IngredientSheet({ product, onClose, onConfirm }: IngredientSheet
     onClose();
   };
 
+  const backdropClose = useBackdropClose(close);
   return (
     <dialog
       ref={dialogRef}
       class="sheet"
       aria-labelledby={titleId}
       onClose={onClose}
-      // A click on the backdrop targets the dialog itself; the panel fills the rest of it.
-      onClick={(event) => {
-        if (event.target === event.currentTarget) close();
-      }}
+      {...backdropClose}
     >
       <div class="sheet-panel">
         <header class="sheet-header">

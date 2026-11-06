@@ -49,6 +49,7 @@ export function DeliveriesPage() {
   const deliveries = deliveriesQuery.data ?? [];
   const ordered = sortDeliveriesByProximity(store, deliveries);
   const routeUrl = directionsUrl(store, ordered);
+  const changeTotalCents = ordered.reduce((sum, delivery) => sum + (delivery.paymentBreakdown.changeCents ?? 0), 0);
   const summary = summaryQuery.data;
 
   function applyPreset(next: Exclude<Preset, "custom">) {
@@ -131,6 +132,19 @@ export function DeliveriesPage() {
 
       {notice && <Notice tone={notice.tone}>{notice.text}</Notice>}
 
+      {changeTotalCents > 0 && (
+        <section className="flex items-center justify-between gap-3 rounded-2xl bg-warning-soft px-4 py-3 text-warning">
+          <span className="flex flex-col">
+            <span className="text-[13px] opacity-85">Vuelto a llevar</span>
+            <span className="font-display text-2xl font-extrabold">{formatArs(changeTotalCents)}</span>
+          </span>
+          <span className="text-right text-xs opacity-85">
+            {ordered.filter((delivery) => delivery.paymentBreakdown.cashCents > 0).length} pedido
+            {ordered.filter((delivery) => delivery.paymentBreakdown.cashCents > 0).length === 1 ? "" : "s"} con efectivo
+          </span>
+        </section>
+      )}
+
       {deliveriesQuery.isError && deliveries.length === 0 && (
         <QueryError message={DELIVERIES_UI_MESSAGES.listLoadFailed} onRetry={() => void deliveriesQuery.refetch()} />
       )}
@@ -188,11 +202,13 @@ export function DeliveriesPage() {
           onConfirm={handleConfirmDelivered}
           onCancel={() => setConfirming(null)}
         >
-          {confirming.paymentMethod === "cash" ? (
+          {confirming.paymentBreakdown.cashCents > 0 ? (
             <>
               <span className="flex items-center justify-between gap-3 rounded-xl bg-warning-soft px-3.5 py-3">
                 <span className="text-[15px] font-bold text-warning">Cobraste en efectivo</span>
-                <span className="font-display text-2xl font-extrabold text-warning">{formatArs(confirming.totalCents)}</span>
+                <span className="font-display text-2xl font-extrabold text-warning">
+                  {formatArs(confirming.paymentBreakdown.cashCents)}
+                </span>
               </span>
               <span className="mt-3 block text-sm text-muted">El pedido queda entregado y pagado.</span>
             </>
@@ -285,10 +301,25 @@ function DeliveryCard({
         )}
       </div>
 
-      {delivery.paymentMethod === "cash" ? (
-        <div className="flex items-center justify-between rounded-xl bg-warning-soft px-3.5 py-3">
-          <span className="text-[15px] font-bold text-warning">Cobrar en efectivo</span>
-          <span className="font-display text-2xl font-extrabold text-warning">{formatArs(delivery.totalCents)}</span>
+      {delivery.paymentBreakdown.cashCents > 0 ? (
+        <div className="flex flex-col gap-1 rounded-xl bg-warning-soft px-3.5 py-3">
+          <div className="flex items-center justify-between">
+            <span className="text-[15px] font-bold text-warning">Cobrás en efectivo</span>
+            <span className="font-display text-2xl font-extrabold text-warning">
+              {formatArs(delivery.paymentBreakdown.cashCents)}
+            </span>
+          </div>
+          {delivery.paymentBreakdown.tenderedCents !== null && (
+            <div className="flex justify-between border-t border-warning/20 pt-1.5 text-sm text-warning">
+              <span>Abona con {formatArs(delivery.paymentBreakdown.tenderedCents)}</span>
+              <span>Vuelto {formatArs(delivery.paymentBreakdown.changeCents ?? 0)}</span>
+            </div>
+          )}
+          {delivery.paymentMethod === "split" && (
+            <span className="text-xs text-warning/80">
+              El resto ({formatArs(delivery.paymentBreakdown.transferCents)}) ya lo transfirió.
+            </span>
+          )}
         </div>
       ) : (
         <div className="flex items-center justify-between rounded-xl bg-success-soft px-3.5 py-3">

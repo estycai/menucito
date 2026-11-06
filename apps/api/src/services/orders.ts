@@ -13,6 +13,9 @@ import {
   quoteDelivery,
   toPublicOrder,
   unitPriceCents,
+  CASH_TENDERED_MAX_CENTS,
+  PAYMENT_SPLIT_MESSAGES,
+  splitCashProblem,
   type CreateOrderRequest,
   type CreateOrderResponse,
   type OrderDetail,
@@ -21,6 +24,7 @@ import {
   type OrderStatus,
   type PaymentStatus,
   type StoreSettings,
+  type UpdateOrderPaymentMethodInput,
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow, RestaurantRow } from "../db/schema";
 import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
@@ -49,6 +53,7 @@ import {
   OrderNumberConflictError,
   OutOfCoverageError,
   PaymentMethodNotAcceptedError,
+  PaymentLockedError,
   PriceChangedError,
   ProductUnavailableError,
   StoreClosedError,
@@ -92,7 +97,7 @@ function buildCreateOrderResponse(
 ): CreateOrderResponse {
   const transfer = settings.paymentMethods.find((pm) => pm.method === "transfer");
   const payment: OrderPaymentInfo | null =
-    order.paymentMethod === "transfer"
+    order.paymentMethod === "transfer" || order.paymentMethod === "split"
       ? { alias: transfer?.alias ?? null, holderName: transfer?.holderName ?? null }
       : null;
   const whatsappUrl = `https://wa.me/${restaurant.whatsapp}?text=${encodeURIComponent(
@@ -326,8 +331,15 @@ export function createPublicOrdersService({
         throw new FulfillmentNotOfferedError();
       }
 
-      // 7. Payment method check
+      // 7. Payment method check: split also needs cash and transfer enabled.
       const chosenMethod = storeSettings.paymentMethods.find((pm) => pm.method === req.paymentMethod);
+      const splitReady =
+        req.paymentMethod !== "split" ||
+        (storeSettings.paymentMethods.some((pm) => pm.method === "cash" && pm.enabled) &&
+          storeSettings.paymentMethods.some((pm) => pm.method === "transfer" && pm.enabled));
+      if (req.paymentMethod === "split" && (!chosenMethod?.enabled || !splitReady)) {
+        throw new ValidationError(PAYMENT_SPLIT_MESSAGES.splitNeedsBoth);
+      }
       if (!chosenMethod || !chosenMethod.enabled) {
         throw new PaymentMethodNotAcceptedError();
       }
@@ -371,6 +383,20 @@ export function createPublicOrdersService({
       if (req.expectedTotalCents !== totals.totalCents) {
         throw new PriceChangedError();
       }
+      // The split is validated against the total recalculated from the database, not the client's.
+      if (req.paymentMethod === "split") {
+        const splitProblem =
+          typeof req.splitCashCents !== "number"
+            ? "splitRange"
+            : splitCashProblem(req.splitCashCents, totals.totalCents, totals.tipCents);
+        if (splitProblem) throw new ValidationError(PAYMENT_SPLIT_MESSAGES[splitProblem]);
+      }
+      if (
+        req.cashTenderedCents !== null &&
+        req.cashTenderedCents > CASH_TENDERED_MAX_CENTS
+      ) {
+        throw new ValidationError(PAYMENT_SPLIT_MESSAGES.tenderedTooHigh);
+      }
 
       // 12. Write the order
       const { order, resent } = await insertOrder({
@@ -384,6 +410,8 @@ export function createPublicOrdersService({
         delivery: terms.delivery,
         fulfillment: req.fulfillment,
         paymentMethod: req.paymentMethod,
+        splitCashCents: req.splitCashCents ?? null,
+        cashTenderedCents: req.cashTenderedCents ?? null,
         ...totals,
         createdAt: now(),
         items: priced.items,
@@ -480,7 +508,7 @@ export function createOwnerOrdersService({
       const at = now();
       const updated =
         targetStatus === "delivered"
-          ? await orders.markDeliveredIf(restaurantId, orderId, current.status, { markPaid: current.paymentMethod === "cash" }, at)
+          ? await orders.markDeliveredIf(restaurantId, orderId, current.status, { markPaid: current.paymentMethod === "cash" || current.paymentMethod === "split" }, at)
           : await orders.updateStatusIf(restaurantId, orderId, current.status, targetStatus, at);
 
       if (!updated) {
@@ -507,6 +535,68 @@ export function createOwnerOrdersService({
 
       if (!updated) throw new OrderNotFoundError();
       return updated;
+    },
+
+    /**
+     * Changes the payment method of an order that is not paid nor cancelled. Moving to cash drops the
+     * tip and recalculates the total (a tip only exists with transfer).
+     */
+    async updatePaymentMethod(
+      restaurantId: string,
+      orderId: string,
+      input: UpdateOrderPaymentMethodInput,
+    ) {
+      const current = await orders.findDetail(restaurantId, orderId);
+      if (!current) throw new OrderNotFoundError();
+      if (current.paymentStatus === "paid") throw new PaymentLockedError();
+      // A cancelled order is closed, and a delivered one already settled its tip and the cash the
+      // courier collected: changing its method would leave it unpaid forever.
+      if (current.status === "cancelled" || current.status === "delivered") throw new InvalidTransitionError();
+      if (input.expectedStatus !== current.status) {
+        throw new ConcurrentModificationError();
+      }
+
+      const totals = orderTotals({
+        subtotalCents: current.subtotalCents,
+        shippingCents: current.shippingCents,
+        tipCents: input.paymentMethod === "cash" ? 0 : current.tipCents,
+        fulfillment: current.fulfillment,
+      });
+      const splitCashCents = input.paymentMethod === "split" ? (input.splitCashCents ?? null) : null;
+      if (input.paymentMethod === "split") {
+        const splitProblem =
+          splitCashCents === null ? "splitRange" : splitCashProblem(splitCashCents, totals.totalCents, totals.tipCents);
+        if (splitProblem) throw new ValidationError(PAYMENT_SPLIT_MESSAGES[splitProblem]);
+      }
+      const cashTenderedCents =
+        input.paymentMethod === "transfer" ? null : (input.cashTenderedCents ?? null);
+      if (cashTenderedCents !== null) {
+        const cashCents = input.paymentMethod === "cash" ? totals.totalCents : (splitCashCents ?? 0);
+        if (cashTenderedCents < cashCents) {
+          throw new ValidationError(PAYMENT_SPLIT_MESSAGES.tenderedTooLow);
+        }
+      }
+
+      const updated = await orders.updatePaymentMethodIf(
+        restaurantId,
+        orderId,
+        current.status,
+        {
+          paymentMethod: input.paymentMethod,
+          splitCashCents,
+          cashTenderedCents,
+          tipCents: totals.tipCents,
+          totalCents: totals.totalCents,
+        },
+        now(),
+      );
+      if (updated) return updated;
+
+      const fresh = await orders.findDetail(restaurantId, orderId);
+      if (!fresh) throw new OrderNotFoundError();
+      if (fresh.status === "cancelled" || fresh.status === "delivered") throw new InvalidTransitionError();
+      if (fresh.paymentStatus === "paid") throw new PaymentLockedError();
+      throw new ConcurrentModificationError();
     },
 
     async exportCsv(restaurantId: string, query: OrderFiltersQuery) {

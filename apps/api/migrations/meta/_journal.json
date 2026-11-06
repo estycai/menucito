@@ -92,6 +92,13 @@
       "when": 1793896128289,
       "tag": "0012_couriers_and_tips",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "6",
+      "when": 1793920676216,
+      "tag": "0013_payment_split",
+      "breakpoints": true
     }
   ]
 }

@@ -447,7 +447,7 @@ describe("Owner Orders API (scenarios 31-38)", () => {
 
     const csvText = new TextDecoder().decode(bytes);
     // Semicolon separated header
-    expect(csvText).toContain("Número;Fecha y hora;Estado;Estado de pago;Modalidad;Forma de pago;Cliente;Teléfono;Dirección;Repartidor;Subtotal;Envío;Propina;Total;Ítems");
+    expect(csvText).toContain("Número;Fecha y hora;Estado;Estado de pago;Modalidad;Forma de pago;Efectivo;Transferencia;Abona con;Vuelto;Cliente;Teléfono;Dirección;Repartidor;Subtotal;Envío;Propina;Total;Ítems");
 
     // Customer name with = escaped with apostrophe
     expect(csvText).toContain("'=SUM(1,2)");

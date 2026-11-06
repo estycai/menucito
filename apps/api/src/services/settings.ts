@@ -3,6 +3,7 @@ import {
   settingsProblem,
   type PaymentMethodSetting,
   type StoreSettings,
+  type StoreSettingsResponse,
   type UpdateSettingsInput,
 } from "@menucito/shared";
 import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
@@ -10,7 +11,7 @@ import { ValidationError } from "./errors";
 
 export interface SettingsService {
   getSettings(restaurantId: string): Promise<StoreSettings>;
-  updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettings>;
+  updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettingsResponse>;
 }
 
 export function createSettingsService(
@@ -28,7 +29,7 @@ export function createSettingsService(
       return settings;
     },
 
-    async updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettings> {
+    async updateSettings(restaurantId: string, changes: UpdateSettingsInput): Promise<StoreSettingsResponse> {
       let current = await settingsRepo.findSettings(restaurantId);
       if (!current) {
         console.warn(`[settings] restaurant ${restaurantId} missing settings row on update, using safe defaults`);
@@ -46,8 +47,9 @@ export function createSettingsService(
           const mergedItem: PaymentMethodSetting = {
             method: updatePm.method,
             enabled: updatePm.enabled,
-            alias,
-            holderName,
+            // Split only stores whether it is enabled; its transfer data lives in the `transfer` row.
+            alias: updatePm.method === "split" ? null : alias,
+            holderName: updatePm.method === "split" ? null : holderName,
           };
           if (idx >= 0) {
             resultingMethods[idx] = mergedItem;
@@ -56,6 +58,16 @@ export function createSettingsService(
           }
         }
       }
+
+      // Disabling cash or transfer also turns split off, in the same batch, and the response says so.
+      const disabledBase = Boolean(
+        changes.paymentMethods?.some(
+          (pm) => (pm.method === "cash" || pm.method === "transfer") && !pm.enabled,
+        ),
+      );
+      const split = resultingMethods.find((pm) => pm.method === "split");
+      const splitDisabled = Boolean(disabledBase && split?.enabled);
+      if (splitDisabled && split) split.enabled = false;
 
       const resulting: StoreSettings = {
         acceptingOrders: changes.acceptingOrders ?? current.acceptingOrders,
@@ -71,7 +83,8 @@ export function createSettingsService(
         throw new ValidationError(problem.message);
       }
 
-      return settingsRepo.upsertSettings(restaurantId, resulting, now());
+      const saved = await settingsRepo.upsertSettings(restaurantId, resulting, now());
+      return splitDisabled ? { ...saved, splitDisabled: true } : saved;
     },
   };
 }

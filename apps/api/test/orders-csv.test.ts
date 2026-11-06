@@ -10,6 +10,9 @@ function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     paymentStatus: "pending",
     fulfillment: "takeaway",
     paymentMethod: "cash",
+    splitCashCents: null,
+    cashTenderedCents: null,
+    paymentBreakdown: { cashCents: 900_000, transferCents: 0, tenderedCents: null, changeCents: null },
     customerName: "Juan",
     customerPhone: "5491155551234",
     deliveryAddress: null,
@@ -36,7 +39,7 @@ describe("ordersToCsv (scenario 37)", () => {
   it.each(["=1+1", "+1", "-1", "@SUM", "\tcmd", "\rcmd"])("neutralises a cell starting with %j", (name) => {
     const row = dataRow(ordersToCsv([order({ customerName: name })]));
     const cells = row.split(";").map((cell) => cell.replace(/^"|"$/g, ""));
-    expect(cells[6]).toBe(`'${name}`);
+    expect(cells[10]).toBe(`'${name}`);
   });
 
   it("separates the options of an item with a comma and a space", () => {
