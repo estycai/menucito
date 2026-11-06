@@ -25,7 +25,11 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       PERMISSION_SECTIONS.map((section) => [section.key, section.label, section.subpermissions.map((sub) => sub.key)]),
     ).toEqual([
       ["summary.view", "Resumen", []],
-      ["orders.view", "Pedidos", ["orders.status", "orders.payment", "orders.export", "orders.assign"]],
+      [
+        "orders.view",
+        "Pedidos",
+        ["orders.status", "orders.payment", "orders.export", "orders.assign", "orders.create", "orders.settings"],
+      ],
       [
         "cash.view",
         "Cajas",

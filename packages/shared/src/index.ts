@@ -7,6 +7,7 @@ export * from "./delivery-coverage";
 export * from "./hours";
 export * from "./media";
 export * from "./order";
+export * from "./order-messages";
 export * from "./orders";
 export * from "./permissions";
 export * from "./plans";

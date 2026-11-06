@@ -16,6 +16,21 @@ import { isCalendarDateKey } from "./time";
 export const ORDER_STATUSES = ["new", "preparing", "ready", "sent", "delivered", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
+/** Where an order came from: the public menu, the counter or WhatsApp. */
+export const ORDER_SOURCES = ["web", "local", "whatsapp"] as const;
+export type OrderSource = (typeof ORDER_SOURCES)[number];
+/** Sources an employee can pick when creating an order from the admin. */
+export const MANUAL_ORDER_SOURCES = ["local", "whatsapp"] as const;
+export type ManualOrderSource = (typeof MANUAL_ORDER_SOURCES)[number];
+export const ORDER_SOURCE_LABELS: Readonly<Record<OrderSource, string>> = {
+  web: "Web",
+  local: "Local",
+  whatsapp: "WhatsApp",
+};
+
+/** Comment of the whole order, typed by the employee when creating it manually. */
+export const ORDER_NOTES_MAX_LENGTH = 500;
+
 /** Statuses of an order that has not finished yet; `sent` is still on its way to the customer. */
 export const ACTIVE_ORDER_STATUSES = ["new", "preparing", "ready", "sent"] as const;
 export type ActiveOrderStatus = (typeof ACTIVE_ORDER_STATUSES)[number];
@@ -207,6 +222,8 @@ export const ORDERS_MESSAGES = {
   paymentMethodInvalid: "Forma de pago inválida",
   clientOrderIdInvalid: "El identificador del pedido debe ser un UUID válido",
   expectedTotalInvalid: "El total esperado debe ser un número entero no negativo",
+  manualSourceInvalid: "Elegí el origen del pedido",
+  notesTooLong: `El comentario puede tener hasta ${ORDER_NOTES_MAX_LENGTH} caracteres`,
 } as const;
 
 export const createOrderItemChoiceSchema = z
@@ -256,6 +273,94 @@ export const createOrderCustomerSchema = z.object({
     .optional(),
 });
 
+const splitCashField = z
+  .number(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+  .int(PAYMENT_SPLIT_MESSAGES.splitInvalid)
+  .min(0, PAYMENT_SPLIT_MESSAGES.splitInvalid)
+  .optional();
+
+const cashTenderedField = z
+  .number(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+  .int(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+  .min(0, PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
+  .max(CASH_TENDERED_MAX_CENTS, PAYMENT_SPLIT_MESSAGES.tenderedTooHigh)
+  .optional();
+
+const tipField = z
+  .number(TIP_MESSAGES.invalidAmount)
+  .int(TIP_MESSAGES.invalidAmount)
+  .min(0, TIP_MESSAGES.invalidAmount)
+  .max(TIP_MAX_CENTS, TIP_MESSAGES.invalidAmount)
+  .multipleOf(100, TIP_MESSAGES.invalidAmount)
+  .optional()
+  .default(0);
+
+/** The fields both order-creation paths validate the same way (public and manual). */
+interface OrderChargeValues {
+  paymentMethod: PaymentMethod;
+  expectedTotalCents: number;
+  splitCashCents?: number;
+  cashTenderedCents?: number;
+  tipCents: number;
+  fulfillment: Fulfillment;
+}
+
+/**
+ * Validates split, cash tendered and tip against the total the client expects; returns the two values
+ * already normalized to `null` when they do not apply. `null` means an issue was added.
+ */
+function normalizeOrderCharges<T extends OrderChargeValues>(
+  value: T,
+  ctx: z.RefinementCtx,
+): { splitCashCents: number | null; cashTenderedCents: number | null } | null {
+  // The split and the cash tendered are validated against the expected total; the service repeats
+  // the split check against its own recalculated total.
+  const splitCashCents = value.paymentMethod === "split" ? (value.splitCashCents ?? null) : null;
+  if (value.paymentMethod === "split") {
+    if (typeof splitCashCents !== "number") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: PAYMENT_SPLIT_MESSAGES.splitRequired,
+        path: ["splitCashCents"],
+      });
+      return null;
+    }
+    const splitProblem = splitCashProblem(splitCashCents, value.expectedTotalCents, value.tipCents);
+    if (splitProblem) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: PAYMENT_SPLIT_MESSAGES[splitProblem],
+        path: ["splitCashCents"],
+      });
+      return null;
+    }
+  }
+  const cashTenderedCents = value.paymentMethod === "transfer" ? null : (value.cashTenderedCents ?? null);
+  if (cashTenderedCents !== null) {
+    const cashCents = value.paymentMethod === "cash" ? value.expectedTotalCents : (splitCashCents ?? 0);
+    if (cashTenderedCents < cashCents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: PAYMENT_SPLIT_MESSAGES.tenderedTooLow,
+        path: ["cashTenderedCents"],
+      });
+      return null;
+    }
+  }
+
+  // No client HTTP is trusted: a tip on takeaway or cash is rejected even if the front never sent it.
+  if (value.tipCents > 0 && !canHaveTip(value.fulfillment, value.paymentMethod)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: TIP_MESSAGES.onlyDeliveryTransfer,
+      path: ["tipCents"],
+    });
+    return null;
+  }
+
+  return { splitCashCents, cashTenderedCents };
+}
+
 export const createOrderRequestSchema = z
   .object({
     items: z
@@ -270,18 +375,9 @@ export const createOrderRequestSchema = z
       message: ORDERS_MESSAGES.paymentMethodInvalid,
     }),
     /** Cash part of a `split` order, in ARS cents. */
-    splitCashCents: z
-      .number(PAYMENT_SPLIT_MESSAGES.splitInvalid)
-      .int(PAYMENT_SPLIT_MESSAGES.splitInvalid)
-      .min(0, PAYMENT_SPLIT_MESSAGES.splitInvalid)
-      .optional(),
+    splitCashCents: splitCashField,
     /** "¿Con cuánto abonás?", in ARS cents; optional even on cash and split. */
-    cashTenderedCents: z
-      .number(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
-      .int(PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
-      .min(0, PAYMENT_SPLIT_MESSAGES.tenderedInvalid)
-      .max(CASH_TENDERED_MAX_CENTS, PAYMENT_SPLIT_MESSAGES.tenderedTooHigh)
-      .optional(),
+    cashTenderedCents: cashTenderedField,
     clientOrderId: z.string().uuid(ORDERS_MESSAGES.clientOrderIdInvalid),
     expectedTotalCents: z
       .number()
@@ -291,14 +387,7 @@ export const createOrderRequestSchema = z
      * Courier tip in ARS cents, already rounded to whole pesos by the diner's front. Optional; `0`
      * when absent. Only valid on a delivery order paid by transfer or split (`canHaveTip`).
      */
-    tipCents: z
-      .number(TIP_MESSAGES.invalidAmount)
-      .int(TIP_MESSAGES.invalidAmount)
-      .min(0, TIP_MESSAGES.invalidAmount)
-      .max(TIP_MAX_CENTS, TIP_MESSAGES.invalidAmount)
-      .multipleOf(100, TIP_MESSAGES.invalidAmount)
-      .optional()
-      .default(0),
+    tipCents: tipField,
     /**
      * The geocoded address, required by stores in `zones` mode (the service checks it, since the
      * schema does not know the mode). `flat` stores ignore it and use `customer.address`.
@@ -306,51 +395,10 @@ export const createOrderRequestSchema = z
     delivery: orderDeliverySchema.nullish(),
   })
   .transform((val, ctx) => {
-    // The split and the cash tendered are validated against the total the client expects; the service
-    // repeats the split check against its own recalculated total.
-    const splitCashCents = val.paymentMethod === "split" ? val.splitCashCents : null;
-    if (val.paymentMethod === "split") {
-      if (typeof splitCashCents !== "number") {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: PAYMENT_SPLIT_MESSAGES.splitRequired,
-          path: ["splitCashCents"],
-        });
-        return z.NEVER;
-      }
-      const splitProblem = splitCashProblem(splitCashCents, val.expectedTotalCents, val.tipCents);
-      if (splitProblem) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: PAYMENT_SPLIT_MESSAGES[splitProblem],
-          path: ["splitCashCents"],
-        });
-        return z.NEVER;
-      }
-    }
-    const cashTenderedCents =
-      val.paymentMethod === "transfer" ? null : (val.cashTenderedCents ?? null);
-    if (cashTenderedCents !== null) {
-      const cashCents = val.paymentMethod === "cash" ? val.expectedTotalCents : (splitCashCents ?? 0);
-      if (cashTenderedCents < cashCents) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: PAYMENT_SPLIT_MESSAGES.tenderedTooLow,
-          path: ["cashTenderedCents"],
-        });
-        return z.NEVER;
-      }
-    }
+    const charges = normalizeOrderCharges(val, ctx);
+    if (!charges) return z.NEVER;
+    const { splitCashCents, cashTenderedCents } = charges;
 
-    // No client HTTP is trusted: a tip on takeaway or cash is rejected even if the front never sent it.
-    if (val.tipCents > 0 && !canHaveTip(val.fulfillment, val.paymentMethod)) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: TIP_MESSAGES.onlyDeliveryTransfer,
-        path: ["tipCents"],
-      });
-      return z.NEVER;
-    }
     if (val.fulfillment === "delivery") {
       const addr = val.customer.address?.trim() ?? "";
       const delivery = val.delivery ?? null;
@@ -394,6 +442,114 @@ export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
  * on cash and takeaway orders, so the tip never travels outside a delivery paid by transfer.
  */
 export type CreateOrderRequestInput = z.input<typeof createOrderRequestSchema>;
+
+/** Customer of a manually created order: the phone is optional unless the source is WhatsApp. */
+export const createManualOrderCustomerSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(1, ORDERS_MESSAGES.nameRequired)
+    .max(ORDER_NAME_MAX_LENGTH, ORDERS_MESSAGES.nameTooLong),
+  phone: z
+    .string()
+    .trim()
+    .nullish()
+    .transform((val, ctx) => {
+      const trimmed = val?.trim() ?? "";
+      if (trimmed === "") return "";
+      const normalized = normalizeArWhatsapp(trimmed);
+      if (!normalized) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: ORDERS_MESSAGES.phoneInvalid });
+        return z.NEVER;
+      }
+      return normalized;
+    }),
+  address: z
+    .string()
+    .trim()
+    .max(ORDER_ADDRESS_MAX_LENGTH, ORDERS_MESSAGES.addressTooLong)
+    .nullable()
+    .optional(),
+});
+
+/** Body of `POST /api/orders`: an order loaded by an employee, with its source and optional comment. */
+export const createManualOrderRequestSchema = z
+  .object({
+    items: z
+      .array(createOrderItemSchema)
+      .min(1, ORDERS_MESSAGES.itemsEmpty)
+      .max(ORDER_MAX_LINES, ORDERS_MESSAGES.itemsTooMany),
+    customer: createManualOrderCustomerSchema,
+    fulfillment: z.enum(FULFILLMENTS, { message: ORDERS_MESSAGES.fulfillmentInvalid }),
+    paymentMethod: z.enum(PAYMENT_METHODS, { message: ORDERS_MESSAGES.paymentMethodInvalid }),
+    splitCashCents: splitCashField,
+    cashTenderedCents: cashTenderedField,
+    source: z.enum(MANUAL_ORDER_SOURCES, { message: ORDERS_MESSAGES.manualSourceInvalid }),
+    notes: z
+      .string()
+      .trim()
+      .max(ORDER_NOTES_MAX_LENGTH, ORDERS_MESSAGES.notesTooLong)
+      .nullish()
+      .transform((value) => (value ? value : null)),
+    markPaid: z.boolean().default(false),
+    clientOrderId: z.string().uuid(ORDERS_MESSAGES.clientOrderIdInvalid),
+    expectedTotalCents: z
+      .number()
+      .int(ORDERS_MESSAGES.expectedTotalInvalid)
+      .min(0, ORDERS_MESSAGES.expectedTotalInvalid),
+    tipCents: tipField,
+    delivery: orderDeliverySchema.nullish(),
+  })
+  .transform((val, ctx) => {
+    const charges = normalizeOrderCharges(val, ctx);
+    if (!charges) return z.NEVER;
+    const { splitCashCents, cashTenderedCents } = charges;
+
+    if (val.source === "whatsapp" && val.customer.phone === "") {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: ORDERS_MESSAGES.phoneRequired,
+        path: ["customer", "phone"],
+      });
+      return z.NEVER;
+    }
+
+    if (val.fulfillment === "delivery") {
+      const addr = val.customer.address?.trim() ?? "";
+      const delivery = val.delivery ?? null;
+      if (addr.length === 0 && !delivery) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: ORDERS_MESSAGES.addressRequired,
+          path: ["customer", "address"],
+        });
+        return z.NEVER;
+      }
+      return {
+        ...val,
+        splitCashCents,
+        cashTenderedCents,
+        customer: { ...val.customer, address: addr || null },
+        delivery,
+      };
+    }
+
+    return {
+      ...val,
+      splitCashCents,
+      cashTenderedCents,
+      customer: { ...val.customer, address: null },
+      delivery: null,
+    };
+  });
+
+export type CreateManualOrderRequest = z.infer<typeof createManualOrderRequestSchema>;
+export type CreateManualOrderRequestInput = z.input<typeof createManualOrderRequestSchema>;
+
+/** What `POST /api/orders` answers: the stored order and, if marking it paid failed, why. */
+export interface CreateManualOrderResponse extends OrderDetail {
+  paymentError?: string;
+}
 
 /** Most orders one CSV export may contain; a larger result asks the owner to narrow the dates. */
 export const ORDER_EXPORT_MAX = 5000;
@@ -583,6 +739,10 @@ export interface OrderSummary {
   settledAt: number | null;
   customerName: string;
   customerPhone: string;
+  /** Where the order came from: the public menu, the counter or WhatsApp. */
+  source: OrderSource;
+  /** Comment of the order; `null` when the employee left none. */
+  notes: string | null;
   totalCents: number;
   itemCount: number;
   createdAt: number;
@@ -634,6 +794,8 @@ export interface OrderDetail {
   paymentBreakdown: PaymentBreakdown;
   customerName: string;
   customerPhone: string;
+  /** Where the order came from: the public menu, the counter or WhatsApp. */
+  source: OrderSource;
   deliveryAddress: string | null;
   /** `null` for takeaway, `flat` stores and orders placed before delivery zones. */
   deliveryLocation: OrderDeliveryLocation | null;

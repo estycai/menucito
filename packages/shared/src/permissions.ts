@@ -31,6 +31,8 @@ export const PERMISSION_SECTIONS = [
       { key: "orders.payment", label: "Marcar pagado o pendiente" },
       { key: "orders.export", label: "Exportar a CSV" },
       { key: "orders.assign", label: "Asignar repartidor" },
+      { key: "orders.create", label: "Cargar pedidos nuevos" },
+      { key: "orders.settings", label: "Editar mensajes de pedidos" },
     ],
   },
   {
