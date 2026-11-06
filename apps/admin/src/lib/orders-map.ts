@@ -5,10 +5,27 @@ import {
   type OrderSummary,
   type PaymentMethod,
 } from "@menucito/shared";
+import type { FulfillmentMode } from "./orders";
 
 /** Search param of the "Activos" view: `?vista=mapa` shows the map instead of the board. */
 export const ORDERS_VIEW_PARAM = "vista";
 export const ORDERS_MAP_VIEW = "mapa";
+export const ORDERS_INDIVIDUAL_VIEW = "individual";
+export const ORDERS_FULFILLMENT_PARAM = "modo";
+
+export type OrdersView = "board" | "individual" | "map";
+
+/** `vista`: `mapa`, `individual` or absent (board). An unknown value is the board. */
+export function parseOrdersView(value: string | null | undefined): OrdersView {
+  if (value === ORDERS_MAP_VIEW) return "map";
+  if (value === ORDERS_INDIVIDUAL_VIEW) return "individual";
+  return "board";
+}
+
+/** `modo`: `delivery`, `takeaway` or absent (Todos). An unknown value is Todos. */
+export function parseFulfillmentMode(value: string | null | undefined): FulfillmentMode | null {
+  return value === "delivery" || value === "takeaway" ? value : null;
+}
 
 /**
  * "pending": only the active orders. "today": the whole board, so today's delivered orders too

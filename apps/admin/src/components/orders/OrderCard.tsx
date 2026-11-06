@@ -7,6 +7,7 @@ import {
   type OrderSummary,
 } from "@menucito/shared";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
+import { OrderSourceBadge } from "@/components/orders/OrderSourceBadge";
 import { Badge } from "@/components/ui/badge";
 import { courierName } from "@/lib/couriers";
 
@@ -35,8 +36,14 @@ export function OrderCardContent({ order, showStatus = false }: { order: OrderSu
       </div>
 
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-semibold text-ink">{order.customerName}</span>
-        <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
+        <span className="flex min-w-0 items-center gap-1.5">
+          <span className="truncate text-sm font-semibold text-ink">{order.customerName}</span>
+          {order.notes && <OrderNoteIcon notes={order.notes} />}
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5">
+          <OrderSourceBadge source={order.source} />
+          <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
+        </span>
       </div>
 
       {order.courier && (
@@ -56,5 +63,26 @@ export function OrderCardContent({ order, showStatus = false }: { order: OrderSu
         <span className="font-extrabold text-ink">{formatArs(order.totalCents)}</span>
       </div>
     </>
+  );
+}
+
+/** The order has a comment: the card shows a note icon with the text as its title. */
+function OrderNoteIcon({ notes }: { notes: string }) {
+  return (
+    <span title={notes} aria-label={`Comentario: ${notes}`} className="shrink-0 text-muted">
+      <svg
+        aria-hidden="true"
+        width="14"
+        height="14"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M4 4h16v12H8l-4 4V4Z" />
+      </svg>
+    </span>
   );
 }

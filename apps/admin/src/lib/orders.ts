@@ -52,6 +52,17 @@ export interface OrdersPage {
   nextBefore: number | null;
 }
 
+/** Fulfillment filter of the board and the Individual view; absent means "Todos". */
+export type FulfillmentMode = "delivery" | "takeaway";
+
+/** `orders` of one fulfillment, or all of them when `mode` is absent. */
+export function filterByFulfillment<T extends Pick<OrderSummary, "fulfillment">>(
+  orders: readonly T[],
+  mode: FulfillmentMode | null | undefined,
+): T[] {
+  return mode === "delivery" || mode === "takeaway" ? orders.filter((order) => order.fulfillment === mode) : [...orders];
+}
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 export function resolvePresetDates(preset: DatePreset, nowMs = Date.now()): { from?: string; to?: string } {
@@ -175,8 +186,7 @@ export const DELIVERED_TODAY_KEY = [...ORDERS_KEY, DELIVERED_TODAY_FILTERS] as c
 /** History filters behind "Ver todos en el historial" of the "Entregados" column. */
 export const DELIVERED_TODAY_HISTORY_FILTERS: OrderFilters = { status: "delivered", preset: "today" };
 
-/** Drop targets of the board, in reading order: the active columns plus "Entregados". */
-export const BOARD_DROP_STATUSES = [...ACTIVE_ORDER_STATUSES, "delivered"] as const;
+/** Drop targets of the board, in reading order: the active columns plus "Entregados". */export const BOARD_DROP_STATUSES = [...ACTIVE_ORDER_STATUSES, "delivered"] as const;
 export type BoardDropStatus = (typeof BOARD_DROP_STATUSES)[number];
 
 /** What the signed-in member may do with the board (`orders.status` and `orders.assign`). */

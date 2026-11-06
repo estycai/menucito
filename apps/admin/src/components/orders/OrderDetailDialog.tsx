@@ -18,6 +18,7 @@ import { QueryError } from "@/components/QueryError";
 import { cashErrorMessage, useCashCurrent, useSettleOrders, useUnsettleOrder } from "@/lib/cash";
 import { CourierPickerDialog } from "@/components/orders/CourierPickerDialog";
 import { OrderPaymentDialog } from "@/components/orders/OrderPaymentDialog";
+import { OrderSourceBadge } from "@/components/orders/OrderSourceBadge";
 import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { PaymentStatusBadge } from "@/components/orders/PaymentStatusBadge";
 import { Badge } from "@/components/ui/badge";
@@ -153,6 +154,7 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             <div className="flex flex-wrap items-center gap-2">
               <OrderStatusBadge status={order.status} size="md" />
               <PaymentStatusBadge status={order.paymentStatus} size="md" />
+              <OrderSourceBadge source={order.source} />
               <Badge tone="subtle" size="md">
                 {FULFILLMENT_LABELS[order.fulfillment]} · {PAYMENT_LABELS[order.paymentMethod]}
               </Badge>
@@ -161,6 +163,12 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             {orderCashNote(order) && <p className="m-0 text-xs text-muted">{orderCashNote(order)}</p>}
 
             <OrderCustomer order={order} />
+            {order.notes && (
+              <div className="flex flex-col gap-1 rounded-xl border border-line bg-bg/50 p-3.5 text-sm">
+                <span className="text-xs font-bold text-muted">Comentario</span>
+                <span className="whitespace-pre-wrap text-ink">{order.notes}</span>
+              </div>
+            )}
             <OrderItems order={order} />
             <OrderTotals order={order} />
 
@@ -328,14 +336,18 @@ function OrderCustomer({ order }: { order: OrderDetail }) {
   return (
     <div className="flex flex-col gap-1 rounded-xl border border-line bg-bg/50 p-3.5 text-sm">
       <span className="font-bold text-ink">{order.customerName}</span>
-      <a
-        href={`https://wa.me/${order.customerPhone}`}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-link hover:underline"
-      >
-        +{order.customerPhone} (WhatsApp)
-      </a>
+      {order.customerPhone ? (
+        <a
+          href={`https://wa.me/${order.customerPhone}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-semibold text-link hover:underline"
+        >
+          +{order.customerPhone} (WhatsApp)
+        </a>
+      ) : (
+        <span className="text-muted">Sin teléfono</span>
+      )}
       {order.fulfillment === "delivery" && order.deliveryAddress && (
         <span className="text-muted">Entrega: {order.deliveryAddress}</span>
       )}
