@@ -25,7 +25,6 @@ describe("NAV_ITEMS", () => {
       "Mi menú",
       "Mi local",
       "Usuarios",
-      "Link y QR",
       "Estadísticas",
       "Plan y pagos",
     ]);
@@ -56,7 +55,6 @@ describe("activeNavItem", () => {
     ["/local/zonas", "Mi local"],
     ["/usuarios", "Usuarios"],
     ["/usuarios/roles", "Usuarios"],
-    ["/qr", "Link y QR"],
     ["/estadisticas", "Estadísticas"],
     ["/plan", "Plan y pagos"],
   ])("%s -> %s", (pathname, label) => {
@@ -112,7 +110,8 @@ describe("visibleNavItems", () => {
 
   it("shows a member only the sections whose view key they have", () => {
     expect(labels(staff(["orders.view", "orders.status"]))).toEqual(["Pedidos"]);
-    expect(labels(staff(["menu.view", "qr.view"]))).toEqual(["Mi menú", "Link y QR"]);
+    // `qr.view` shows the QR inside Resumen: it is not a section of its own.
+    expect(labels(staff(["menu.view", "qr.view"]))).toEqual(["Mi menú"]);
   });
 
   it("never shows Usuarios or Plan y pagos to a member, whatever the permissions", () => {

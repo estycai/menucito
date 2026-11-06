@@ -161,7 +161,7 @@ Permissions are text keys `<section>.<action>`, defined in `packages/shared/src/
 | Repartidores | `couriers.view` (daily summary by courier; the page is `/repartidores`) |
 | Mi menú | `menu.view`, `menu.edit` |
 | Mi local | `store.view`, `store.edit` (data, appearance, hours, delivery, payments, pause; also the `/me/places/*` lookups) |
-| Link y QR | `qr.view` |
+| Link y QR | `qr.view` (the QR card inside Resumen; no section of its own) |
 | Estadísticas | `stats.view` |
 
 Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given. "Mis repartos" (`/api/deliveries/*`, admin `/mis-repartos`) is not a permission either: it follows the `is_courier` mark, so the same member keeps its role's sections and gains the courier one.
@@ -243,7 +243,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/local` | Mi local |
 | `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
-| `/qr`, `/estadisticas` | Link y QR, Estadísticas: "Próximamente" placeholders |
+| `/estadisticas` | Estadísticas: "Próximamente" placeholder |
 
 Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
 

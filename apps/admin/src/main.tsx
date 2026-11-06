@@ -104,9 +104,6 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                     <Route path="*" element={<Navigate to={DEFAULT_USERS_TAB_PATH} replace />} />
                   </Route>
                 </Route>
-                <Route element={<RequirePermission permission="qr.view" />}>
-                  <Route path="/qr" element={<ComingSoonPage id="qr" />} />
-                </Route>
                 <Route element={<RequirePermission permission="stats.view" />}>
                   <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
                 </Route>

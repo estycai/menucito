@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { Notice } from "@/components/AuthLayout";
+import { MenuQr } from "@/components/MenuQr";
 import { useAccess } from "@/lib/access";
 import { useCashCurrent } from "@/lib/cash";
 import { useCatalog } from "@/lib/catalog";
@@ -37,12 +38,14 @@ export function SummaryPage() {
   // The product and category counts come from the menu: only members who can see it get them.
   const canSeeMenu = can("menu.view");
   const canSeeCash = can("cash.view");
+  const canSeeQr = can("qr.view");
   const canCloseCash = can("cash.close");
   const { data: catalog } = useCatalog(canSeeMenu);
   const cash = useCashCurrent(canSeeCash);
   if (!restaurant) return null;
 
-  const firstName = session?.user.name?.trim().split(/\s+/)[0];
+  const menuHref = publicMenuHref(PUBLIC_BASE, restaurant.slug);
+  const firstName =session?.user.name?.trim().split(/\s+/)[0];
   // While the catalog loads, or if it fails, the tiles show "—" instead of an invented number.
   const usage = catalog?.usage;
   const products = usage ? (usage.maxProducts === null ? `${usage.products}` : `${usage.products} de ${usage.maxProducts}`) : "—";
@@ -64,26 +67,32 @@ export function SummaryPage() {
         </Notice>
       )}
 
-      <section aria-label="Tu link y tu WhatsApp" className="flex flex-col gap-2 rounded-2xl border border-line bg-white p-6">
-        <p className="m-0 text-sm text-muted">Tu link</p>
-        <a
-          href={publicMenuHref(PUBLIC_BASE, restaurant.slug)}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="m-0 flex min-h-11 items-center rounded-xl bg-addon px-3 py-2 text-[15px] font-bold break-all text-link underline-offset-2 hover:underline"
-        >
-          {publicMenuUrl(restaurant.slug)}
-        </a>
-        <p className="m-0 mt-2 text-sm text-muted">Tu WhatsApp</p>
-        <p className="m-0 text-[15px] font-bold">{formatWhatsapp(restaurant.whatsapp)}</p>
-        <a
-          href={whatsappTestUrl(restaurant.whatsapp)}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline"
-        >
-          Enviar mensaje de prueba
-        </a>
+      <section
+        aria-label="Tu link, tu QR y tu WhatsApp"
+        className="flex flex-col gap-6 rounded-2xl border border-line bg-white p-6 sm:flex-row sm:items-start sm:justify-between"
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          <p className="m-0 text-sm text-muted">Tu link</p>
+          <a
+            href={menuHref}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="m-0 flex min-h-11 items-center rounded-xl bg-addon px-3 py-2 text-[15px] font-bold break-all text-link underline-offset-2 hover:underline"
+          >
+            {publicMenuUrl(restaurant.slug)}
+          </a>
+          <p className="m-0 mt-2 text-sm text-muted">Tu WhatsApp</p>
+          <p className="m-0 text-[15px] font-bold">{formatWhatsapp(restaurant.whatsapp)}</p>
+          <a
+            href={whatsappTestUrl(restaurant.whatsapp)}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-11 items-center self-start text-sm font-bold text-link underline-offset-2 hover:underline"
+          >
+            Enviar mensaje de prueba
+          </a>
+        </div>
+        {canSeeQr && <MenuQr href={menuHref} slug={restaurant.slug} />}
       </section>
 
       {canSeeMenu && (
