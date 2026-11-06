@@ -99,6 +99,13 @@
       "when": 1793920676216,
       "tag": "0013_payment_split",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1793926831656,
+      "tag": "0014_cash_sessions",
+      "breakpoints": true
     }
   ]
 }

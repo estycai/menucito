@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { createAuth } from "./auth";
 import type { AppEnv } from "./env";
+import { cashRoutes } from "./routes/cash";
 import { categoriesRoutes } from "./routes/categories";
 import { couriersRoutes } from "./routes/couriers";
 import { deliveriesRoutes } from "./routes/deliveries";
@@ -32,6 +33,7 @@ app.route("/api/categories", categoriesRoutes);
 app.route("/api/products", productsRoutes);
 app.route("/api/media", mediaRoutes);
 app.route("/api/orders", ordersRoutes);
+app.route("/api/cash-sessions", cashRoutes);
 app.route("/api/couriers", couriersRoutes);
 app.route("/api/deliveries", deliveriesRoutes);
 app.route("/api/members", membersRoutes);

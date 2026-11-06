@@ -27,6 +27,7 @@ import {
   type UpdateOrderPaymentMethodInput,
 } from "@menucito/shared";
 import type { IngredientRow, ProductRow, RestaurantRow } from "../db/schema";
+import { createCashRepository, type CashRepository } from "../repositories/cash";
 import { createDeliveryRepository, type DeliveryRepository } from "../repositories/delivery";
 import { createHoursRepository, type HoursRepository } from "../repositories/hours";
 import { UniqueViolationError } from "../repositories/errors";
@@ -43,6 +44,7 @@ import { createRestaurantsRepository, type RestaurantsRepository } from "../repo
 import { createSettingsRepository, type SettingsRepository } from "../repositories/settings";
 import {
   BelowMinimumError,
+  CashSessionClosedError,
   ConcurrentModificationError,
   CourierRequiredError,
   DeliveryLocationRequiredError,
@@ -51,6 +53,7 @@ import {
   InvalidTransitionError,
   OrderNotFoundError,
   OrderNumberConflictError,
+  OrderSettledError,
   OutOfCoverageError,
   PaymentMethodNotAcceptedError,
   PaymentLockedError,
@@ -61,6 +64,7 @@ import {
   TooManyOrdersError,
   ValidationError,
 } from "./errors";
+import { buildOrderSplitIncomeRows } from "./cash";
 import { deliversByZones } from "./delivery";
 import { ordersToCsv } from "./orders-csv";
 import { MenuNotFoundError } from "./public-menu";
@@ -450,13 +454,17 @@ export interface OwnerOrdersDependencies {
   orders: OrdersRepository;
   /** Needed to validate the courier of an assignment and to know if a member has orders. */
   members: MembersRepository;
+  cash: CashRepository;
   now?: () => Date;
+  generateId?: () => string;
 }
 
 export function createOwnerOrdersService({
   orders,
   members,
+  cash,
   now = () => new Date(),
+  generateId = () => crypto.randomUUID(),
 }: OwnerOrdersDependencies) {
   return {
     async list(restaurantId: string, query: OrderFiltersQuery) {
@@ -517,22 +525,71 @@ export function createOwnerOrdersService({
         throw new InvalidTransitionError();
       }
 
+      // Cancelling while the session is open takes the order out of its totals; the automatic split
+      // incomes go with it. A closed session is a snapshot and never changes.
+      if (targetStatus === "cancelled" && current.cashSessionId) {
+        const open = await cash.findOpenSession(restaurantId);
+        if (open && open.id === current.cashSessionId) {
+          await cash.deleteOrderSplitIncomes(restaurantId, open.id, orderId);
+        }
+      }
+
       return updated;
     },
 
-    async updatePayment(restaurantId: string, orderId: string, targetPaymentStatus: PaymentStatus) {
+    /**
+     * Marks an order paid or pending. Paid enters the open cash when the money lands there: any
+     * transfer, and cash or split takeaway. Delivery cash and split orders stay "to settle" until
+     * someone taps "Ingresar a la caja" (change 14b).
+     */
+    async updatePayment(
+      restaurantId: string,
+      member: { memberId: string },
+      orderId: string,
+      targetPaymentStatus: PaymentStatus,
+    ) {
       const current = await orders.findDetail(restaurantId, orderId);
       if (!current) throw new OrderNotFoundError();
 
       if (current.paymentStatus === targetPaymentStatus) return current;
 
-      const updated = await orders.updatePaymentStatus(
-        restaurantId,
-        orderId,
-        targetPaymentStatus,
-        now(),
-      );
+      if (targetPaymentStatus === "pending") {
+        if (current.cashSessionId || current.settledAt != null) {
+          if (current.cashSessionId) {
+            const session = await cash.findSession(restaurantId, current.cashSessionId);
+            if (!session || session.closedAt) throw new CashSessionClosedError();
+          }
+          throw new OrderSettledError();
+        }
+        const reverted = await orders.updatePaymentStatus(restaurantId, orderId, "pending", now());
+        if (!reverted) throw new OrderNotFoundError();
+        return reverted;
+      }
 
+      const open = await cash.findOpenSession(restaurantId);
+      // A cancelled order is never money that reached the drawer.
+      const entersCash =
+        current.status !== "cancelled" &&
+        (current.paymentMethod === "transfer" || current.fulfillment === "takeaway");
+      const cashSessionId = entersCash ? (open?.id ?? null) : null;
+      const paidAt = now();
+      let rows: ReturnType<typeof buildOrderSplitIncomeRows> = [];
+      if (current.paymentMethod === "split" && cashSessionId) {
+        const record = await members.find(restaurantId, member.memberId);
+        const name = record ? `${record.member.firstName} ${record.member.lastName}`.trim() || "Usuario" : "Usuario";
+        rows = buildOrderSplitIncomeRows(
+          current,
+          restaurantId,
+          cashSessionId,
+          member,
+          name,
+          paidAt,
+          generateId,
+        );
+      }
+      await cash.markOrderPaid(restaurantId, orderId, cashSessionId, paidAt, rows);
+
+      const updated = await orders.findDetail(restaurantId, orderId);
       if (!updated) throw new OrderNotFoundError();
       return updated;
     },
@@ -548,7 +605,9 @@ export function createOwnerOrdersService({
     ) {
       const current = await orders.findDetail(restaurantId, orderId);
       if (!current) throw new OrderNotFoundError();
-      if (current.paymentStatus === "paid") throw new PaymentLockedError();
+      if (current.paymentStatus === "paid" || current.cashSessionId || current.settledAt != null) {
+        throw new PaymentLockedError();
+      }
       // A cancelled order is closed, and a delivered one already settled its tip and the cash the
       // courier collected: changing its method would leave it unpaid forever.
       if (current.status === "cancelled" || current.status === "delivered") throw new InvalidTransitionError();
@@ -618,5 +677,6 @@ export function ordersServiceFor(db: D1Database): OwnerOrdersService {
   return createOwnerOrdersService({
     orders: createOrdersRepository(db),
     members: createMembersRepository(db),
+    cash: createCashRepository(db),
   });
 }

@@ -525,7 +525,13 @@ describe("plan limits", () => {
       products: createProductsRepository(env.DB),
       ingredients: createIngredientsRepository(env.DB),
       storage: createMediaStorage(env.MEDIA),
-      limitsFor: () => ({ maxProducts: null, productPhotos: false, customIngredients: false, customColors: false }),
+      limitsFor: () => ({
+        maxProducts: null,
+        productPhotos: false,
+        customIngredients: false,
+        customColors: false,
+        cashRegister: true,
+      }),
     });
     const upload = { bytes: webpBytes().buffer as ArrayBuffer, contentType: "image/webp" };
     await expect(service.uploadProductPhoto(restaurantId, product.id, upload)).rejects.toBeInstanceOf(PlanLimitError);
@@ -818,7 +824,13 @@ describe("PUT /api/products/:id/ingredients (scenarios 4, 6, 7)", () => {
       products: createProductsRepository(env.DB),
       ingredients: createIngredientsRepository(env.DB),
       storage: createMediaStorage(env.MEDIA),
-      limitsFor: () => ({ maxProducts: null, productPhotos: true, customIngredients: false, customColors: false }),
+      limitsFor: () => ({
+        maxProducts: null,
+        productPhotos: true,
+        customIngredients: false,
+        customColors: false,
+        cashRegister: true,
+      }),
     });
     await expect(service.replaceIngredients(restaurantId, product.id, [ingredient("Bacon")])).rejects.toBeInstanceOf(PlanFeatureError);
     expect(await ingredientNames(client, product.id)).toEqual([]);

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEFAULT_SETTINGS, type CreateOrderRequest, type HoursSlot, type OrderDetail } from "@menucito/shared";
 import type { ProductRow, RestaurantRow } from "../src/db/schema";
 import type { AppEnv } from "../src/env";
+import type { CashRepository } from "../src/repositories/cash";
 import type { DeliveryRepository } from "../src/repositories/delivery";
 import type { HoursRepository } from "../src/repositories/hours";
 import { UniqueViolationError } from "../src/repositories/errors";
@@ -68,6 +69,9 @@ const storedOrder: OrderDetail = {
   courier: null,
   sentAt: null,
   deliveredAt: null,
+  paidAt: null,
+  cashSessionId: null,
+  settledAt: null,
 };
 
 const numberCollision = () => new UniqueViolationError("restaurant_id", "orders", ["restaurant_id", "number"]);
@@ -239,7 +243,11 @@ describe("updatePaymentMethod race (no database)", () => {
   const serviceWhere = (fresh: Partial<OrderDetail>) => {
     const findDetail = vi.fn().mockResolvedValueOnce(base).mockResolvedValueOnce({ ...base, ...fresh });
     const orders = { findDetail, updatePaymentMethodIf: vi.fn().mockResolvedValue(null) } as unknown as OrdersRepository;
-    return createOwnerOrdersService({ orders, members: {} as MembersRepository });
+    return createOwnerOrdersService({
+      orders,
+      members: {} as MembersRepository,
+      cash: {} as CashRepository,
+    });
   };
   const input = { paymentMethod: "cash" as const, expectedStatus: "new" as const };
 

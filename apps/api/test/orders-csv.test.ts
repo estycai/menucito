@@ -29,6 +29,9 @@ function order(overrides: Partial<OrderDetail> = {}): OrderDetail {
     courier: null,
     sentAt: null,
     deliveredAt: null,
+    paidAt: null,
+    cashSessionId: null,
+    settledAt: null,
     ...overrides,
   };
 }

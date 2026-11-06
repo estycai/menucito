@@ -394,6 +394,13 @@ export const orders = sqliteTable(
     // Exact time the order went out and was delivered; both `NULL` for orders older than 0012.
     sentAt: integer("sent_at", { mode: "timestamp_ms" }),
     deliveredAt: integer("delivered_at", { mode: "timestamp_ms" }),
+    // Exact time it was marked paid (cash drawer change 14b). `NULL` for orders older than 0014.
+    paidAt: integer("paid_at", { mode: "timestamp_ms" }),
+    // Cash session it entered; `NULL` when it was paid without an open cash.
+    cashSessionId: text("cash_session_id").references(() => cashSessions.id, { onDelete: "set null" }),
+    // When and by whom "Ingresar a la caja" was used (delivery cash and split orders).
+    settledAt: integer("settled_at", { mode: "timestamp_ms" }),
+    settledByMemberId: text("settled_by_member_id").references(() => restaurantMembers.id, { onDelete: "set null" }),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
@@ -405,6 +412,8 @@ export const orders = sqliteTable(
     index("orders_customer_idx").on(t.customerId),
     index("orders_restaurant_courier_status_idx").on(t.restaurantId, t.courierMemberId, t.status),
     index("orders_restaurant_delivered_idx").on(t.restaurantId, t.deliveredAt),
+    index("orders_restaurant_cash_session_idx").on(t.restaurantId, t.cashSessionId),
+    index("orders_restaurant_settled_idx").on(t.restaurantId, t.settledAt),
   ],
 );
 
@@ -529,3 +538,94 @@ export const restaurantMembers = sqliteTable(
 
 export type MemberRow = typeof restaurantMembers.$inferSelect;
 export type NewMemberRow = typeof restaurantMembers.$inferInsert;
+
+// One cash session per restaurant at a time (partial unique index), no separate "cash drawers" table.
+// The names of who opened and closed are copied so the history reads after a member is deleted.
+export const cashSessions = sqliteTable(
+  "cash_sessions",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    openedAt: integer("opened_at", { mode: "timestamp_ms" }).notNull(),
+    openingCashCents: integer("opening_cash_cents").notNull(),
+    closedAt: integer("closed_at", { mode: "timestamp_ms" }),
+    countedCashCents: integer("counted_cash_cents"),
+    expectedCashCents: integer("expected_cash_cents"),
+    differenceCents: integer("difference_cents"),
+    closeNote: text("close_note"),
+    openedByMemberId: text("opened_by_member_id").references(() => restaurantMembers.id, { onDelete: "set null" }),
+    openedByName: text("opened_by_name").notNull(),
+    closedByMemberId: text("closed_by_member_id").references(() => restaurantMembers.id, { onDelete: "set null" }),
+    closedByName: text("closed_by_name"),
+  },
+  (t) => [
+    uniqueIndex("cash_sessions_one_open_per_restaurant")
+      .on(t.restaurantId)
+      .where(sql`${t.closedAt} is null`),
+    index("cash_sessions_restaurant_opened_idx").on(t.restaurantId, t.openedAt),
+  ],
+);
+
+export type CashSessionRow = typeof cashSessions.$inferSelect;
+export type NewCashSessionRow = typeof cashSessions.$inferInsert;
+
+// Every movement of a cash session. A "Dividir pago" movement is two rows sharing `group_id`
+// (`cash` + `transfer`); automatic split incomes are `order_split_income` rows tied to their order.
+export const cashMovements = sqliteTable(
+  "cash_movements",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => cashSessions.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    method: text("method").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    comment: text("comment"),
+    groupId: text("group_id").notNull(),
+    orderId: text("order_id").references(() => orders.id, { onDelete: "set null" }),
+    courierMemberId: text("courier_member_id").references(() => restaurantMembers.id, { onDelete: "set null" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    createdByMemberId: text("created_by_member_id").references(() => restaurantMembers.id, { onDelete: "set null" }),
+    createdByName: text("created_by_name").notNull(),
+    editedByName: text("edited_by_name"),
+    editedAt: integer("edited_at", { mode: "timestamp_ms" }),
+    voidedByName: text("voided_by_name"),
+    voidedAt: integer("voided_at", { mode: "timestamp_ms" }),
+  },
+  (t) => [
+    index("cash_movements_session_created_idx").on(t.sessionId, t.createdAt),
+    index("cash_movements_group_idx").on(t.groupId),
+    index("cash_movements_order_idx").on(t.orderId),
+  ],
+);
+
+export type CashMovementRow = typeof cashMovements.$inferSelect;
+export type NewCashMovementRow = typeof cashMovements.$inferInsert;
+
+// Close snapshot of one method: written once, in the same batch as `closed_at`, and never recomputed.
+export const cashSessionTotals = sqliteTable(
+  "cash_session_totals",
+  {
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => cashSessions.id, { onDelete: "cascade" }),
+    method: text("method").notNull(),
+    salesCount: integer("sales_count").notNull(),
+    salesCents: integer("sales_cents").notNull(),
+    incomeCount: integer("income_count").notNull(),
+    incomeCents: integer("income_cents").notNull(),
+    expenseCount: integer("expense_count").notNull(),
+    expenseCents: integer("expense_cents").notNull(),
+    tipCount: integer("tip_count").notNull(),
+    tipCents: integer("tip_cents").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.sessionId, t.method] })],
+);
+
+export type CashSessionTotalsRow = typeof cashSessionTotals.$inferSelect;

@@ -15,7 +15,7 @@ export interface RouteExpectation {
 const route = (method: RouteExpectation["method"], pattern: string, declared: Declared): RouteExpectation => ({
   method,
   pattern,
-  url: pattern.replace(":id", "some-id").replace(":placeId", "some-place"),
+  url: pattern.replace(/:[A-Za-z]+/g, "some-id"),
   declared,
 });
 
@@ -62,6 +62,18 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("PATCH", "/api/orders/:id/payment", "orders.payment"),
   route("PATCH", "/api/orders/:id/payment-method", "orders.payment"),
   route("POST", "/api/orders/:id/assign", "orders.assign"),
+
+  route("GET", "/api/cash-sessions/current", "cash.view"),
+  route("POST", "/api/cash-sessions", "cash.open"),
+  route("POST", "/api/cash-sessions/current/movements", "cash.movements"),
+  route("PATCH", "/api/cash-sessions/current/movements/:id", "cash.movements"),
+  route("POST", "/api/cash-sessions/current/movements/:id/void", "cash.movements"),
+  route("POST", "/api/cash-sessions/current/settlements", "cash.settle"),
+  route("DELETE", "/api/cash-sessions/current/settlements/:orderId", "cash.settle"),
+  route("POST", "/api/cash-sessions/current/courier-change", "cash.settle"),
+  route("POST", "/api/cash-sessions/current/close", "cash.close"),
+  route("GET", "/api/cash-sessions", "cash.history"),
+  route("GET", "/api/cash-sessions/:id", "cash.history"),
 
   route("GET", "/api/couriers", "orders.assign"),
   route("GET", "/api/couriers/summary", "couriers.view"),

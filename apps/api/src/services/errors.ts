@@ -103,6 +103,58 @@ export class MemberHasHistoryError extends DomainError {
   }
 }
 
+export class CashSessionAlreadyOpenError extends DomainError {
+  readonly code = "CASH_SESSION_ALREADY_OPEN";
+  constructor(message = "Ya hay una caja abierta: cerrala antes de abrir otra") {
+    super(message);
+  }
+}
+
+/** The action needs an open cash session (settlements, movements, close). */
+export class NoOpenCashSessionError extends DomainError {
+  readonly code = "NO_OPEN_CASH_SESSION";
+  constructor(message = "Abrí la caja primero") {
+    super(message);
+  }
+}
+
+export class CashSessionClosedError extends DomainError {
+  readonly code = "CASH_SESSION_CLOSED";
+  constructor(message = "La caja de este turno ya está cerrada") {
+    super(message);
+  }
+}
+
+export class CashSessionNotFoundError extends DomainError {
+  readonly code = "CASH_SESSION_NOT_FOUND";
+  constructor(message = "Arqueo no encontrado") {
+    super(message);
+  }
+}
+
+export class CashMovementNotFoundError extends DomainError {
+  readonly code = "CASH_MOVEMENT_NOT_FOUND";
+  constructor(message = "Movimiento no encontrado") {
+    super(message);
+  }
+}
+
+/** The order already entered a cash session: undo the settlement before returning it to pending. */
+export class OrderSettledError extends DomainError {
+  readonly code = "ORDER_SETTLED";
+  constructor(message = "El pedido ya está ingresado a la caja: deshacé el ingreso primero") {
+    super(message);
+  }
+}
+
+/** An automatic or already voided movement cannot be edited or voided. */
+export class MovementLockedError extends DomainError {
+  readonly code = "MOVEMENT_LOCKED";
+  constructor(message = "Ese movimiento no se puede editar ni anular") {
+    super(message);
+  }
+}
+
 export class OrderNotFoundError extends DomainError {
   readonly code = "ORDER_NOT_FOUND";
   constructor(message = "Pedido no encontrado") {

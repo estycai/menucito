@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, lt, ne, notExists, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notExists, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
@@ -91,6 +91,10 @@ export interface ListOrdersFilter {
   fulfillment?: Fulfillment;
   paymentMethod?: PaymentMethod;
   paymentStatus?: PaymentStatus;
+  /** Orders that entered this cash session (the "N ventas" link of Cajas). */
+  cashSessionId?: string;
+  /** `true` for orders entered with "Ingresar a la caja", `false` for the ones still out. */
+  settled?: boolean;
   fromMs?: number;
   toMs?: number;
   /** Column `fromMs`/`toMs` apply to; `created` when absent. */
@@ -251,6 +255,9 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       courier,
       sentAt: orderRow.sentAt?.getTime() ?? null,
       deliveredAt: orderRow.deliveredAt?.getTime() ?? null,
+      paidAt: orderRow.paidAt?.getTime() ?? null,
+      cashSessionId: orderRow.cashSessionId,
+      settledAt: orderRow.settledAt?.getTime() ?? null,
     };
   }
 
@@ -375,6 +382,14 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
 
     if (filter.paymentStatus !== undefined) {
       conditions.push(eq(orders.paymentStatus, filter.paymentStatus));
+    }
+
+    if (filter.cashSessionId !== undefined) {
+      conditions.push(eq(orders.cashSessionId, filter.cashSessionId));
+    }
+
+    if (filter.settled !== undefined) {
+      conditions.push(filter.settled ? isNotNull(orders.settledAt) : isNull(orders.settledAt));
     }
 
     const dateColumn =
@@ -597,6 +612,9 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           splitCashCents: order.splitCashCents,
           cashTenderedCents: order.cashTenderedCents,
         }),
+        paidAt: order.paidAt?.getTime() ?? null,
+        cashSessionId: order.cashSessionId,
+        settledAt: order.settledAt?.getTime() ?? null,
         customerName: order.customerName,
         customerPhone: order.customerPhone,
         totalCents: order.totalCents,
@@ -652,7 +670,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     async updatePaymentStatus(restaurantId, orderId, paymentStatus, updatedAt) {
       const updated = await db
         .update(orders)
-        .set({ paymentStatus, updatedAt })
+        .set({ paymentStatus, updatedAt, ...(paymentStatus === "pending" ? { paidAt: null } : {}) })
         .where(and(eq(orders.restaurantId, restaurantId), eq(orders.id, orderId)))
         .returning({ id: orders.id })
         .get();
@@ -725,7 +743,9 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           status: "delivered",
           deliveredAt: at,
           updatedAt: at,
-          ...(options.markPaid ? { paymentStatus: "paid" } : {}),
+          // A cash order collected at the door is paid, but it enters the cash only when someone
+          // taps "Ingresar a la caja" (change 14b).
+          ...(options.markPaid ? { paymentStatus: "paid", paidAt: at } : {}),
         })
         .where(and(...conditions))
         .returning({ id: orders.id })

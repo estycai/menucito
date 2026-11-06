@@ -66,8 +66,10 @@ export const ordersRoutes = new Hono<AppEnv>()
   .patch("/:id/payment", requirePermission("orders.payment"), async (c) => {
     const body = await parseJsonBody(c, updateOrderPaymentSchema);
     if ("response" in body) return body.response;
+    const member = c.get("member");
     const order = await ordersServiceFor(c.env.DB).updatePayment(
-      c.get("member").restaurantId,
+      member.restaurantId,
+      member,
       c.req.param("id"),
       body.data.paymentStatus,
     );
