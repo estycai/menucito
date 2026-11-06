@@ -57,6 +57,7 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
 
   route("GET", "/api/orders", "orders.view"),
   route("GET", "/api/orders/export", "orders.export"),
+  route("GET", "/api/orders/totals", "summary.view"),
   route("GET", "/api/orders/:id", "orders.view"),
   route("PATCH", "/api/orders/:id/status", "orders.status"),
   route("PATCH", "/api/orders/:id/payment", "orders.payment"),

@@ -514,3 +514,17 @@ export async function downloadOrdersCsv(filters: OrderFilters) {
   document.body.removeChild(a);
   window.URL.revokeObjectURL(url);
 }
+
+export interface LifetimeTotals {
+  orders: number;
+  customers: number;
+}
+
+/** All-time orders (cancelled excluded) and customers for "Resumen". Under `ORDERS_KEY`, so new orders refresh it. */
+export function useLifetimeTotals(enabled = true) {
+  return useQuery({
+    queryKey: [...ORDERS_KEY, "totals"] as const,
+    queryFn: () => api<LifetimeTotals>("/api/orders/totals"),
+    enabled,
+  });
+}

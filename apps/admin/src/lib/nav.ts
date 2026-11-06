@@ -27,7 +27,7 @@ export const NAV_ITEMS: readonly NavItem[] = [
   { id: "menu", label: "Mi menú", to: "/menu", title: "Mi menú", permission: "menu.view" },
   { id: "local", label: "Mi local", to: "/local", title: "Mi local", permission: "store.view" },
   { id: "users", label: "Usuarios", to: "/usuarios", title: "Usuarios", ownerOnly: true },
-  { id: "stats", label: "Estadísticas", to: "/estadisticas", title: "Estadísticas", pro: true, permission: "stats.view" },
+  { id: "stats", label: "Reportes", to: "/reportes", title: "Reportes", pro: true, permission: "stats.view" },
   { id: "plan", label: "Plan y pagos", to: "/plan", title: "Plan y pagos", ownerOnly: true },
 ];
 

@@ -471,6 +471,11 @@ export function createOwnerOrdersService({
       return orders.list(restaurantId, toListFilter(query));
     },
 
+    /** All-time orders (cancelled ones excluded) and customers, for "Resumen". */
+    async totals(restaurantId: string) {
+      return orders.lifetimeTotals(restaurantId);
+    },
+
     async getDetail(restaurantId: string, orderId: string) {
       const order = await orders.findDetail(restaurantId, orderId);
       if (!order) throw new OrderNotFoundError();

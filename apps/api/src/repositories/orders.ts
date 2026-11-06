@@ -181,6 +181,8 @@ export interface OrdersRepository {
   countByCourier(restaurantId: string, courierMemberId: string): Promise<number>;
   /** Active couriers of the local, by name, with how many orders they have `sent` right now. */
   listCouriers(restaurantId: string): Promise<CourierOption[]>;
+  /** All-time totals of the local: orders not cancelled, and customers (one per phone). */
+  lifetimeTotals(restaurantId: string): Promise<{ orders: number; customers: number }>;
 }
 
 export function createOrdersRepository(d1: D1Database): OrdersRepository {
@@ -823,6 +825,18 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
         .where(and(eq(orders.restaurantId, restaurantId), eq(orders.courierMemberId, courierMemberId)))
         .get();
       return Number(res?.count ?? 0);
+    },
+
+    async lifetimeTotals(restaurantId) {
+      const [orderRow, customerRow] = await Promise.all([
+        db
+          .select({ count: sql<number>`count(*)` })
+          .from(orders)
+          .where(and(eq(orders.restaurantId, restaurantId), ne(orders.status, "cancelled")))
+          .get(),
+        db.select({ count: sql<number>`count(*)` }).from(customers).where(eq(customers.restaurantId, restaurantId)).get(),
+      ]);
+      return { orders: Number(orderRow?.count ?? 0), customers: Number(customerRow?.count ?? 0) };
     },
 
     async listCouriers(restaurantId) {

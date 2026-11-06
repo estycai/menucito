@@ -5,6 +5,7 @@ import { MenuQr } from "@/components/MenuQr";
 import { useAccess } from "@/lib/access";
 import { useCashCurrent } from "@/lib/cash";
 import { useCatalog } from "@/lib/catalog";
+import { useLifetimeTotals } from "@/lib/orders";
 import { publicMenuHref } from "@/lib/public-link";
 import { PUBLIC_BASE, publicMenuUrl, useMyRestaurant } from "@/lib/restaurant";
 import { useSession } from "@/lib/session";
@@ -39,6 +40,7 @@ export function SummaryPage() {
   const canSeeMenu = can("menu.view");
   const canSeeCash = can("cash.view");
   const canSeeQr = can("qr.view");
+  const totals = useLifetimeTotals(can("summary.view"));
   const canCloseCash = can("cash.close");
   const { data: catalog } = useCatalog(canSeeMenu);
   const cash = useCashCurrent(canSeeCash);
@@ -50,6 +52,8 @@ export function SummaryPage() {
   const usage = catalog?.usage;
   const products = usage ? (usage.maxProducts === null ? `${usage.products}` : `${usage.products} de ${usage.maxProducts}`) : "—";
   const categories = catalog ? `${catalog.categories.length}` : "—";
+  const orderCount = totals.data ? `${totals.data.orders}` : "—";
+  const customerCount = totals.data ? `${totals.data.customers}` : "—";
 
   return (
     <div className="mx-auto flex w-full max-w-[720px] flex-col gap-5">
@@ -95,12 +99,16 @@ export function SummaryPage() {
         {canSeeQr && <MenuQr href={menuHref} slug={restaurant.slug} />}
       </section>
 
-      {canSeeMenu && (
-        <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
-          <Tile label="Productos" value={products} />
-          <Tile label="Categorías" value={categories} />
-        </div>
-      )}
+      <div className="grid grid-cols-1 gap-4 min-[420px]:grid-cols-2">
+        <Tile label="Pedidos (histórico)" value={orderCount} />
+        <Tile label="Clientes (histórico)" value={customerCount} />
+        {canSeeMenu && (
+          <>
+            <Tile label="Productos" value={products} />
+            <Tile label="Categorías" value={categories} />
+          </>
+        )}
+      </div>
     </div>
   );
 }

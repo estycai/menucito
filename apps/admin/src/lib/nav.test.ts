@@ -25,13 +25,13 @@ describe("NAV_ITEMS", () => {
       "Mi menú",
       "Mi local",
       "Usuarios",
-      "Estadísticas",
+      "Reportes",
       "Plan y pagos",
     ]);
   });
 
-  it("flags only Estadísticas as pro", () => {
-    expect(NAV_ITEMS.filter((item) => item.pro).map((item) => item.label)).toEqual(["Estadísticas"]);
+  it("flags only Reportes as pro", () => {
+    expect(NAV_ITEMS.filter((item) => item.pro).map((item) => item.label)).toEqual(["Reportes"]);
   });
 });
 
@@ -55,7 +55,7 @@ describe("activeNavItem", () => {
     ["/local/zonas", "Mi local"],
     ["/usuarios", "Usuarios"],
     ["/usuarios/roles", "Usuarios"],
-    ["/estadisticas", "Estadísticas"],
+    ["/reportes", "Reportes"],
     ["/plan", "Plan y pagos"],
   ])("%s -> %s", (pathname, label) => {
     expect(activeNavItem(pathname)?.label).toBe(label);

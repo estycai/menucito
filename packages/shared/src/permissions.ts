@@ -57,7 +57,7 @@ export const PERMISSION_SECTIONS = [
     subpermissions: [{ key: "store.edit", label: "Editar datos, apariencia, horarios, envío, pagos y pausa" }],
   },
   { key: "qr.view", label: "Link y QR", subpermissions: [] },
-  { key: "stats.view", label: "Estadísticas", subpermissions: [] },
+  { key: "stats.view", label: "Reportes", subpermissions: [] },
 ] as const satisfies readonly PermissionSection[];
 
 type SectionOf = (typeof PERMISSION_SECTIONS)[number];

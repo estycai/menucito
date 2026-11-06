@@ -105,7 +105,7 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                   </Route>
                 </Route>
                 <Route element={<RequirePermission permission="stats.view" />}>
-                  <Route path="/estadisticas" element={<ComingSoonPage id="stats" />} />
+                  <Route path="/reportes" element={<ComingSoonPage id="stats" />} />
                 </Route>
                 <Route element={<RequirePermission ownerOnly />}>
                   <Route path="/plan" element={<PlanPage />} />

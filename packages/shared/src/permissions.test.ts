@@ -35,7 +35,7 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       ["menu.view", "Mi menú", ["menu.edit"]],
       ["store.view", "Mi local", ["store.edit"]],
       ["qr.view", "Link y QR", []],
-      ["stats.view", "Estadísticas", []],
+      ["stats.view", "Reportes", []],
     ]);
   });
 

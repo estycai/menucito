@@ -26,6 +26,10 @@ export const ordersRoutes = new Hono<AppEnv>()
   })
 
   // Declared BEFORE /:id to prevent matching "export" as an ID
+  .get("/totals", requirePermission("summary.view"), async (c) => {
+    return c.json(await ordersServiceFor(c.env.DB).totals(c.get("member").restaurantId));
+  })
+
   .get("/export", requirePermission("orders.export"), async (c) => {
     const query = parseQuery(c, orderFiltersQuerySchema);
     if ("response" in query) return query.response;
