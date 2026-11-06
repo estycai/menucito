@@ -222,3 +222,10 @@ describe("planLimitsFor", () => {
     expect(planLimitsFor("enterprise").customIngredients).toBe(false);
   });
 });
+
+describe("formatArs with negative amounts", () => {
+  it("puts the minus sign before the peso sign", () => {
+    expect(formatArs(-100_000)).toBe("−$1.000");
+    expect(formatArs(-150)).toBe("−$1,50");
+  });
+});

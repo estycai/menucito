@@ -238,6 +238,8 @@ export function parseArsPrice(input: string): number | null {
 
 /** Formats cents as an Argentine price: `900000` -> `$9.000`, `900050` -> `$9.000,50`. */
 export function formatArs(cents: number): string {
+  // A negative amount (a transfer total with more expenses than sales) reads "−$1.000", not "$-1.000".
+  if (cents < 0) return `−${formatArs(-cents)}`;
   const integer = Math.floor(cents / 100);
   const decimals = cents % 100;
   const grouped = String(integer).replace(/\B(?=(\d{3})+(?!\d))/g, ".");

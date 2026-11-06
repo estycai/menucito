@@ -415,6 +415,7 @@ export const ORDER_FILTER_MESSAGES = {
   fulfillmentInvalid: "Modalidad inválida",
   paymentMethodInvalid: "Forma de pago inválida",
   paymentStatusInvalid: "Estado de pago inválido",
+  settledInvalid: "Valor inválido, usá true o false",
   fromInvalid: "Fecha desde inválida",
   toInvalid: "Fecha hasta inválida",
   rangeInvalid: "Rango de fechas inválido",
@@ -429,6 +430,9 @@ function optionalParam<T extends z.ZodType>(schema: T) {
 
 const dateKeyParam = (message: string) => optionalParam(z.string().refine(isCalendarDateKey, message));
 const positiveIntParam = (message: string) => optionalParam(z.coerce.number(message).int(message).positive(message));
+const flagParam = optionalParam(
+  z.enum(["true", "false"], ORDER_FILTER_MESSAGES.settledInvalid).transform((value) => value === "true"),
+);
 
 /**
  * Query of the owner's order list and CSV export. `from` and `to` are local calendar days
@@ -440,6 +444,8 @@ export const orderFiltersQuerySchema = z
     fulfillment: optionalParam(z.enum(FULFILLMENTS, ORDER_FILTER_MESSAGES.fulfillmentInvalid)),
     paymentMethod: optionalParam(z.enum(PAYMENT_METHODS, ORDER_FILTER_MESSAGES.paymentMethodInvalid)),
     paymentStatus: optionalParam(z.enum(PAYMENT_STATUSES, ORDER_FILTER_MESSAGES.paymentStatusInvalid)),
+    cashSessionId: optionalParam(z.string().min(1, ORDER_FILTER_MESSAGES.statusInvalid)),
+    settled: flagParam,
     from: dateKeyParam(ORDER_FILTER_MESSAGES.fromInvalid),
     to: dateKeyParam(ORDER_FILTER_MESSAGES.toInvalid),
     dateField: optionalParam(z.enum(ORDER_DATE_FIELDS, ORDER_FILTER_MESSAGES.dateFieldInvalid)),
@@ -569,6 +575,12 @@ export interface OrderSummary {
   cashTenderedCents: number | null;
   /** The order's total split into cash and transfer, with the change. */
   paymentBreakdown: PaymentBreakdown;
+  /** When it was marked paid; `null` for orders older than 0014 or not paid yet. */
+  paidAt: number | null;
+  /** Cash session it entered; `null` when it was paid without an open cash. */
+  cashSessionId: string | null;
+  /** When "Ingresar a la caja" was used; `null` for orders not delivered in cash. */
+  settledAt: number | null;
   customerName: string;
   customerPhone: string;
   totalCents: number;
@@ -641,6 +653,12 @@ export interface OrderDetail {
   sentAt: number | null;
   /** Exact time the order was delivered, or `null` when it was not. */
   deliveredAt: number | null;
+  /** When it was marked paid; `null` for orders older than 0014 or not paid yet. */
+  paidAt: number | null;
+  /** Cash session it entered; `null` when it was paid without an open cash. */
+  cashSessionId: string | null;
+  /** When "Ingresar a la caja" was used; `null` for orders not delivered in cash. */
+  settledAt: number | null;
   payment?: OrderPaymentInfo | null;
 }
 

@@ -33,6 +33,18 @@ export const PERMISSION_SECTIONS = [
       { key: "orders.assign", label: "Asignar repartidor" },
     ],
   },
+  {
+    key: "cash.view",
+    label: "Cajas",
+    subpermissions: [
+      { key: "cash.open", label: "Abrir la caja" },
+      { key: "cash.movements", label: "Cargar, editar y anular movimientos" },
+      { key: "cash.close", label: "Cerrar la caja y hacer el arqueo" },
+      { key: "cash.settle", label: "Ingresar pedidos y dar cambio a repartidores" },
+      { key: "cash.history", label: "Ver el historial de arqueos" },
+      { key: "cash.expected", label: "Ver el esperado y los totales en efectivo" },
+    ],
+  },
   { key: "couriers.view", label: "Repartidores", subpermissions: [] },
   {
     key: "menu.view",

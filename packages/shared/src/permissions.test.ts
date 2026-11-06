@@ -20,12 +20,17 @@ const issues = (result: { success: boolean; error?: { issues: { path: PropertyKe
   result.success ? [] : result.error!.issues.map((issue) => ({ path: issue.path, message: issue.message }));
 
 describe("PERMISSION_SECTIONS (scenario 1)", () => {
-  it("lists the six sections in menu order with their sub-permissions", () => {
+  it("lists the sections in menu order with their sub-permissions", () => {
     expect(
       PERMISSION_SECTIONS.map((section) => [section.key, section.label, section.subpermissions.map((sub) => sub.key)]),
     ).toEqual([
       ["summary.view", "Resumen", []],
       ["orders.view", "Pedidos", ["orders.status", "orders.payment", "orders.export", "orders.assign"]],
+      [
+        "cash.view",
+        "Cajas",
+        ["cash.open", "cash.movements", "cash.close", "cash.settle", "cash.history", "cash.expected"],
+      ],
       ["couriers.view", "Repartidores", []],
       ["menu.view", "Mi menú", ["menu.edit"]],
       ["store.view", "Mi local", ["store.edit"]],
