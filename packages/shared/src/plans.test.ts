@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planAnnualSavingsCents, planChargeCents, planMonthlyEquivalentCents } from "./plans";
+import { planAnnualSavingsCents, planChargeCents, planLimitsFor, planMonthlyEquivalentCents } from "./plans";
 
 describe("plan prices", () => {
   it("charges the monthly price once a month", () => {
@@ -17,5 +17,10 @@ describe("plan prices", () => {
     expect(planChargeCents("basic", "monthly")).toBe(0);
     expect(planChargeCents("basic", "annual")).toBe(0);
     expect(planAnnualSavingsCents("basic")).toBe(0);
+  });
+
+  it("includes Reports only in Pro", () => {
+    expect(planLimitsFor("basic").reports).toBe(false);
+    expect(planLimitsFor("pro").reports).toBe(true);
   });
 });

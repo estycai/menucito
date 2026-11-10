@@ -13,6 +13,8 @@ import {
   updateRoleSchema,
   validatePermissions,
   type Access,
+  type PermissionDefinition,
+  type PermissionGroup,
   type PermissionKey,
 } from "./permissions";
 
@@ -39,22 +41,42 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       ["menu.view", "Mi menú", ["menu.edit"]],
       ["store.view", "Mi local", ["store.edit"]],
       ["qr.view", "Link y QR", []],
-      ["stats.view", "Reportes", []],
+      [
+        "stats.view",
+        "Reportes",
+        [
+          "stats.amounts",
+          "stats.export",
+          "stats.f.date",
+          "stats.f.shift",
+          "stats.f.fulfillment",
+          "stats.f.payment",
+          "stats.f.source",
+          "stats.f.courier",
+          "stats.tab.evolution",
+          "stats.tab.billing",
+          "stats.tab.sales",
+          "stats.tab.couriers",
+          "stats.tab.cash",
+        ],
+      ],
     ]);
   });
 
   it("gives every key and sub-permission a label, a unique key and the <section>.<action> format", () => {
-    const keys = PERMISSION_SECTIONS.flatMap((section) => [section, ...section.subpermissions]);
+    const nested = (entries: readonly (PermissionDefinition | PermissionGroup)[]): PermissionDefinition[] =>
+      entries.flatMap((entry) => [entry, ...("children" in entry ? nested(entry.children) : [])]);
+    const keys = PERMISSION_SECTIONS.flatMap((section) => [section, ...nested(section.subpermissions)]);
     expect(new Set(keys.map((entry) => entry.key)).size).toBe(keys.length);
     expect(ALL_PERMISSIONS).toHaveLength(keys.length);
     for (const entry of keys) {
       expect(entry.label.length).toBeGreaterThan(0);
-      expect(entry.key).toMatch(/^[a-z]+\.[a-z]+$/);
+      expect(entry.key).toMatch(/^[a-z]+(\.[a-z_]+)+$/);
     }
     for (const section of PERMISSION_SECTIONS) {
       const prefix = section.key.split(".")[0];
       expect(section.key).toBe(`${prefix}.view`);
-      for (const sub of section.subpermissions) expect(sub.key.startsWith(`${prefix}.`)).toBe(true);
+      for (const sub of nested(section.subpermissions)) expect(sub.key.startsWith(`${prefix}.`)).toBe(true);
     }
   });
 });

@@ -12,6 +12,8 @@ export * from "./orders";
 export * from "./permissions";
 export * from "./plans";
 export * from "./public-menu";
+export * from "./report-permissions";
+export * from "./reports";
 export * from "./restaurant";
 export * from "./settings";
 export * from "./theme";

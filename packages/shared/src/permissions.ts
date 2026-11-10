@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MIN_PASSWORD_LENGTH } from "./auth";
+import { REPORTS_SECTION, reportParentOf } from "./report-permissions";
 import { normalizeArWhatsapp } from "./restaurant";
 
 /**
@@ -15,9 +16,14 @@ export interface PermissionDefinition {
   label: string;
 }
 
+/** A sub-permission with its own children: a Reports tab and its blocks. */
+export interface PermissionGroup extends PermissionDefinition {
+  children: readonly PermissionDefinition[];
+}
+
 export interface PermissionSection extends PermissionDefinition {
   /** Sub-permissions of the section, in display order. */
-  subpermissions: readonly PermissionDefinition[];
+  subpermissions: readonly (PermissionDefinition | PermissionGroup)[];
 }
 
 /** Sections in the order of the admin menu. */
@@ -59,23 +65,48 @@ export const PERMISSION_SECTIONS = [
     subpermissions: [{ key: "store.edit", label: "Editar datos, apariencia, horarios, envío, pagos y pausa" }],
   },
   { key: "qr.view", label: "Link y QR", subpermissions: [] },
-  { key: "stats.view", label: "Reportes", subpermissions: [] },
+  REPORTS_SECTION,
 ] as const satisfies readonly PermissionSection[];
 
 type SectionOf = (typeof PERMISSION_SECTIONS)[number];
+type SubOf = SectionOf["subpermissions"][number];
+
+/** Keys of a definition and, when it is a group (a Reports tab), of its children. */
+type PermissionKeysOf<T> = T extends { key: infer K extends string }
+  ? T extends { children: readonly (infer C)[] }
+    ? K | PermissionKeysOf<C>
+    : K
+  : never;
 
 export type PermissionSectionKey = SectionOf["key"];
-export type PermissionKey = SectionOf["key"] | SectionOf["subpermissions"][number]["key"];
+export type PermissionKey = PermissionKeysOf<SectionOf | SubOf>;
 
-/** Every key of the catalog in catalog order (each section followed by its sub-permissions). */
+function flattenDefinition(definition: PermissionDefinition | PermissionGroup): PermissionKey[] {
+  const own = definition.key as PermissionKey;
+  if (!("children" in definition)) return [own];
+  return [own, ...definition.children.flatMap(flattenDefinition)];
+}
+
+/** Every key of the catalog in catalog order (each section followed by its sub-permissions and their children). */
 export const ALL_PERMISSIONS: readonly PermissionKey[] = PERMISSION_SECTIONS.flatMap((section) => [
-  section.key,
-  ...section.subpermissions.map((sub) => sub.key),
+  section.key as PermissionKey,
+  ...section.subpermissions.flatMap(flattenDefinition),
 ]);
 
 const PERMISSION_ORDER = new Map<string, number>(ALL_PERMISSIONS.map((key, index) => [key, index]));
 
 const SECTION_KEYS: ReadonlySet<string> = new Set(PERMISSION_SECTIONS.map((section) => section.key));
+
+const PERMISSION_CHILDREN = new Map<string, PermissionKey[]>();
+for (const section of PERMISSION_SECTIONS) {
+  PERMISSION_CHILDREN.set(
+    section.key,
+    section.subpermissions.map((sub) => sub.key as PermissionKey),
+  );
+  for (const sub of section.subpermissions) {
+    if ("children" in sub) PERMISSION_CHILDREN.set(sub.key, sub.children.map((child) => child.key as PermissionKey));
+  }
+}
 
 export function isPermissionKey(value: unknown): value is PermissionKey {
   return typeof value === "string" && PERMISSION_ORDER.has(value);
@@ -88,6 +119,21 @@ export function sectionKeyOf(key: PermissionKey): PermissionSectionKey {
   return `${prefix}.view` as PermissionSectionKey;
 }
 
+/**
+ * The key a permission needs to count (`permissions.ts`, "a sub-permission only counts when its section
+ * is checked too"). A Reports block hangs from its tab and a tab, filter or general key from `stats.view`;
+ * every other sub-permission hangs from its section and a section has no parent.
+ */
+export function parentOf(key: PermissionKey): PermissionKey | null {
+  if (SECTION_KEYS.has(key)) return null;
+  return reportParentOf(key) ?? sectionKeyOf(key);
+}
+
+/** The direct children of a permission (a section's sub-permissions, a tab's blocks); empty for leaves. */
+export function childKeysOf(key: PermissionKey): PermissionKey[] {
+  return PERMISSION_CHILDREN.get(key) ?? [];
+}
+
 /** Drops unknown keys and repeated ones; the result follows the catalog order. */
 export function normalizePermissions(keys: readonly string[]): PermissionKey[] {
   const wanted = new Set(keys);
@@ -95,10 +141,10 @@ export function normalizePermissions(keys: readonly string[]): PermissionKey[] {
 }
 
 export interface PermissionProblem {
-  /** The sub-permission that has no section checked. */
+  /** The sub-permission that has no parent checked. */
   permission: PermissionKey;
-  /** The section key that is missing. */
-  missing: PermissionSectionKey;
+  /** The key that is missing. */
+  missing: PermissionKey;
   message: string;
 }
 
@@ -107,14 +153,17 @@ export const PERMISSION_MESSAGES = {
     `El permiso ${permission} necesita que también esté marcado ${missing}`,
 } as const;
 
-/** Checks that every sub-permission comes with its section key; `null` when the list is valid. */
+/** Checks that every permission comes with its whole chain (tab and `stats.view` for a block); `null` when valid. */
 export function validatePermissions(keys: readonly string[]): PermissionProblem | null {
   const known = normalizePermissions(keys);
   const present = new Set<string>(known);
   for (const key of known) {
-    const section = sectionKeyOf(key);
-    if (!present.has(section)) {
-      return { permission: key, missing: section, message: PERMISSION_MESSAGES.missingSection(key, section) };
+    let parent = parentOf(key);
+    while (parent) {
+      if (!present.has(parent)) {
+        return { permission: key, missing: parent, message: PERMISSION_MESSAGES.missingSection(key, parent) };
+      }
+      parent = parentOf(parent);
     }
   }
   return null;
@@ -147,6 +196,26 @@ export function hasPermission(access: PermissionSubject, key: PermissionKey): bo
   if (access.isOwner) return true;
   if (!access.role.active) return false;
   return access.permissions.includes(key);
+}
+
+/**
+ * The keys that actually count for `access`: the stored ones whose whole chain is present (a Reports
+ * block without its tab, or a tab without `stats.view`, is dropped). The API and the admin use it.
+ */
+export function effectivePermissions(access: PermissionSubject): PermissionKey[] {
+  if (!access.active) return [];
+  if (access.isOwner) return [...ALL_PERMISSIONS];
+  if (!access.role.active) return [];
+  const present = new Set<string>(normalizePermissions(access.permissions));
+  return ALL_PERMISSIONS.filter((key) => {
+    if (!present.has(key)) return false;
+    let parent = parentOf(key);
+    while (parent) {
+      if (!present.has(parent)) return false;
+      parent = parentOf(parent);
+    }
+    return true;
+  });
 }
 
 // ---------------------------------------------------------------------------------------------

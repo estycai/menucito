@@ -13,13 +13,15 @@ export interface PlanLimits {
   customColors: boolean;
   /** Whether the cash drawer and its arqueos are available. */
   cashRegister: boolean;
+  /** Whether the Reports section is available. */
+  reports: boolean;
 }
 
 export type PlanId = "basic" | "pro";
 
 export const PLAN_LIMITS: Readonly<Record<PlanId, PlanLimits>> = {
-  basic: { maxProducts: 40, productPhotos: true, customIngredients: false, customColors: false, cashRegister: true },
-  pro: { maxProducts: null, productPhotos: true, customIngredients: true, customColors: true, cashRegister: true },
+  basic: { maxProducts: 40, productPhotos: true, customIngredients: false, customColors: false, cashRegister: true, reports: false },
+  pro: { maxProducts: null, productPhotos: true, customIngredients: true, customColors: true, cashRegister: true, reports: true },
 };
 
 /** Every plan id, derived from `PLAN_LIMITS` (a `Record<PlanId, ...>`, so it cannot miss one). */
