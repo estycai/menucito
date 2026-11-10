@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { FULFILLMENTS, PAYMENT_METHODS } from "./order";
-import { ORDER_SOURCES } from "./orders";
+import { FULFILLMENTS, PAYMENT_METHODS, type Fulfillment } from "./order";
+import { ORDER_SOURCES, type OrderSource } from "./orders";
 import { localWeekTime, type HoursSlot, type Weekday } from "./hours";
 import { isCalendarDateKey, localDateKey } from "./time";
 
@@ -320,6 +320,157 @@ export interface EvolutionReport {
   hasActivity: boolean;
   widgets: EvolutionWidgets;
 }
+
+// ---------------------------------------------------------------------------------------------
+// Facturación (change 16b)
+// ---------------------------------------------------------------------------------------------
+
+export interface BillingMethodAmountRow {
+  method: "cash" | "transfer";
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  billedCents?: number;
+  /** Over the billed amount, or over the orders when amounts are hidden. */
+  percent: number;
+}
+
+/** "Facturación total por medio". A split order adds its part to each method, as the money is split. */
+export interface BillingTotalBlock {
+  /** Removed without `stats.amounts`. */
+  billedCents?: number;
+  orders: number;
+  rows: BillingMethodAmountRow[];
+}
+
+export interface BillingOrdersRow {
+  fulfillment: Fulfillment;
+  orders: number;
+  percent: number;
+}
+
+/** "Pedidos por modalidad". */
+export interface BillingOrdersBlock {
+  orders: number;
+  rows: BillingOrdersRow[];
+}
+
+export interface BillingPaymentRow {
+  /** `undefined` on the total row. */
+  method?: "cash" | "transfer";
+  orders: number;
+  /** `(subtotal_cents - discount_cents) / orders`, and each amount is the method's share. All removed without `stats.amounts`. */
+  ticketCents?: number;
+  productsCents?: number;
+  /** Only on Delivery. */
+  shippingCents?: number;
+  /** Only on Delivery. */
+  tipsCents?: number;
+  /** Sum of the amount columns, or the real total on the total row. */
+  billedCents?: number;
+}
+
+/** "Delivery por medio de pago" and "Take away por medio de pago": `rows` are cash and transfer. */
+export interface BillingPaymentBlock {
+  rows: BillingPaymentRow[];
+  total: BillingPaymentRow;
+}
+
+export interface BillingSourceRow {
+  source: OrderSource;
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  ticketCents?: number;
+  /** Removed without `stats.amounts`. */
+  billedCents?: number;
+  /** Over the billed amount, or over the orders when amounts are hidden. */
+  percent: number;
+}
+
+export interface BillingWidgets {
+  total?: BillingTotalBlock;
+  orders_total?: BillingOrdersBlock;
+  delivery?: BillingPaymentBlock;
+  takeaway?: BillingPaymentBlock;
+  source?: BillingSourceRow[];
+}
+
+export interface BillingReport {
+  range: ReportRange;
+  /** Whether the period has any sale, whatever blocks the member sees (the empty state). */
+  hasActivity: boolean;
+  widgets: BillingWidgets;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Ventas (change 16b)
+// ---------------------------------------------------------------------------------------------
+
+export interface SalesRankedProduct {
+  name: string;
+  units: number;
+  /** List price, without the order discount nor the addons. Removed without `stats.amounts`. */
+  revenueCents?: number;
+}
+
+export interface SalesTopBlock {
+  byUnits: SalesRankedProduct[];
+  /** Removed without `stats.amounts`. */
+  byRevenue?: SalesRankedProduct[];
+}
+
+export interface SalesCategoryRow {
+  /** The product's current category; `Sin categoría` for deleted products or categories. */
+  category: string;
+  /** Distinct products sold. */
+  products: number;
+  units: number;
+  /** Removed without `stats.amounts`. */
+  revenueCents?: number;
+  /** Over the products revenue, or over the units when amounts are hidden. */
+  percent: number;
+}
+
+export interface SalesCategoriesBlock {
+  /** By revenue (by units without amounts). */
+  rows: SalesCategoryRow[];
+  total: SalesCategoryRow;
+}
+
+export interface SalesProductRow {
+  productId: string | null;
+  category: string;
+  /** The snapshot of `order_items.name`. */
+  name: string;
+  units: number;
+  /** Removed without `stats.amounts`. */
+  revenueCents?: number;
+}
+
+export interface SalesAddonRow {
+  name: string;
+  /** Units above `includedQty`; the included ones are not extra. */
+  units: number;
+  /** Removed without `stats.amounts`. */
+  revenueCents?: number;
+}
+
+export interface SalesWidgets {
+  top?: SalesTopBlock;
+  categories?: SalesCategoriesBlock;
+  /** Every product sold in the period; the admin searches, sorts and pages them. */
+  products?: SalesProductRow[];
+  addons?: SalesAddonRow[];
+}
+
+export interface SalesReport {
+  range: ReportRange;
+  /** Whether the period has any sale, whatever blocks the member sees (the empty state). */
+  hasActivity: boolean;
+  widgets: SalesWidgets;
+}
+
+/** The fallback category of a product that was deleted (or whose category no longer exists). */
+export const UNCATEGORIZED_LABEL = "Sin categoría";
 
 export interface ReportMeta {
   shifts: ReportShift[];
