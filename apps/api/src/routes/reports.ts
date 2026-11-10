@@ -21,4 +21,18 @@ export const reportsRoutes = new Hono<AppEnv>()
     return c.json(await reportsServiceFor(c.env.DB).evolution(member.restaurantId, member, query.data));
   })
 
+  .get("/billing", requirePermission("stats.tab.billing"), async (c) => {
+    const query = parseQuery(c, reportFiltersSchema);
+    if ("response" in query) return query.response;
+    const member = c.get("member");
+    return c.json(await reportsServiceFor(c.env.DB).billing(member.restaurantId, member, query.data));
+  })
+
+  .get("/sales", requirePermission("stats.tab.sales"), async (c) => {
+    const query = parseQuery(c, reportFiltersSchema);
+    if ("response" in query) return query.response;
+    const member = c.get("member");
+    return c.json(await reportsServiceFor(c.env.DB).sales(member.restaurantId, member, query.data));
+  })
+
   .onError(domainErrorHandler("reports"));

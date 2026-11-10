@@ -1,5 +1,7 @@
 import {
+  ORDER_SOURCES,
   PAYMENT_SPLIT_NOTE,
+  UNCATEGORIZED_LABEL,
   daysInRange,
   effectivePermissions,
   localDateKey,
@@ -13,6 +15,10 @@ import {
   shiftsFor,
   yearBeforeRange,
   withoutCents,
+  type BillingPaymentBlock,
+  type BillingReport,
+  type BillingSourceRow,
+  type BillingWidgets,
   type EvolutionReport,
   type EvolutionWidgets,
   type ReportFilters,
@@ -21,12 +27,16 @@ import {
   type ReportRange,
   type ReportTrendPoint,
   type ReportMeta,
+  type SalesCategoryRow,
+  type SalesReport,
+  type SalesWidgets,
 } from "@menucito/shared";
 import type { MemberContext } from "../env";
 import type { HoursRepository } from "../repositories/hours";
 import type { OrdersRepository } from "../repositories/orders";
 import {
   createReportsRepository,
+  type BillingTotalsRow,
   type DailySeriesRow,
   type HourGridRow,
   type ReportsRepository,
@@ -115,6 +125,64 @@ function moversOf(current: readonly { name: string; units: number }[], previous:
   return { up, down };
 }
 
+const MODALITIES = ["delivery", "takeaway"] as const;
+
+function zeroBillingTotals(fulfillment: (typeof MODALITIES)[number]): BillingTotalsRow {
+  return {
+    fulfillment,
+    orders: 0,
+    productsCents: 0,
+    shippingCents: 0,
+    tipsCents: 0,
+    cashOrders: 0,
+    cashProductsCents: 0,
+    cashShippingCents: 0,
+    cashTipsCents: 0,
+    transferOrders: 0,
+    transferProductsCents: 0,
+    transferShippingCents: 0,
+    transferTipsCents: 0,
+  };
+}
+
+const billedOf = (row: Pick<BillingTotalsRow, "productsCents" | "shippingCents" | "tipsCents">) =>
+  row.productsCents + row.shippingCents + row.tipsCents;
+
+/** A "por medio de pago" table: each method's share and the real totals (change 16b). */
+function paymentBlock(
+  row: BillingTotalsRow,
+  fulfillment: (typeof MODALITIES)[number],
+  method: "cash" | "transfer" | null,
+): BillingPaymentBlock {
+  const methodRow = (entry: "cash" | "transfer") => {
+    const orders = entry === "cash" ? row.cashOrders : row.transferOrders;
+    const productsCents = entry === "cash" ? row.cashProductsCents : row.transferProductsCents;
+    const shippingCents = fulfillment === "delivery" ? (entry === "cash" ? row.cashShippingCents : row.transferShippingCents) : 0;
+    const tipsCents = fulfillment === "delivery" ? (entry === "cash" ? row.cashTipsCents : row.transferTipsCents) : 0;
+    return {
+      method: entry,
+      orders,
+      ticketCents: orders === 0 ? 0 : Math.round(productsCents / orders),
+      productsCents,
+      ...(fulfillment === "delivery" ? { shippingCents, tipsCents } : {}),
+      billedCents: productsCents + shippingCents + tipsCents,
+    };
+  };
+  return {
+    // Under the Efectivo or Transferencia filter only that method's share makes sense (as in 16a).
+    rows: (method ? [method] : (["cash", "transfer"] as const)).map(methodRow),
+    total: method
+      ? { ...methodRow(method), method: undefined }
+      : {
+          orders: row.orders,
+          ticketCents: row.orders === 0 ? 0 : Math.round(row.productsCents / row.orders),
+          productsCents: row.productsCents,
+          ...(fulfillment === "delivery" ? { shippingCents: row.shippingCents, tipsCents: row.tipsCents } : {}),
+          billedCents: billedOf(row),
+        },
+  };
+}
+
 export function createReportsService({
   reports,
   restaurants,
@@ -132,12 +200,10 @@ export function createReportsService({
     return restaurant;
   }
 
-  async function evolution(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<EvolutionReport> {
-    await assertPlan(restaurantId);
+  /** The permission set, the range, the filters the member may use and the scopes of a report (change 16a). */
+  async function reportContext(restaurantId: string, member: MemberContext, filters: ReportFilters) {
     const permissions = new Set<string>(effectivePermissions(member));
     const can = (key: string) => permissions.has(key);
-    const amounts = can("stats.amounts");
-
     const range = reportRange(filters, can("stats.f.date"), now());
     const problem = reportRangeProblem(range);
     if (problem) throw new ReportRangeError(problem);
@@ -150,9 +216,6 @@ export function createReportsService({
       ...(can("stats.f.courier") && filters.courier ? { courier: filters.courier } : {}),
     };
     const slots = scoped.shift ? await hours.listSlots(restaurantId) : [];
-    const previous = previousRange(range);
-    const year = yearBeforeRange(range);
-
     const scopeFor = (target: ReportRange): ReportScope => ({
       restaurantId,
       fromMs: localDayRange(target.from)[0],
@@ -160,6 +223,15 @@ export function createReportsService({
       filters: scoped,
       hours: slots,
     });
+    return { can, amounts: can("stats.amounts"), range, scoped, scopeFor };
+  }
+
+  async function evolution(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<EvolutionReport> {
+    await assertPlan(restaurantId);
+    const { can, amounts, range, scoped, scopeFor } = await reportContext(restaurantId, member, filters);
+
+    const previous = previousRange(range);
+    const year = yearBeforeRange(range);
     const scope = scopeFor(range);
     const previousScope = scopeFor(previous);
 
@@ -361,6 +433,169 @@ export function createReportsService({
 
   return {
     evolution,
+
+    /** Facturación tab (change 16b). */
+    async billing(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<BillingReport> {
+      const restaurant = await assertPlan(restaurantId);
+      const { can, amounts, range, scoped, scopeFor } = await reportContext(restaurantId, member, filters);
+      const scope = scopeFor(range);
+      const filteredMethod = scoped.payment === "cash" || scoped.payment === "transfer" ? scoped.payment : null;
+      const methods = filteredMethod ? [filteredMethod] : (["cash", "transfer"] as const);
+      const needsPayments = MODALITIES.some((fulfillment) => can(`stats.w.billing.${fulfillment}`)) ||
+        can("stats.w.billing.total") ||
+        can("stats.w.billing.orders_total");
+      const [totals, sources] = await Promise.all([
+        needsPayments ? reports.billingTotals(scope) : Promise.resolve([]),
+        can("stats.w.billing.source") ? reports.sourceTotals(scope) : Promise.resolve([]),
+      ]);
+      const byFulfillment = new Map(totals.map((row) => [row.fulfillment, row]));
+      // The Modality filter leaves a single table; a disabled modality only appears when it had sales.
+      const shown = (fulfillment: (typeof MODALITIES)[number]) =>
+        (!scoped.fulfillment || scoped.fulfillment === fulfillment) &&
+        ((fulfillment === "delivery" ? restaurant.delivery : restaurant.takeaway) ||
+          (byFulfillment.get(fulfillment)?.orders ?? 0) > 0);
+
+      const widgets: BillingWidgets = {};
+
+      if (can("stats.w.billing.total")) {
+        const billedBy = {
+          cash: totals.reduce((sum, row) => sum + row.cashProductsCents + row.cashShippingCents + row.cashTipsCents, 0),
+          transfer: totals.reduce((sum, row) => sum + row.transferProductsCents + row.transferShippingCents + row.transferTipsCents, 0),
+        };
+        const ordersBy = {
+          cash: totals.reduce((sum, row) => sum + row.cashOrders, 0),
+          transfer: totals.reduce((sum, row) => sum + row.transferOrders, 0),
+        };
+        const billedCents = filteredMethod ? billedBy[filteredMethod] : totals.reduce((sum, row) => sum + billedOf(row), 0);
+        const orders = filteredMethod ? ordersBy[filteredMethod] : totals.reduce((sum, row) => sum + row.orders, 0);
+        widgets.total = {
+          billedCents,
+          orders,
+          rows: methods.map((method) => ({
+            method,
+            orders: ordersBy[method],
+            billedCents: billedBy[method],
+            percent: amounts
+              ? percentage(billedBy[method], billedCents)
+              : percentage(ordersBy[method], filteredMethod ? ordersBy[method] : ordersBy.cash + ordersBy.transfer),
+          })),
+        };
+      }
+
+      if (can("stats.w.billing.orders_total")) {
+        const rows = MODALITIES.filter(shown).map((fulfillment) => ({
+          fulfillment,
+          orders: byFulfillment.get(fulfillment)?.orders ?? 0,
+        }));
+        const orders = rows.reduce((sum, row) => sum + row.orders, 0);
+        widgets.orders_total = { orders, rows: rows.map((row) => ({ ...row, percent: percentage(row.orders, orders) })) };
+      }
+
+      for (const fulfillment of MODALITIES) {
+        if (can(`stats.w.billing.${fulfillment}`) && shown(fulfillment)) {
+          widgets[fulfillment] = paymentBlock(byFulfillment.get(fulfillment) ?? zeroBillingTotals(fulfillment), fulfillment, filteredMethod);
+        }
+      }
+
+      if (can("stats.w.billing.source")) {
+        const totalBilled = sources.reduce((sum, row) => sum + row.billedCents, 0);
+        const totalOrders = sources.reduce((sum, row) => sum + row.orders, 0);
+        const bySource = new Map(sources.map((row) => [row.source, row]));
+        const rows: BillingSourceRow[] = ORDER_SOURCES.map((source) => {
+          const row = bySource.get(source);
+          const orders = row?.orders ?? 0;
+          const billedCents = row?.billedCents ?? 0;
+          return {
+            source,
+            orders,
+            ticketCents: orders === 0 ? 0 : Math.round((row?.productsCents ?? 0) / orders),
+            billedCents,
+            percent: amounts ? percentage(billedCents, totalBilled) : percentage(orders, totalOrders),
+          };
+        });
+        widgets.source = rows;
+      }
+
+      const hasActivity = (await reports.salesSummary(scope)).orders > 0;
+      return { range, hasActivity, widgets: amounts ? widgets : withoutCents(widgets) };
+    },
+
+    /** Ventas tab (change 16b). */
+    async sales(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<SalesReport> {
+      await assertPlan(restaurantId);
+      const { can, amounts, range, scopeFor } = await reportContext(restaurantId, member, filters);
+      const scope = scopeFor(range);
+      const needsProducts =
+        can("stats.w.sales.top") || can("stats.w.sales.categories") || can("stats.w.sales.products");
+      const [products, addons] = await Promise.all([
+        needsProducts ? reports.productSales(scope) : Promise.resolve([]),
+        can("stats.w.sales.addons") ? reports.addonSales(scope) : Promise.resolve([]),
+      ]);
+      const widgets: SalesWidgets = {};
+
+      if (can("stats.w.sales.top")) {
+        const byUnits = [...products]
+          .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name))
+          .slice(0, 10)
+          .map((row) => ({ name: row.name, units: row.units, revenueCents: row.revenueCents }));
+        widgets.top = { byUnits };
+        if (amounts) {
+          widgets.top.byRevenue = [...products]
+            .sort((a, b) => b.revenueCents - a.revenueCents || a.name.localeCompare(b.name))
+            .slice(0, 10)
+            .map((row) => ({ name: row.name, units: row.units, revenueCents: row.revenueCents }));
+        }
+      }
+
+      if (can("stats.w.sales.categories")) {
+        const grouped = new Map<string, SalesCategoryRow>();
+        for (const row of products) {
+          const category = row.categoryName ?? UNCATEGORIZED_LABEL;
+          const entry = grouped.get(category) ?? { category, products: 0, units: 0, revenueCents: 0, percent: 0 };
+          entry.products += 1;
+          entry.units += row.units;
+          entry.revenueCents = (entry.revenueCents ?? 0) + row.revenueCents;
+          grouped.set(category, entry);
+        }
+        const totalUnits = products.reduce((sum, row) => sum + row.units, 0);
+        const totalRevenue = products.reduce((sum, row) => sum + row.revenueCents, 0);
+        const rows = [...grouped.values()]
+          .map((row) => ({
+            ...row,
+            percent: amounts ? percentage(row.revenueCents ?? 0, totalRevenue) : percentage(row.units, totalUnits),
+          }))
+          .sort((a, b) =>
+            amounts
+              ? (b.revenueCents ?? 0) - (a.revenueCents ?? 0) || a.category.localeCompare(b.category)
+              : b.units - a.units || a.category.localeCompare(b.category),
+          );
+        widgets.categories = {
+          rows,
+          total: { category: "Total", products: products.length, units: totalUnits, revenueCents: totalRevenue, percent: 100 },
+        };
+      }
+
+      if (can("stats.w.sales.products")) {
+        widgets.products = products
+          .map((row) => ({
+            productId: row.productId,
+            category: row.categoryName ?? UNCATEGORIZED_LABEL,
+            name: row.name,
+            units: row.units,
+            revenueCents: row.revenueCents,
+          }))
+          .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name));
+      }
+
+      if (can("stats.w.sales.addons")) {
+        widgets.addons = addons
+          .map((row) => ({ name: row.name, units: row.units, revenueCents: row.revenueCents }))
+          .sort((a, b) => b.units - a.units || a.name.localeCompare(b.name));
+      }
+
+      const hasActivity = (await reports.salesSummary(scope)).orders > 0;
+      return { range, hasActivity, widgets: amounts ? widgets : withoutCents(widgets) };
+    },
 
     async meta(restaurantId: string): Promise<ReportMeta> {
       const restaurant = await assertPlan(restaurantId);

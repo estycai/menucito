@@ -1,4 +1,4 @@
-import type { HoursSlot } from "@menucito/shared";
+import type { Fulfillment, HoursSlot, OrderSource } from "@menucito/shared";
 import { OFF_SHIFT_ID, type ReportFilters } from "@menucito/shared";
 
 /**
@@ -66,6 +66,43 @@ export interface CustomerReportRow {
   earlier: number;
 }
 
+export interface BillingTotalsRow {
+  fulfillment: Fulfillment;
+  orders: number;
+  productsCents: number;
+  shippingCents: number;
+  tipsCents: number;
+  cashOrders: number;
+  cashProductsCents: number;
+  cashShippingCents: number;
+  cashTipsCents: number;
+  transferOrders: number;
+  transferProductsCents: number;
+  transferShippingCents: number;
+  transferTipsCents: number;
+}
+
+export interface SourceTotalsRow {
+  source: OrderSource;
+  orders: number;
+  productsCents: number;
+  billedCents: number;
+}
+
+export interface ProductSalesRow {
+  productId: string | null;
+  categoryName: string | null;
+  name: string;
+  units: number;
+  revenueCents: number;
+}
+
+export interface AddonSalesRow {
+  name: string;
+  units: number;
+  revenueCents: number;
+}
+
 export interface ReportsRepository {
   salesSummary(scope: ReportScope): Promise<SalesSummaryRow>;
   cancellationsSummary(scope: ReportScope): Promise<{ count: number; totalCents: number }>;
@@ -75,6 +112,10 @@ export interface ReportsRepository {
   paymentTotals(scope: ReportScope): Promise<PaymentTotalsRow[]>;
   customers(scope: ReportScope): Promise<CustomerReportRow[]>;
   newCustomers(restaurantId: string, fromMs: number, toMs: number): Promise<number>;
+  billingTotals(scope: ReportScope): Promise<BillingTotalsRow[]>;
+  sourceTotals(scope: ReportScope): Promise<SourceTotalsRow[]>;
+  productSales(scope: ReportScope): Promise<ProductSalesRow[]>;
+  addonSales(scope: ReportScope): Promise<AddonSalesRow[]>;
 }
 
 const LOCAL_DAY = "CAST((o.created_at - 10800000) / 86400000 AS INTEGER)";
@@ -155,6 +196,50 @@ export function amountOf(column: string, scope: Pick<ReportScope, "filters">): s
             THEN CAST(ROUND(${column} * ${part} * 1.0 / o.total_cents) AS INTEGER)
             ELSE ${column} END)`;
 }
+
+/** Cash share of shipping or tips for a split order, rounded down (change 16b). */
+const SPLIT_CASH_SHARE = (column: string) =>
+  `(CASE WHEN o.total_cents > 0 THEN CAST(${column} * ${SPLIT_CASH} * 1.0 / o.total_cents AS INTEGER) ELSE 0 END)`;
+
+type BillingColumn = "products" | "shipping" | "tips";
+
+const BILLING_COLUMNS: Record<BillingColumn, string> = {
+  products: "(o.subtotal_cents - o.discount_cents)",
+  shipping: "o.shipping_cents",
+  tips: "o.tip_cents",
+};
+
+/**
+ * Cash part of a column for a split order. Shipping and tips take their proportional share and
+ * products take the rest, so the three cash parts add up to exactly `split_cash_cents` (what the
+ * cashier received) and the transfer side keeps the remainder of every column.
+ */
+const splitCashPart = (column: BillingColumn) =>
+  column === "products"
+    ? `(${SPLIT_CASH} - ${SPLIT_CASH_SHARE(BILLING_COLUMNS.shipping)} - ${SPLIT_CASH_SHARE(BILLING_COLUMNS.tips)})`
+    : SPLIT_CASH_SHARE(BILLING_COLUMNS[column]);
+
+/** An amount column of the orders paid with `method`; a split order contributes its share. */
+const methodAmount = (column: BillingColumn, method: "cash" | "transfer") =>
+  method === "cash"
+    ? `(CASE WHEN o.payment_method = 'cash' THEN ${BILLING_COLUMNS[column]}
+             WHEN o.payment_method = 'split' THEN ${splitCashPart(column)}
+             ELSE 0 END)`
+    : `(CASE WHEN o.payment_method = 'transfer' THEN ${BILLING_COLUMNS[column]}
+             WHEN o.payment_method = 'split' THEN ${BILLING_COLUMNS[column]} - ${splitCashPart(column)}
+             ELSE 0 END)`;
+
+const sumOf = (expression: string) => `COALESCE(SUM(${expression}), 0)`;
+
+const ORDERS_WITH = (method: "cash" | "transfer") =>
+  `SUM(CASE WHEN o.payment_method IN ('${method}', 'split') THEN 1 ELSE 0 END)`;
+
+/** `unit_price_cents` includes the extras, so they are subtracted to price the products alone. */
+const EXTRAS_PER_UNIT = `COALESCE((SELECT SUM(MAX(0, json_extract(opt.value, '$.quantity') - json_extract(opt.value, '$.includedQty'))
+                                      * json_extract(opt.value, '$.extraPriceCents'))
+                              FROM json_each(i.options_json) AS opt), 0)`;
+
+const ADDON_UNITS = `MAX(0, json_extract(opt.value, '$.quantity') - json_extract(opt.value, '$.includedQty'))`;
 
 export function createReportsRepository(d1: D1Database): ReportsRepository {
   async function row<T>(sql: string, params: (string | number)[]): Promise<T | null> {
@@ -286,6 +371,82 @@ export function createReportsRepository(d1: D1Database): ReportsRepository {
           WHERE ${where.sql} AND o.customer_id IS NOT NULL
           GROUP BY o.customer_id, c.name, c.phone`,
         [scope.fromMs, ...where.params],
+      );
+    },
+
+    async billingTotals(scope) {
+      const where = reportWhere(scope, "sales");
+      const products = BILLING_COLUMNS.products;
+      return all<BillingTotalsRow>(
+        `SELECT o.fulfillment AS fulfillment,
+                COUNT(*) AS orders,
+                ${sumOf(products)} AS productsCents,
+                ${sumOf("o.shipping_cents")} AS shippingCents,
+                ${sumOf("o.tip_cents")} AS tipsCents,
+                ${ORDERS_WITH("cash")} AS cashOrders,
+                ${sumOf(methodAmount("products", "cash"))} AS cashProductsCents,
+                ${sumOf(methodAmount("shipping", "cash"))} AS cashShippingCents,
+                ${sumOf(methodAmount("tips", "cash"))} AS cashTipsCents,
+                ${ORDERS_WITH("transfer")} AS transferOrders,
+                ${sumOf(methodAmount("products", "transfer"))} AS transferProductsCents,
+                ${sumOf(methodAmount("shipping", "transfer"))} AS transferShippingCents,
+                ${sumOf(methodAmount("tips", "transfer"))} AS transferTipsCents
+           FROM orders o
+          WHERE ${where.sql}
+          GROUP BY o.fulfillment`,
+        where.params,
+      );
+    },
+
+    async sourceTotals(scope) {
+      const where = reportWhere(scope, "sales");
+      return all<SourceTotalsRow>(
+        `SELECT o.source AS source,
+                COUNT(*) AS orders,
+                ${sumOf(amountOf("(o.subtotal_cents - o.discount_cents)", scope))} AS productsCents,
+                ${sumOf(amountOf("o.total_cents", scope))} AS billedCents
+           FROM orders o
+          WHERE ${where.sql}
+          GROUP BY o.source`,
+        where.params,
+      );
+    },
+
+    async productSales(scope) {
+      const where = reportWhere(scope, "sales");
+      // A deleted product (`product_id` NULL) is grouped by the snapshot of its name. `MAX(created_at)`
+      // makes the bare name come from the latest order, so a renamed product keeps its newer name.
+      return all<ProductSalesRow>(
+        `SELECT COALESCE(i.product_id, 'name:' || i.name) AS key,
+                i.product_id AS productId,
+                c.name AS categoryName,
+                i.name AS name,
+                MAX(o.created_at) AS lastOrderAt,
+                COALESCE(SUM(i.quantity), 0) AS units,
+                COALESCE(SUM((i.unit_price_cents - ${EXTRAS_PER_UNIT}) * i.quantity), 0) AS revenueCents
+           FROM order_items i
+           JOIN orders o ON o.id = i.order_id
+           LEFT JOIN products p ON p.id = i.product_id
+           LEFT JOIN categories c ON c.id = p.category_id
+          WHERE ${where.sql}
+          GROUP BY key`,
+        where.params,
+      );
+    },
+
+    async addonSales(scope) {
+      const where = reportWhere(scope, "sales");
+      return all<AddonSalesRow>(
+        `SELECT json_extract(opt.value, '$.name') AS name,
+                COALESCE(SUM(${ADDON_UNITS} * i.quantity), 0) AS units,
+                COALESCE(SUM(${ADDON_UNITS} * json_extract(opt.value, '$.extraPriceCents') * i.quantity), 0) AS revenueCents
+           FROM order_items i
+           JOIN orders o ON o.id = i.order_id
+           JOIN json_each(i.options_json) AS opt
+          WHERE ${where.sql}
+          GROUP BY json_extract(opt.value, '$.name')
+         HAVING COALESCE(SUM(${ADDON_UNITS}), 0) > 0`,
+        where.params,
       );
     },
 
