@@ -5,6 +5,7 @@ import {
   OFF_SHIFT_ID,
   addDaysToKey,
   daysInRange,
+  maskCashReportWidgets,
   percentage,
   percentChange,
   presetRange,
@@ -168,5 +169,66 @@ describe("percentages and amounts", () => {
       billed: { changePercent: 100 },
       rows: [{ method: "cash", orders: 2 }],
     });
+  });
+});
+
+describe("maskCashReportWidgets (16c blind close)", () => {
+  it("hides the expected, the counted, the difference and the cash on hand", () => {
+    const masked = maskCashReportWidgets({
+      open: {
+        openedAt: 1,
+        openedByName: "Ana",
+        cashSalesCount: 2,
+        cashSalesCents: 100,
+        openingCashCents: 50,
+        cashIncomeCents: 10,
+        cashExpenseCents: 5,
+        cashCents: 155,
+        transferSalesCount: 1,
+        transferSalesCents: 200,
+        onTheStreet: { totalCents: 30 },
+      },
+      kpis: {
+        sessions: 1,
+        closed: 1,
+        inProgress: 0,
+        salesCents: 300,
+        orders: 3,
+        incomeCents: 10,
+        expenseCents: 5,
+        differenceCents: 0,
+        expectedCents: 155,
+        countedCents: 155,
+        balanced: 1,
+      },
+      by_shift: {
+        rows: [{ shift: "off", label: "Fuera de horario", sessions: 1, orders: 3, percent: 100, differenceCents: 0 }],
+        total: { shift: "", label: "Total", sessions: 1, orders: 3, percent: 100, differenceCents: 0 },
+      },
+      sessions: [
+        {
+          id: "s1",
+          openedAt: 1,
+          closedAt: 2,
+          shift: "off",
+          shiftLabel: "Fuera de horario",
+          openedByName: "Ana",
+          closedByName: "Ana",
+          orders: 3,
+          expectedCashCents: 155,
+          countedCashCents: 155,
+          differenceCents: 0,
+        },
+      ],
+    });
+
+    expect(masked.open).not.toHaveProperty("cashCents");
+    expect(masked.kpis).not.toHaveProperty("balanced");
+    expect(masked.open?.cashSalesCents).toBe(100);
+    expect(masked.kpis).not.toHaveProperty("differenceCents");
+    expect(masked.kpis).not.toHaveProperty("expectedCents");
+    expect(masked.by_shift?.rows[0]).not.toHaveProperty("differenceCents");
+    expect(masked.sessions?.[0]).not.toHaveProperty("expectedCashCents");
+    expect(masked.sessions?.[0]).not.toHaveProperty("countedCashCents");
   });
 });

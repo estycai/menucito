@@ -9,6 +9,7 @@ import {
   courierPaymentSuggestion,
   createCashMovementSchema,
   formatCashDifference,
+  groupCashMovements,
   maskCashTotals,
   settleOrdersSchema,
   type CashSession,
@@ -157,5 +158,29 @@ describe("14b schemas", () => {
     expect(closeCashSessionSchema.safeParse({ countedCashCents: 0 }).success).toBe(true);
     expect(settleOrdersSchema.parse({ orderIds: ["o1", "o1", "o2"] }).orderIds).toEqual(["o1", "o2"]);
     expect(settleOrdersSchema.safeParse({ orderIds: [] }).success).toBe(false);
+  });
+});
+
+describe("movement concepts of the Arqueos report (16c)", () => {
+  it("groups by kind and comment ignoring case and extra spaces, and keeps the first form", () => {
+    const rows = groupCashMovements([
+      { kind: "expense", comment: "  Compra   de hielo ", amountCents: 2_000, createdAt: 2 },
+      { kind: "expense", comment: "COMPRA DE HIELO", amountCents: 3_000, createdAt: 3 },
+      { kind: "income", comment: "compra de hielo", amountCents: 5_000, createdAt: 1 },
+      { kind: "courier_payment", comment: null, amountCents: 10_000, createdAt: 4 },
+    ]);
+    expect(rows).toEqual([
+      { kind: "income", concept: "compra de hielo", direction: "income", count: 1, amountCents: 5_000 },
+      { kind: "expense", concept: "Compra   de hielo", direction: "expense", count: 2, amountCents: 5_000 },
+      { kind: "courier_payment", concept: "Pago a repartidor", direction: "expense", count: 1, amountCents: 10_000 },
+    ]);
+  });
+
+  it("shows the form of the oldest movement when the same comment repeats", () => {
+    const rows = groupCashMovements([
+      { kind: "income", comment: "Propina", amountCents: 1_000, createdAt: 5 },
+      { kind: "income", comment: "propina", amountCents: 2_000, createdAt: 2 },
+    ]);
+    expect(rows).toEqual([{ kind: "income", concept: "propina", direction: "income", count: 2, amountCents: 3_000 }]);
   });
 });

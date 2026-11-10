@@ -3,6 +3,7 @@ import { FULFILLMENTS, PAYMENT_METHODS, type Fulfillment } from "./order";
 import { ORDER_SOURCES, type OrderSource } from "./orders";
 import { localWeekTime, type HoursSlot, type Weekday } from "./hours";
 import { isCalendarDateKey, localDateKey } from "./time";
+import type { CashMovementKind } from "./cash";
 
 /**
  * Reports (change 16a): the query filters, the date presets and the shifts of the filters, and the
@@ -467,6 +468,214 @@ export interface SalesReport {
   /** Whether the period has any sale, whatever blocks the member sees (the empty state). */
   hasActivity: boolean;
   widgets: SalesWidgets;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Repartidores (change 16c)
+// ---------------------------------------------------------------------------------------------
+
+/** An average in minutes compared against the previous period; `null` when no order has the data. */
+export interface ReportAverageMetric {
+  currentMinutes: number | null;
+  previousMinutes: number | null;
+  changePercent: number | null;
+}
+
+export interface CouriersCourierRow {
+  /** `null` on the total row. */
+  memberId: string | null;
+  name: string;
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  shippingCents?: number;
+  /** Removed without `stats.amounts`. */
+  tipsCents?: number;
+  averageMinutes: number | null;
+  /** Cash of his orders settled into the cash drawer within the period. Removed without `stats.amounts`. */
+  cashCents?: number;
+}
+
+export interface CouriersZoneRow {
+  /** `null` for "Sin zona", "Tarifa fija" and the total row. */
+  zoneId: string | null;
+  name: string;
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  shippingCents?: number;
+  /** Average `delivery_distance_m` in kilometres, one decimal. */
+  distanceKm: number | null;
+  averageMinutes: number | null;
+}
+
+export interface CouriersWidgets {
+  orders?: ReportCountMetric;
+  shipping?: ReportCentsMetric;
+  tips?: ReportCentsMetric;
+  time?: ReportAverageMetric;
+  by_courier?: { rows: CouriersCourierRow[]; total: CouriersCourierRow };
+  by_zone?: { rows: CouriersZoneRow[]; total: CouriersZoneRow };
+}
+
+export interface CouriersReport {
+  range: ReportRange;
+  previousRange: ReportRange;
+  /** Whether the period has any delivery with an assigned courier. */
+  hasActivity: boolean;
+  widgets: CouriersWidgets;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Arqueos (change 16c)
+// ---------------------------------------------------------------------------------------------
+
+export interface CashReportOpen {
+  openedAt: number;
+  openedByName: string;
+  cashSalesCount: number;
+  /** Removed without `stats.amounts`. */
+  cashSalesCents?: number;
+  /** Masked without `cash.expected`. */
+  openingCashCents?: number;
+  /** Masked without `cash.expected`. */
+  cashIncomeCents?: number;
+  /** Masked without `cash.expected`. */
+  cashExpenseCents?: number;
+  /** Efectivo en caja now (the expected). Masked without `cash.expected`. */
+  cashCents?: number;
+  transferSalesCount: number;
+  /** Removed without `stats.amounts`. */
+  transferSalesCents?: number;
+  onTheStreet: { ordersCents?: number; changeCents?: number; totalCents?: number };
+}
+
+export interface CashReportKpis {
+  sessions: number;
+  closed: number;
+  inProgress: number;
+  /** Removed without `stats.amounts`. */
+  salesCents?: number;
+  /** Orders charged into the sessions. */
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  incomeCents?: number;
+  /** Removed without `stats.amounts`. */
+  expenseCents?: number;
+  /** Closed sessions only. Masked without `cash.expected`. */
+  differenceCents?: number;
+  /** Masked without `cash.expected`. */
+  expectedCents?: number;
+  /** Masked without `cash.expected`. */
+  countedCents?: number;
+  /** Closed sessions with difference 0. Masked without `cash.expected`: it tells whether a close was right. */
+  balanced?: number;
+}
+
+export interface CashShiftRow {
+  /** Shift id, or `off`; empty on the total row. */
+  shift: string;
+  label: string;
+  sessions: number;
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  salesCents?: number;
+  /** Over the sales, or over the orders when amounts are hidden. */
+  percent: number;
+  /** Removed without `stats.amounts`. */
+  expenseCents?: number;
+  /** Closed sessions only. Masked without `cash.expected`. */
+  differenceCents?: number;
+}
+
+export interface CashMethodReportRow {
+  /** `undefined` on the total row. */
+  method?: "cash" | "transfer";
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  salesCents?: number;
+  /** Over the sales, or over the orders when amounts are hidden. */
+  percent: number;
+  /** Removed without `stats.amounts`. */
+  incomeCents?: number;
+  /** Removed without `stats.amounts`. */
+  expenseCents?: number;
+}
+
+export interface CashMovementReportRow {
+  kind: CashMovementKind;
+  /** The commentary, or the label of the kind when it is empty. */
+  concept: string;
+  direction: "income" | "expense";
+  count: number;
+  /** Removed without `stats.amounts`. */
+  amountCents?: number;
+}
+
+export interface CashSessionReportRow {
+  id: string;
+  openedAt: number;
+  closedAt: number | null;
+  shift: string;
+  shiftLabel: string;
+  openedByName: string;
+  closedByName: string | null;
+  orders: number;
+  /** Removed without `stats.amounts`. */
+  salesCents?: number;
+  /** Removed without `stats.amounts`. */
+  expenseCents?: number;
+  /** Masked without `cash.expected`. */
+  expectedCashCents?: number;
+  /** Masked without `cash.expected`. */
+  countedCashCents?: number;
+  /** Masked without `cash.expected`. */
+  differenceCents?: number;
+}
+
+export interface CashWidgets {
+  /** The open drawer now, whatever the dates say. */
+  open?: CashReportOpen;
+  kpis?: CashReportKpis;
+  by_shift?: { rows: CashShiftRow[]; total: CashShiftRow };
+  by_method?: { rows: CashMethodReportRow[]; total: CashMethodReportRow };
+  movements?: CashMovementReportRow[];
+  /** Newest first. */
+  sessions?: CashSessionReportRow[];
+}
+
+export interface CashReport {
+  range: ReportRange;
+  /** Whether the period has a session, or there is an open drawer right now. */
+  hasActivity: boolean;
+  widgets: CashWidgets;
+}
+
+/** A copy of `value` without `keys`, for the blind-close mask. */
+function without<T extends object>(value: T, ...keys: (keyof T)[]): T {
+  const copy = { ...value } as Record<string, unknown>;
+  for (const key of keys) delete copy[key as string];
+  return copy as T;
+}
+
+/**
+ * Blind close in Reports (change 16c): without `cash.expected` the member never sees the expected,
+ * the counted, the difference or the cash on hand, whatever blocks the role has.
+ */
+export function maskCashReportWidgets(widgets: CashWidgets): CashWidgets {
+  const { open, kpis, by_shift, sessions, ...rest } = widgets;
+  return {
+    ...rest,
+    ...(open && { open: without(open, "openingCashCents", "cashIncomeCents", "cashExpenseCents", "cashCents") }),
+    ...(kpis && { kpis: without(kpis, "expectedCents", "countedCents", "differenceCents", "balanced") }),
+    ...(by_shift && {
+      by_shift: {
+        rows: by_shift.rows.map((row) => without(row, "differenceCents")),
+        total: without(by_shift.total, "differenceCents"),
+      },
+    }),
+    ...(sessions && {
+      sessions: sessions.map((row) => without(row, "expectedCashCents", "countedCashCents", "differenceCents")),
+    }),
+  };
 }
 
 /** The fallback category of a product that was deleted (or whose category no longer exists). */

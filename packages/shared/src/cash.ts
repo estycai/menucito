@@ -372,6 +372,58 @@ export function cashMovementLabel(movement: {
   }
 }
 
+export interface CashMovementConceptInput {
+  kind: CashMovementKind;
+  comment?: string | null;
+  amountCents: number;
+  /** The oldest entry keeps its written form when the same concept repeats with another casing or spacing. */
+  createdAt?: number;
+}
+
+export interface CashMovementConceptRow {
+  kind: CashMovementKind;
+  /** The first form written, or the label of the kind when the comment is empty. */
+  concept: string;
+  direction: "income" | "expense";
+  count: number;
+  amountCents: number;
+}
+
+const normalizeConcept = (value: string) => value.trim().replace(/\s+/g, " ").toLocaleLowerCase("es");
+
+/**
+ * Groups the movements of the Arqueos report by kind and by their comment, ignoring case and extra
+ * spaces (change 16c). The amount adds up every movement of the group.
+ */
+export function groupCashMovements(entries: readonly CashMovementConceptInput[]): CashMovementConceptRow[] {
+  const groups = new Map<string, { row: CashMovementConceptRow; firstAt: number }>();
+  for (const entry of entries) {
+    const concept = entry.comment?.trim() || CASH_MOVEMENT_KIND_LABELS[entry.kind];
+    const key = `${entry.kind}\u0000${normalizeConcept(concept)}`;
+    const direction = INCOME_KINDS.includes(entry.kind) ? "income" : "expense";
+    const amount = Math.max(0, Math.round(entry.amountCents));
+    const at = entry.createdAt ?? Number.MAX_SAFE_INTEGER;
+    const existing = groups.get(key);
+    if (!existing) {
+      groups.set(key, { row: { kind: entry.kind, concept, direction, count: 1, amountCents: amount }, firstAt: at });
+      continue;
+    }
+    existing.row.count += 1;
+    existing.row.amountCents += amount;
+    if (at < existing.firstAt) {
+      existing.row.concept = concept;
+      existing.firstAt = at;
+    }
+  }
+  return [...groups.values()]
+    .sort(
+      (a, b) =>
+        CASH_MOVEMENT_KINDS.indexOf(a.row.kind) - CASH_MOVEMENT_KINDS.indexOf(b.row.kind) ||
+        a.row.concept.localeCompare(b.row.concept, "es", { sensitivity: "base" }),
+    )
+    .map((group) => group.row);
+}
+
 // ---------------------------------------------------------------------------------------------
 // API shapes
 // ---------------------------------------------------------------------------------------------

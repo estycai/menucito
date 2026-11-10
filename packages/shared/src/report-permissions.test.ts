@@ -12,6 +12,7 @@ import {
   GRANTED_REPORT_PERMISSION_KEYS,
   REPORT_PERMISSION_KEYS,
   REPORT_TABS,
+  TAB_FILTERS,
   reportParentOf,
 } from "./report-permissions";
 
@@ -100,5 +101,11 @@ describe("Reports tabs", () => {
   it("declares the 34 widgets over the five tabs", () => {
     expect(REPORT_TABS).toHaveLength(5);
     expect(REPORT_TABS.reduce((sum, tab) => sum + tab.widgets.length, 0)).toBe(34);
+  });
+
+  it("keeps the filters each tab applies (16c)", () => {
+    expect(TAB_FILTERS["stats.tab.couriers"]).not.toContain("stats.f.fulfillment");
+    expect(TAB_FILTERS["stats.tab.couriers"]).toHaveLength(5);
+    expect(TAB_FILTERS["stats.tab.cash"]).toEqual(["stats.f.date", "stats.f.shift", "stats.f.payment"]);
   });
 });

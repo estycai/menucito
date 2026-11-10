@@ -93,6 +93,20 @@ export type ReportWidgetKey = ReportTab["widgets"][number]["key"];
 export type ReportGeneralKey = (typeof REPORT_GENERAL_PERMISSIONS)[number]["key"];
 export type ReportFilterKey = (typeof REPORT_FILTER_PERMISSIONS)[number]["key"];
 
+/**
+ * The filters each tab shows and applies (change 16c). A filter without permission never appears;
+ * the URL keeps it anyway, so it applies again when the member goes back to a tab that uses it.
+ */
+export const TAB_FILTERS: Readonly<Record<ReportTabKey, readonly ReportFilterKey[]>> = {
+  "stats.tab.evolution": REPORT_FILTER_PERMISSIONS.map((filter) => filter.key),
+  "stats.tab.billing": REPORT_FILTER_PERMISSIONS.map((filter) => filter.key),
+  "stats.tab.sales": REPORT_FILTER_PERMISSIONS.map((filter) => filter.key),
+  // Delivery has a courier; the take away has none.
+  "stats.tab.couriers": ["stats.f.date", "stats.f.shift", "stats.f.payment", "stats.f.source", "stats.f.courier"],
+  // The cash drawer only knows dates, shifts and methods.
+  "stats.tab.cash": ["stats.f.date", "stats.f.shift", "stats.f.payment"],
+};
+
 /** The section as it appears in the permission catalog: general, filters and the tabs with their widgets. */
 export const REPORTS_SECTION = {
   key: "stats.view",
