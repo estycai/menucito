@@ -1,17 +1,23 @@
 import {
+  OFF_SHIFT_ID,
   ORDER_SOURCES,
   PAYMENT_SPLIT_NOTE,
+  TAB_FILTERS,
   UNCATEGORIZED_LABEL,
+  cashTotalsFromSnapshot,
   daysInRange,
   effectivePermissions,
+  groupCashMovements,
   localDateKey,
   localDayRange,
+  maskCashReportWidgets,
   percentage,
   percentChange,
   planLimitsFor,
   previousRange,
   reportRange,
   reportRangeProblem,
+  shiftOf,
   shiftsFor,
   yearBeforeRange,
   withoutCents,
@@ -19,8 +25,20 @@ import {
   type BillingReport,
   type BillingSourceRow,
   type BillingWidgets,
+  type CashMethodReportRow,
+  type CashReport,
+  type CashSessionReportRow,
+  type CashSessionTotalsRow,
+  type CashShiftRow,
+  type CashTotals,
+  type CashWidgets,
+  type CouriersCourierRow,
+  type CouriersReport,
+  type CouriersWidgets,
+  type CouriersZoneRow,
   type EvolutionReport,
   type EvolutionWidgets,
+  type ReportFilterKey,
   type ReportFilters,
   type ReportMover,
   type ReportPaymentMethodRow,
@@ -32,8 +50,10 @@ import {
   type SalesWidgets,
 } from "@menucito/shared";
 import type { MemberContext } from "../env";
+import type { CashSessionRow } from "../db/schema";
 import type { HoursRepository } from "../repositories/hours";
-import type { OrdersRepository } from "../repositories/orders";
+import type { CashRepository } from "../repositories/cash";
+import { toCashSession } from "../repositories/cash";
 import {
   createReportsRepository,
   type BillingTotalsRow,
@@ -43,15 +63,21 @@ import {
   type ReportScope,
   type SalesSummaryRow,
 } from "../repositories/reports";
+import { createCashRepository } from "../repositories/cash";
 import { createHoursRepository } from "../repositories/hours";
-import { createOrdersRepository } from "../repositories/orders";
 import { createRestaurantsRepository, type RestaurantsRepository } from "../repositories/restaurants";
+import type { CashService } from "./cash";
+import { cashServiceFor } from "./cash";
 import { PlanFeatureError, ReportRangeError, RestaurantNotFoundError } from "./errors";
+
+const YEAR_MS = 365 * 86_400_000;
 
 export interface ReportsDependencies {
   reports: ReportsRepository;
   restaurants: RestaurantsRepository;
-  orders: Pick<OrdersRepository, "listCouriers">;
+  cash: CashRepository;
+  /** The Cajas screen: the open drawer is built with the same numbers and the same blind close. */
+  drawer: Pick<CashService, "current">;
   hours: HoursRepository;
   now?: () => Date;
   limitsFor?: typeof planLimitsFor;
@@ -127,6 +153,20 @@ function moversOf(current: readonly { name: string; units: number }[], previous:
 
 const MODALITIES = ["delivery", "takeaway"] as const;
 
+/** One decimal, as the report shows minutes and kilometres. */
+const oneDecimal = (value: number) => Math.round(value * 10) / 10;
+
+const minutesOf = (value: number | null) => (value === null ? null : oneDecimal(value));
+
+const kilometresOf = (value: number | null) => (value === null ? null : oneDecimal(value / 1000));
+
+/** Difference of a closed session: the stored one, or counted − expected when it is missing. */
+function differenceOf(session: CashSessionRow, totals: CashTotals): number {
+  if (session.differenceCents !== null) return session.differenceCents;
+  const counted = session.countedCashCents ?? 0;
+  return counted - (session.expectedCashCents ?? totals.expectedCashCents ?? 0);
+}
+
 function zeroBillingTotals(fulfillment: (typeof MODALITIES)[number]): BillingTotalsRow {
   return {
     fulfillment,
@@ -186,7 +226,8 @@ function paymentBlock(
 export function createReportsService({
   reports,
   restaurants,
-  orders,
+  cash,
+  drawer: cashDrawer,
   hours,
   now = () => new Date(),
   limitsFor = planLimitsFor,
@@ -201,19 +242,25 @@ export function createReportsService({
   }
 
   /** The permission set, the range, the filters the member may use and the scopes of a report (change 16a). */
-  async function reportContext(restaurantId: string, member: MemberContext, filters: ReportFilters) {
+  async function reportContext(
+    restaurantId: string,
+    member: MemberContext,
+    filters: ReportFilters,
+    allowed?: readonly ReportFilterKey[],
+  ) {
     const permissions = new Set<string>(effectivePermissions(member));
     const can = (key: string) => permissions.has(key);
+    const usable = (key: ReportFilterKey) => can(key) && (!allowed || allowed.includes(key));
     const range = reportRange(filters, can("stats.f.date"), now());
     const problem = reportRangeProblem(range);
     if (problem) throw new ReportRangeError(problem);
 
     const scoped: ReportFilters = {
-      ...(can("stats.f.shift") && filters.shift ? { shift: filters.shift } : {}),
-      ...(can("stats.f.fulfillment") && filters.fulfillment ? { fulfillment: filters.fulfillment } : {}),
-      ...(can("stats.f.payment") && filters.payment ? { payment: filters.payment } : {}),
-      ...(can("stats.f.source") && filters.source ? { source: filters.source } : {}),
-      ...(can("stats.f.courier") && filters.courier ? { courier: filters.courier } : {}),
+      ...(usable("stats.f.shift") && filters.shift ? { shift: filters.shift } : {}),
+      ...(usable("stats.f.fulfillment") && filters.fulfillment ? { fulfillment: filters.fulfillment } : {}),
+      ...(usable("stats.f.payment") && filters.payment ? { payment: filters.payment } : {}),
+      ...(usable("stats.f.source") && filters.source ? { source: filters.source } : {}),
+      ...(usable("stats.f.courier") && filters.courier ? { courier: filters.courier } : {}),
     };
     const slots = scoped.shift ? await hours.listSlots(restaurantId) : [];
     const scopeFor = (target: ReportRange): ReportScope => ({
@@ -597,9 +644,412 @@ export function createReportsService({
       return { range, hasActivity, widgets: amounts ? widgets : withoutCents(widgets) };
     },
 
+    /** Repartidores tab (change 16c). */
+    async couriers(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<CouriersReport> {
+      await assertPlan(restaurantId);
+      const { can, amounts, range, scopeFor } = await reportContext(
+        restaurantId,
+        member,
+        filters,
+        TAB_FILTERS["stats.tab.couriers"],
+      );
+      const previous = previousRange(range);
+      const needsPrevious =
+        can("stats.w.couriers.orders") ||
+        can("stats.w.couriers.shipping") ||
+        can("stats.w.couriers.tips") ||
+        can("stats.w.couriers.time");
+      const [summary, previousSummary] = await Promise.all([
+        reports.courierSummary(scopeFor(range)),
+        needsPrevious
+          ? reports.courierSummary(scopeFor(previous))
+          : Promise.resolve({ orders: 0, shippingCents: 0, tipsCents: 0, averageMinutes: null, averageDistanceM: null }),
+      ]);
+
+      const widgets: CouriersWidgets = {};
+      const countMetric = (current: number, before: number) => ({
+        current,
+        previous: before,
+        changePercent: percentChange(current, before),
+      });
+      const centsMetric = (current: number, before: number) => ({
+        currentCents: current,
+        previousCents: before,
+        changePercent: percentChange(current, before),
+      });
+
+      if (can("stats.w.couriers.orders")) widgets.orders = countMetric(summary.orders, previousSummary.orders);
+      if (can("stats.w.couriers.shipping")) {
+        widgets.shipping = centsMetric(summary.shippingCents, previousSummary.shippingCents);
+      }
+      if (can("stats.w.couriers.tips")) widgets.tips = centsMetric(summary.tipsCents, previousSummary.tipsCents);
+      if (can("stats.w.couriers.time")) {
+        const currentMinutes = minutesOf(summary.averageMinutes);
+        const previousMinutes = minutesOf(previousSummary.averageMinutes);
+        widgets.time = {
+          currentMinutes,
+          previousMinutes,
+          changePercent:
+            currentMinutes === null || previousMinutes === null ? null : percentChange(currentMinutes, previousMinutes),
+        };
+      }
+
+      if (can("stats.w.couriers.by_courier")) {
+        const rows = await reports.courierTotals(
+          scopeFor(range),
+          localDayRange(range.from)[0],
+          localDayRange(range.to)[1],
+        );
+        const mapped: CouriersCourierRow[] = rows
+          .map((row) => ({
+            memberId: row.memberId,
+            name: `${row.firstName} ${row.lastName}`.trim() || "Repartidor",
+            orders: row.orders,
+            shippingCents: row.shippingCents,
+            tipsCents: row.tipsCents,
+            averageMinutes: minutesOf(row.averageMinutes),
+            cashCents: row.cashCents,
+          }))
+          .sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name, "es"));
+        widgets.by_courier = {
+          rows: mapped,
+          total: {
+            memberId: null,
+            name: "Total",
+            orders: summary.orders,
+            shippingCents: summary.shippingCents,
+            tipsCents: summary.tipsCents,
+            averageMinutes: minutesOf(summary.averageMinutes),
+            cashCents: mapped.reduce((sum, row) => sum + (row.cashCents ?? 0), 0),
+          },
+        };
+      }
+
+      if (can("stats.w.couriers.by_zone")) {
+        const [mode, zoneRows] = await Promise.all([reports.deliveryMode(restaurantId), reports.zoneTotals(scopeFor(range))]);
+        const total: CouriersZoneRow = {
+          zoneId: null,
+          name: "Total",
+          orders: summary.orders,
+          shippingCents: summary.shippingCents,
+          distanceKm: kilometresOf(summary.averageDistanceM),
+          averageMinutes: minutesOf(summary.averageMinutes),
+        };
+        if (mode === "flat") {
+          widgets.by_zone = { rows: [{ ...total, name: "Tarifa fija" }], total };
+        } else {
+          const rows: CouriersZoneRow[] = zoneRows
+            .map((row) => ({
+              zoneId: row.zoneId,
+              name: row.zoneName?.trim() || "Sin zona",
+              orders: row.orders,
+              shippingCents: row.shippingCents,
+              distanceKm: kilometresOf(row.averageDistanceM),
+              averageMinutes: minutesOf(row.averageMinutes),
+            }))
+            .sort((a, b) => b.orders - a.orders || a.name.localeCompare(b.name, "es"));
+          widgets.by_zone = { rows, total };
+        }
+      }
+
+      return {
+        range,
+        previousRange: previous,
+        hasActivity: summary.orders > 0,
+        widgets: amounts ? widgets : withoutCents(widgets),
+      };
+    },
+
+    /** Arqueos tab (change 16c). */
+    async cash(restaurantId: string, member: MemberContext, filters: ReportFilters): Promise<CashReport> {
+      await assertPlan(restaurantId);
+      const { can, amounts, range, scoped } = await reportContext(
+        restaurantId,
+        member,
+        filters,
+        TAB_FILTERS["stats.tab.cash"],
+      );
+      const [fromMs] = localDayRange(range.from);
+      const rangeEnd = localDayRange(range.to)[1];
+      const slots = await hours.listSlots(restaurantId);
+      const shifts = shiftsFor(slots);
+      const shiftLabels = new Map(shifts.map((shift) => [shift.id, shift.label]));
+      shiftLabels.set(OFF_SHIFT_ID, "Fuera de horario");
+
+      const [sessionRows, snapshotRows, salesRows, movementRows, manualRows, drawer] = await Promise.all([
+        cash.sessionsOpenedBetween(restaurantId, fromMs, rangeEnd),
+        cash.snapshotTotalsBetween(restaurantId, fromMs, rangeEnd),
+        cash.salesTotalsBetween(restaurantId, fromMs, rangeEnd),
+        cash.movementTotalsBetween(restaurantId, fromMs, rangeEnd),
+        can("stats.w.cash.movements")
+          ? cash.manualMovementGroupsBetween(restaurantId, fromMs, rangeEnd)
+          : Promise.resolve([]),
+        can("stats.w.cash.open")
+          ? cashDrawer.current(restaurantId, can("cash.expected"))
+          : Promise.resolve(null),
+      ]);
+
+      const sessions = sessionRows.filter(
+        (row) => !scoped.shift || shiftOf(row.openedAt.getTime(), slots) === scoped.shift,
+      );
+      // A closed session keeps the numbers of its close, as the Cajas history shows them; only the open
+      // one is computed from its live orders and movements.
+      const sessionIds = new Set(sessions.filter((row) => row.closedAt === null).map((row) => row.id));
+      const closedIds = new Set(sessions.filter((row) => row.closedAt !== null).map((row) => row.id));
+
+      // One totals row per method, as the close snapshot stores them: computeCashTotals is not fed
+      // with split sales, they arrive as `order_split_income` movements.
+      const totalsBySession = new Map<string, CashSessionTotalsRow[]>();
+      const totalsFor = (sessionId: string, method: "cash" | "transfer"): CashSessionTotalsRow => {
+        const list = totalsBySession.get(sessionId) ?? [];
+        let found = list.find((row) => row.method === method);
+        if (!found) {
+          found = {
+            method,
+            salesCount: 0,
+            salesCents: 0,
+            incomeCount: 0,
+            incomeCents: 0,
+            expenseCount: 0,
+            expenseCents: 0,
+            tipCount: 0,
+            tipCents: 0,
+          };
+          list.push(found);
+          totalsBySession.set(sessionId, list);
+        }
+        return found;
+      };
+      for (const row of snapshotRows) {
+        if (!closedIds.has(row.sessionId)) continue;
+        const { sessionId, ...totals } = row;
+        totalsBySession.set(sessionId, [...(totalsBySession.get(sessionId) ?? []), totals]);
+      }
+      for (const row of salesRows) {
+        if (!sessionIds.has(row.sessionId)) continue;
+        const target = totalsFor(row.sessionId, row.method);
+        target.salesCount += row.salesCount;
+        target.salesCents += row.salesCents;
+        target.tipCount += row.tipCount;
+        target.tipCents += row.tipCents;
+      }
+      for (const row of movementRows) {
+        if (!sessionIds.has(row.sessionId)) continue;
+        const target = totalsFor(row.sessionId, row.method);
+        target.incomeCount += row.incomeCount;
+        target.incomeCents += row.incomeCents;
+        target.expenseCount += row.expenseCount;
+        target.expenseCents += row.expenseCents;
+      }
+
+      const computed = sessions.map((row) => {
+        const view = toCashSession(row);
+        return {
+          row,
+          totals: cashTotalsFromSnapshot(view, totalsBySession.get(row.id) ?? []),
+          shift: shiftOf(row.openedAt.getTime(), slots),
+        };
+      });
+      const closed = computed.filter((entry) => entry.row.closedAt !== null);
+
+      const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
+      const totalSalesCents = sum(computed.map((entry) => entry.totals.salesCents));
+      const totalOrders = sum(computed.map((entry) => entry.totals.salesCount));
+      const totalIncomeCents = sum(
+        computed.map((entry) => (entry.totals.cash.incomeCents ?? 0) + (entry.totals.transfer.incomeCents ?? 0)),
+      );
+      const totalExpenseCents = sum(
+        computed.map((entry) => (entry.totals.cash.expenseCents ?? 0) + (entry.totals.transfer.expenseCents ?? 0)),
+      );
+
+      const widgets: CashWidgets = {};
+
+      if (can("stats.w.cash.open") && drawer?.session) {
+        const totals = drawer.totals;
+        widgets.open = {
+          openedAt: drawer.session.openedAt,
+          openedByName: drawer.session.openedByName,
+          cashSalesCount: totals?.cash.salesCount ?? 0,
+          cashSalesCents: totals?.cash.salesCents,
+          openingCashCents: totals?.cash.openingCents ?? undefined,
+          cashIncomeCents: totals?.cash.incomeCents ?? undefined,
+          cashExpenseCents: totals?.cash.expenseCents ?? undefined,
+          cashCents: totals?.cash.totalCents ?? undefined,
+          transferSalesCount: totals?.transfer.salesCount ?? 0,
+          transferSalesCents: totals?.transfer.salesCents,
+          onTheStreet: drawer.onTheStreet,
+        };
+      }
+
+      if (can("stats.w.cash.kpis")) {
+        const differenceCents = sum(closed.map((entry) => differenceOf(entry.row, entry.totals)));
+        widgets.kpis = {
+          sessions: computed.length,
+          closed: closed.length,
+          inProgress: computed.length - closed.length,
+          salesCents: totalSalesCents,
+          orders: totalOrders,
+          incomeCents: totalIncomeCents,
+          expenseCents: totalExpenseCents,
+          differenceCents,
+          expectedCents: sum(closed.map((entry) => entry.row.expectedCashCents ?? entry.totals.expectedCashCents ?? 0)),
+          countedCents: sum(closed.map((entry) => entry.row.countedCashCents ?? 0)),
+          balanced: closed.filter((entry) => differenceOf(entry.row, entry.totals) === 0).length,
+        };
+      }
+
+      if (can("stats.w.cash.by_shift")) {
+        const order = new Map(shifts.map((shift, index) => [shift.id, index]));
+        const groups = new Map<string, typeof computed>();
+        for (const entry of computed) {
+          const list = groups.get(entry.shift) ?? [];
+          list.push(entry);
+          groups.set(entry.shift, list);
+        }
+        const rows: CashShiftRow[] = [...groups.entries()]
+          .map(([shift, entries]) => {
+            const salesCents = sum(entries.map((entry) => entry.totals.salesCents));
+            const orders = sum(entries.map((entry) => entry.totals.salesCount));
+            return {
+              shift,
+              label: shiftLabels.get(shift) ?? "Fuera de horario",
+              sessions: entries.length,
+              orders,
+              salesCents,
+              percent: amounts ? percentage(salesCents, totalSalesCents) : percentage(orders, totalOrders),
+              expenseCents: sum(
+                entries.map((entry) => (entry.totals.cash.expenseCents ?? 0) + (entry.totals.transfer.expenseCents ?? 0)),
+              ),
+              differenceCents: sum(
+                entries
+                  .filter((entry) => entry.row.closedAt !== null)
+                  .map((entry) => differenceOf(entry.row, entry.totals)),
+              ),
+            };
+          })
+          .sort(
+            (a, b) =>
+              (a.shift === OFF_SHIFT_ID ? Number.MAX_SAFE_INTEGER : (order.get(a.shift) ?? Number.MAX_SAFE_INTEGER)) -
+                (b.shift === OFF_SHIFT_ID ? Number.MAX_SAFE_INTEGER : (order.get(b.shift) ?? Number.MAX_SAFE_INTEGER)) ||
+              a.label.localeCompare(b.label, "es"),
+          );
+        widgets.by_shift = {
+          rows,
+          total: {
+            shift: "",
+            label: "Total",
+            sessions: computed.length,
+            orders: totalOrders,
+            salesCents: totalSalesCents,
+            percent: 100,
+            expenseCents: totalExpenseCents,
+            differenceCents: sum(closed.map((entry) => differenceOf(entry.row, entry.totals))),
+          },
+        };
+      }
+
+      if (can("stats.w.cash.by_method")) {
+        const methodOf = (method: "cash" | "transfer", entry: (typeof computed)[number]) => {
+          const totals = method === "cash" ? entry.totals.cash : entry.totals.transfer;
+          return {
+            orders: totals.salesCount,
+            // The tips are part of the transfer side, as in the Cajas screen.
+            salesCents: totals.salesCents + (method === "transfer" ? totals.tipCents : 0),
+            incomeCents: totals.incomeCents ?? 0,
+            expenseCents: totals.expenseCents ?? 0,
+          };
+        };
+        const rows: CashMethodReportRow[] = (["cash", "transfer"] as const).map((method) => ({
+          method,
+          orders: sum(computed.map((entry) => methodOf(method, entry).orders)),
+          salesCents: sum(computed.map((entry) => methodOf(method, entry).salesCents)),
+          percent: 0,
+          incomeCents: sum(computed.map((entry) => methodOf(method, entry).incomeCents)),
+          expenseCents: sum(computed.map((entry) => methodOf(method, entry).expenseCents)),
+        }));
+        const visible =
+          scoped.payment === "cash" || scoped.payment === "transfer"
+            ? rows.filter((row) => row.method === scoped.payment)
+            : rows;
+        const salesCents = sum(visible.map((row) => row.salesCents ?? 0));
+        const orders = sum(visible.map((row) => row.orders));
+        widgets.by_method = {
+          rows: visible.map((row) => ({
+            ...row,
+            percent: amounts ? percentage(row.salesCents ?? 0, salesCents) : percentage(row.orders, orders),
+          })),
+          total: {
+            orders,
+            salesCents,
+            percent: 100,
+            incomeCents: sum(visible.map((row) => row.incomeCents ?? 0)),
+            expenseCents: sum(visible.map((row) => row.expenseCents ?? 0)),
+          },
+        };
+      }
+
+      if (can("stats.w.cash.movements")) {
+        widgets.movements = groupCashMovements(
+          manualRows
+            .filter((group) => {
+              if (scoped.payment === "cash") return group.cashCents > 0;
+              if (scoped.payment === "transfer") return group.transferCents > 0;
+              if (scoped.payment === "split") return group.cashCents > 0 && group.transferCents > 0;
+              return true;
+            })
+            .map((group) => ({
+              kind: group.kind,
+              comment: group.comment,
+              amountCents:
+                scoped.payment === "cash"
+                  ? group.cashCents
+                  : scoped.payment === "transfer"
+                    ? group.transferCents
+                    : group.amountCents,
+              createdAt: group.createdAt,
+            })),
+        );
+      }
+
+      if (can("stats.w.cash.sessions")) {
+        const rows: CashSessionReportRow[] = computed.map((entry) => {
+          const expected = entry.row.expectedCashCents ?? entry.totals.expectedCashCents;
+          const counted = entry.row.countedCashCents ?? undefined;
+          const difference = entry.row.closedAt !== null ? differenceOf(entry.row, entry.totals) : undefined;
+          return {
+            id: entry.row.id,
+            openedAt: entry.row.openedAt.getTime(),
+            closedAt: entry.row.closedAt?.getTime() ?? null,
+            shift: entry.shift,
+            shiftLabel: shiftLabels.get(entry.shift) ?? "Fuera de horario",
+            openedByName: entry.row.openedByName,
+            closedByName: entry.row.closedByName,
+            orders: entry.totals.salesCount,
+            salesCents: entry.totals.salesCents,
+            expenseCents:
+              (entry.totals.cash.expenseCents ?? 0) + (entry.totals.transfer.expenseCents ?? 0),
+            expectedCashCents: expected ?? undefined,
+            countedCashCents: counted,
+            differenceCents: difference,
+          };
+        });
+        widgets.sessions = rows;
+      }
+
+      const masked = can("cash.expected") ? widgets : maskCashReportWidgets(widgets);
+      return {
+        range,
+        hasActivity: computed.length > 0 || Boolean(drawer?.session),
+        widgets: amounts ? masked : withoutCents(masked),
+      };
+    },
+
     async meta(restaurantId: string): Promise<ReportMeta> {
       const restaurant = await assertPlan(restaurantId);
-      const [slots, couriers] = await Promise.all([hours.listSlots(restaurantId), orders.listCouriers(restaurantId)]);
+      const [slots, couriers] = await Promise.all([
+        hours.listSlots(restaurantId),
+        reports.courierOptions(restaurantId, now().getTime() - YEAR_MS),
+      ]);
       return {
         shifts: shiftsFor(slots),
         couriers: couriers.map((courier) => ({
@@ -620,7 +1070,8 @@ export function reportsServiceFor(db: D1Database): ReportsService {
   return createReportsService({
     reports: createReportsRepository(db),
     restaurants: createRestaurantsRepository(db),
-    orders: createOrdersRepository(db),
+    cash: createCashRepository(db),
+    drawer: cashServiceFor(db),
     hours: createHoursRepository(db),
   });
 }

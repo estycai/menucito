@@ -184,3 +184,55 @@ export async function report<T>(client: Client, path: string, values: Record<str
 }
 
 export const RANGE = { from: "2026-06-01", to: "2026-06-30" };
+
+/** Opens a cash drawer through the API and returns its id. */
+export async function openCash(store: Store, openingCashCents = 0): Promise<string> {
+  const res = await store.client.post("/api/cash-sessions", { openingCashCents });
+  expect(res.status).toBe(201);
+  return ((await res.json()) as { id: string }).id;
+}
+
+/** Closes the open drawer and returns the stored arqueo. */
+export async function closeCash(store: Store, countedCashCents: number) {
+  const res = await store.client.post("/api/cash-sessions/current/close", { countedCashCents });
+  expect(res.status).toBe(200);
+  return (await res.json()) as { detail: { session: { id: string; expectedCashCents: number; differenceCents: number } } };
+}
+
+/** Puts the order into the drawer and stamps it as settled at `settledAtMs`. */
+export async function settleOrderInto(sessionId: string, orderId: string, settledAtMs: number) {
+  await env.DB.prepare("UPDATE orders SET cash_session_id = ?, settled_at = ? WHERE id = ?")
+    .bind(sessionId, settledAtMs, orderId)
+    .run();
+}
+
+/** Moves a session to the date the report reads, keeping its totals. */
+export async function stampSession(sessionId: string, openedAtMs: number, closedAtMs: number | null) {
+  await env.DB.prepare("UPDATE cash_sessions SET opened_at = ?, closed_at = ? WHERE id = ?")
+    .bind(openedAtMs, closedAtMs, sessionId)
+    .run();
+}
+
+/** `YYYY-MM-DD` and `HH:MM` in Argentina, as milliseconds. */
+export function dayAt(date: string, time = "12:00"): number {
+  return localDayRange(date)[0] + timeMinutes(time) * 60_000;
+}
+
+/** Adds a hand-made movement to the open drawer and returns its id. */
+export async function addMovement(
+  store: Store,
+  body: { kind: "income" | "expense" | "courier_payment"; method?: "cash" | "transfer" | "split"; amountCents?: number; comment?: string },
+): Promise<string> {
+  const res = await store.client.post("/api/cash-sessions/current/movements", {
+    method: "cash",
+    ...body,
+  });
+  expect(res.status).toBe(201);
+  const row = await env.DB.prepare(
+    "SELECT id FROM cash_movements WHERE restaurant_id = ? AND comment = ? ORDER BY created_at DESC LIMIT 1",
+  )
+    .bind(store.restaurantId, body.comment ?? "")
+    .first<{ id: string }>();
+  if (!row) throw new Error("The movement was not found");
+  return row.id;
+}

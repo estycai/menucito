@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/d1";
-import type { CashMethod, CashSessionTotalsRow } from "@menucito/shared";
+import type { CashMethod, CashMovementKind, CashSessionTotalsRow } from "@menucito/shared";
 import {
   cashMovements,
   cashSessions,
@@ -47,6 +47,37 @@ export interface CashPendingChangeRow {
 export interface CashMovementGroupRecord {
   first: CashMovementRow;
   rows: CashMovementRow[];
+}
+
+/** Sales of a session by method, with the tips of the transfer side (change 16c). */
+export interface CashSessionSalesRow {
+  sessionId: string;
+  method: CashMethod;
+  salesCount: number;
+  salesCents: number;
+  tipCount: number;
+  tipCents: number;
+}
+
+/** Incomes and expenses of a session by method, voided movements excluded. */
+export interface CashSessionMovementRow {
+  sessionId: string;
+  method: CashMethod;
+  incomeCount: number;
+  incomeCents: number;
+  expenseCount: number;
+  expenseCents: number;
+}
+
+/** A hand-made movement, with both parts of a split in one row. */
+export interface CashMovementGroupRow {
+  groupId: string;
+  kind: CashMovementKind;
+  comment: string | null;
+  createdAt: number;
+  amountCents: number;
+  cashCents: number;
+  transferCents: number;
 }
 
 export interface CloseSessionData {
@@ -117,6 +148,22 @@ export interface CashRepository {
   deleteOrderSplitIncomes(restaurantId: string, sessionId: string, orderId: string): Promise<void>;
   /** Cash orders delivered before the close that were not entered into the session. */
   onTheStreetOrders(restaurantId: string, sessionId: string, closedAt: Date): Promise<CashOrderRecord[]>;
+  /** Sessions opened within the range, newest first (change 16c). */
+  sessionsOpenedBetween(restaurantId: string, fromMs: number, toMs: number): Promise<CashSessionRow[]>;
+  salesTotalsBetween(restaurantId: string, fromMs: number, toMs: number): Promise<CashSessionSalesRow[]>;
+  /** The close snapshot (`cash_session_totals`) of the sessions opened within the range. */
+  snapshotTotalsBetween(
+    restaurantId: string,
+    fromMs: number,
+    toMs: number,
+  ): Promise<(CashSessionTotalsRow & { sessionId: string })[]>;
+  movementTotalsBetween(restaurantId: string, fromMs: number, toMs: number): Promise<CashSessionMovementRow[]>;
+  /** Hand-made movements of the range, one row per movement (a split is one row with both parts). */
+  manualMovementGroupsBetween(
+    restaurantId: string,
+    fromMs: number,
+    toMs: number,
+  ): Promise<CashMovementGroupRow[]>;
 }
 
 export function createCashRepository(d1: D1Database): CashRepository {
@@ -528,6 +575,147 @@ export function createCashRepository(d1: D1Database): CashRepository {
         )
         .orderBy(asc(orders.deliveredAt), asc(orders.number))
         .all();
+    },
+
+    async sessionsOpenedBetween(restaurantId, fromMs, toMs) {
+      return db
+        .select()
+        .from(cashSessions)
+        .where(
+          and(
+            eq(cashSessions.restaurantId, restaurantId),
+            gte(cashSessions.openedAt, new Date(fromMs)),
+            lt(cashSessions.openedAt, new Date(toMs)),
+          ),
+        )
+        .orderBy(desc(cashSessions.openedAt))
+        .all();
+    },
+
+    async salesTotalsBetween(restaurantId, fromMs, toMs) {
+      const rows = await d1
+        .prepare(
+          `SELECT o.cash_session_id AS sessionId,
+                  o.payment_method AS method,
+                  COUNT(*) AS salesCount,
+                  COALESCE(SUM(CASE WHEN o.payment_method = 'cash' THEN o.total_cents
+                                    ELSE MAX(o.total_cents - o.tip_cents, 0) END), 0) AS salesCents,
+                  COALESCE(SUM(CASE WHEN o.tip_cents > 0 THEN 1 ELSE 0 END), 0) AS tipCount,
+                  COALESCE(SUM(o.tip_cents), 0) AS tipCents
+             FROM orders o
+             JOIN cash_sessions s ON s.id = o.cash_session_id
+            WHERE s.restaurant_id = ? AND s.opened_at >= ? AND s.opened_at < ?
+              AND o.status <> 'cancelled' AND o.payment_method IN ('cash', 'transfer')
+            GROUP BY o.cash_session_id, o.payment_method`,
+        )
+        .bind(restaurantId, fromMs, toMs)
+        .all<{
+          sessionId: string;
+          method: string;
+          salesCount: number;
+          salesCents: number;
+          tipCount: number;
+          tipCents: number;
+        }>();
+      return rows.results.map((row) => ({
+        sessionId: row.sessionId,
+        method: row.method as CashMethod,
+        salesCount: Number(row.salesCount),
+        salesCents: Number(row.salesCents),
+        tipCount: Number(row.tipCount),
+        tipCents: Number(row.tipCents),
+      }));
+    },
+
+    async snapshotTotalsBetween(restaurantId, fromMs, toMs) {
+      const rows = await db
+        .select({ totals: cashSessionTotals })
+        .from(cashSessionTotals)
+        .innerJoin(cashSessions, eq(cashSessions.id, cashSessionTotals.sessionId))
+        .where(
+          and(
+            eq(cashSessions.restaurantId, restaurantId),
+            gte(cashSessions.openedAt, new Date(fromMs)),
+            lt(cashSessions.openedAt, new Date(toMs)),
+          ),
+        )
+        .all();
+      return rows.map(({ totals }) => ({ ...totals, method: totals.method as CashMethod }));
+    },
+
+    async movementTotalsBetween(restaurantId, fromMs, toMs) {
+      const rows = await d1
+        .prepare(
+          `SELECT m.session_id AS sessionId,
+                  m.method AS method,
+                  COALESCE(SUM(CASE WHEN m.kind IN ('income','order_split_income','courier_change_back')
+                                    THEN 1 ELSE 0 END), 0) AS incomeCount,
+                  COALESCE(SUM(CASE WHEN m.kind IN ('income','order_split_income','courier_change_back')
+                                    THEN m.amount_cents ELSE 0 END), 0) AS incomeCents,
+                  COALESCE(SUM(CASE WHEN m.kind IN ('expense','courier_payment','courier_change_out')
+                                    THEN 1 ELSE 0 END), 0) AS expenseCount,
+                  COALESCE(SUM(CASE WHEN m.kind IN ('expense','courier_payment','courier_change_out')
+                                    THEN m.amount_cents ELSE 0 END), 0) AS expenseCents
+             FROM cash_movements m
+             JOIN cash_sessions s ON s.id = m.session_id
+            WHERE s.restaurant_id = ? AND s.opened_at >= ? AND s.opened_at < ?
+              AND m.voided_at IS NULL
+            GROUP BY m.session_id, m.method`,
+        )
+        .bind(restaurantId, fromMs, toMs)
+        .all<{
+          sessionId: string;
+          method: string;
+          incomeCount: number;
+          incomeCents: number;
+          expenseCount: number;
+          expenseCents: number;
+        }>();
+      return rows.results.map((row) => ({
+        sessionId: row.sessionId,
+        method: row.method as CashMethod,
+        incomeCount: Number(row.incomeCount),
+        incomeCents: Number(row.incomeCents),
+        expenseCount: Number(row.expenseCount),
+        expenseCents: Number(row.expenseCents),
+      }));
+    },
+
+    async manualMovementGroupsBetween(restaurantId, fromMs, toMs) {
+      const rows = await d1
+        .prepare(
+          `SELECT m.group_id AS groupId,
+                  MIN(m.kind) AS kind,
+                  MIN(m.comment) AS comment,
+                  MIN(m.created_at) AS createdAt,
+                  COALESCE(SUM(m.amount_cents), 0) AS amountCents,
+                  COALESCE(SUM(CASE WHEN m.method = 'cash' THEN m.amount_cents ELSE 0 END), 0) AS cashCents,
+                  COALESCE(SUM(CASE WHEN m.method = 'transfer' THEN m.amount_cents ELSE 0 END), 0) AS transferCents
+             FROM cash_movements m
+             JOIN cash_sessions s ON s.id = m.session_id
+            WHERE s.restaurant_id = ? AND s.opened_at >= ? AND s.opened_at < ?
+              AND m.voided_at IS NULL AND m.kind IN ('income', 'expense', 'courier_payment')
+            GROUP BY m.group_id`,
+        )
+        .bind(restaurantId, fromMs, toMs)
+        .all<{
+          groupId: string;
+          kind: string;
+          comment: string | null;
+          createdAt: number;
+          amountCents: number;
+          cashCents: number;
+          transferCents: number;
+        }>();
+      return rows.results.map((row) => ({
+        groupId: row.groupId,
+        kind: row.kind as CashMovementKind,
+        comment: row.comment,
+        createdAt: Number(row.createdAt),
+        amountCents: Number(row.amountCents),
+        cashCents: Number(row.cashCents),
+        transferCents: Number(row.transferCents),
+      }));
     },
   };
 }

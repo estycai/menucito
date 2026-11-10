@@ -105,6 +105,8 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("GET", "/api/reports/evolution", "stats.tab.evolution"),
   route("GET", "/api/reports/billing", "stats.tab.billing"),
   route("GET", "/api/reports/sales", "stats.tab.sales"),
+  route("GET", "/api/reports/couriers", "stats.tab.couriers"),
+  route("GET", "/api/reports/cash", "stats.tab.cash"),
 ];
 
 /**

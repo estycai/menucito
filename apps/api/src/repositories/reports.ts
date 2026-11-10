@@ -103,6 +103,40 @@ export interface AddonSalesRow {
   revenueCents: number;
 }
 
+export interface CourierSummaryRow {
+  orders: number;
+  shippingCents: number;
+  tipsCents: number;
+  averageMinutes: number | null;
+  averageDistanceM: number | null;
+}
+
+export interface CourierTotalsRow {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+  orders: number;
+  shippingCents: number;
+  tipsCents: number;
+  averageMinutes: number | null;
+  cashCents: number;
+}
+
+export interface ZoneTotalsRow {
+  zoneId: string | null;
+  zoneName: string | null;
+  orders: number;
+  shippingCents: number;
+  averageDistanceM: number | null;
+  averageMinutes: number | null;
+}
+
+export interface CourierOptionRow {
+  memberId: string;
+  firstName: string;
+  lastName: string;
+}
+
 export interface ReportsRepository {
   salesSummary(scope: ReportScope): Promise<SalesSummaryRow>;
   cancellationsSummary(scope: ReportScope): Promise<{ count: number; totalCents: number }>;
@@ -116,6 +150,11 @@ export interface ReportsRepository {
   sourceTotals(scope: ReportScope): Promise<SourceTotalsRow[]>;
   productSales(scope: ReportScope): Promise<ProductSalesRow[]>;
   addonSales(scope: ReportScope): Promise<AddonSalesRow[]>;
+  courierSummary(scope: ReportScope): Promise<CourierSummaryRow>;
+  courierTotals(scope: ReportScope, settledFromMs: number, settledToMs: number): Promise<CourierTotalsRow[]>;
+  zoneTotals(scope: ReportScope): Promise<ZoneTotalsRow[]>;
+  courierOptions(restaurantId: string, sinceMs: number): Promise<CourierOptionRow[]>;
+  deliveryMode(restaurantId: string): Promise<"flat" | "zones">;
 }
 
 const LOCAL_DAY = "CAST((o.created_at - 10800000) / 86400000 AS INTEGER)";
@@ -180,9 +219,17 @@ export function reportWhere(scope: ReportScope, kind: "sales" | "cancelled"): Wh
 }
 
 const number = (value: unknown): number => Number(value ?? 0);
+const nullableNumber = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value));
 
 /** The cash part of an order (all of it for cash, the declared part for split, nothing for transfer). */
 const SPLIT_CASH = "MIN(o.total_cents, MAX(COALESCE(o.split_cash_cents, 0), 0))";
+
+/** Delivery orders with a courier: the universe of the Repartidores tab (change 16c). */
+const DELIVERY_WITH_COURIER = "o.fulfillment = 'delivery' AND o.courier_member_id IS NOT NULL";
+
+/** Minutes between Enviado and Entregado; `NULL` on the orders of before migration 0012. */
+const DELIVERY_MINUTES = `CASE WHEN o.sent_at IS NOT NULL AND o.delivered_at IS NOT NULL AND o.delivered_at >= o.sent_at
+  THEN (o.delivered_at - o.sent_at) / 60000.0 END`;
 
 /**
  * SQL for an amount column under the payment filter: with `cash` (or `transfer`) a split order only
@@ -448,6 +495,97 @@ export function createReportsRepository(d1: D1Database): ReportsRepository {
          HAVING COALESCE(SUM(${ADDON_UNITS}), 0) > 0`,
         where.params,
       );
+    },
+
+    async courierSummary(scope) {
+      const where = reportWhere(scope, "sales");
+      const found = await row<{
+        orders: number;
+        shippingCents: number;
+        tipsCents: number;
+        averageMinutes: number | null;
+        averageDistanceM: number | null;
+      }>(
+        `SELECT COUNT(*) AS orders,
+                COALESCE(SUM(o.shipping_cents), 0) AS shippingCents,
+                COALESCE(SUM(o.tip_cents), 0) AS tipsCents,
+                AVG(${DELIVERY_MINUTES}) AS averageMinutes,
+                AVG(o.delivery_distance_m) AS averageDistanceM
+           FROM orders o
+          WHERE ${where.sql} AND ${DELIVERY_WITH_COURIER}`,
+        where.params,
+      );
+      return {
+        orders: number(found?.orders),
+        shippingCents: number(found?.shippingCents),
+        tipsCents: number(found?.tipsCents),
+        averageMinutes: nullableNumber(found?.averageMinutes),
+        averageDistanceM: nullableNumber(found?.averageDistanceM),
+      };
+    },
+
+    async courierTotals(scope, settledFromMs, settledToMs) {
+      const where = reportWhere(scope, "sales");
+      // The settled cash only counts on the orders entered into the drawer within the period, so it is
+      // a conditional sum and does not narrow the orders of the other columns.
+      const settledCash = `COALESCE(SUM(CASE WHEN o.settled_at >= ? AND o.settled_at < ?
+        THEN CASE WHEN o.payment_method = 'cash' THEN o.total_cents
+                  WHEN o.payment_method = 'split' THEN ${SPLIT_CASH}
+                  ELSE 0 END
+        ELSE 0 END), 0)`;
+      return all<CourierTotalsRow>(
+        `SELECT o.courier_member_id AS memberId,
+                m.first_name AS firstName,
+                m.last_name AS lastName,
+                COUNT(*) AS orders,
+                COALESCE(SUM(o.shipping_cents), 0) AS shippingCents,
+                COALESCE(SUM(o.tip_cents), 0) AS tipsCents,
+                AVG(${DELIVERY_MINUTES}) AS averageMinutes,
+                ${settledCash} AS cashCents
+           FROM orders o
+           JOIN restaurant_members m ON m.id = o.courier_member_id AND m.restaurant_id = o.restaurant_id
+          WHERE ${where.sql} AND ${DELIVERY_WITH_COURIER}
+          GROUP BY o.courier_member_id, m.first_name, m.last_name`,
+        [settledFromMs, settledToMs, ...where.params],
+      );
+    },
+
+    async zoneTotals(scope) {
+      const where = reportWhere(scope, "sales");
+      return all<ZoneTotalsRow>(
+        `SELECT o.delivery_zone_id AS zoneId,
+                o.delivery_zone_name AS zoneName,
+                COUNT(*) AS orders,
+                COALESCE(SUM(o.shipping_cents), 0) AS shippingCents,
+                AVG(o.delivery_distance_m) AS averageDistanceM,
+                AVG(${DELIVERY_MINUTES}) AS averageMinutes
+           FROM orders o
+          WHERE ${where.sql} AND ${DELIVERY_WITH_COURIER}
+          GROUP BY o.delivery_zone_id, o.delivery_zone_name`,
+        where.params,
+      );
+    },
+
+    async courierOptions(restaurantId, sinceMs) {
+      return all<CourierOptionRow>(
+        `SELECT m.id AS memberId, m.first_name AS firstName, m.last_name AS lastName
+           FROM restaurant_members m
+          WHERE m.restaurant_id = ?
+            AND (m.is_courier = 1 OR EXISTS (
+              SELECT 1 FROM orders o
+               WHERE o.restaurant_id = m.restaurant_id AND o.courier_member_id = m.id
+                 AND o.fulfillment = 'delivery' AND o.created_at >= ?))
+          ORDER BY lower(m.first_name), lower(m.last_name), m.id`,
+        [restaurantId, sinceMs],
+      );
+    },
+
+    async deliveryMode(restaurantId) {
+      const found = await row<{ mode: string }>(
+        "SELECT delivery_mode AS mode FROM restaurant_settings WHERE restaurant_id = ?",
+        [restaurantId],
+      );
+      return found?.mode === "zones" ? "zones" : "flat";
     },
 
     async newCustomers(restaurantId, fromMs, toMs) {
