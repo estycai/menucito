@@ -143,15 +143,17 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `PUT /api/members/:id/password` | Owner only. Body `{password}`. Replaces the credential and deletes every session of that user. 204, 404, 409 `OWNER_IMMUTABLE`, 422 |
 | `DELETE /api/members/:id` | Owner only. Deletes the member and the account (sessions and credentials with it); the email can be reused. 204, 404, 409 `OWNER_IMMUTABLE`, 409 `MEMBER_HAS_HISTORY` (the member has orders assigned, in any status: deactivate it instead) |
 | `GET /api/roles` | Owner only. 200 `{roles: Role[]}` with `{id, name, isSystem, active, memberCount, permissions}`; the system role first (its `permissions` is `[]`: the owner check grants everything), then by name |
-| `POST /api/roles` | Owner only. Body `{name (1-40), permissions}`; unknown keys are dropped, a sub-permission without its section key is rejected. 201 role, 409 `ROLE_NAME_TAKEN` (case-insensitive, per restaurant), 422 |
+| `POST /api/roles` | Owner only. Body `{name (1-40), permissions}`; unknown keys are dropped, a permission without its parent key (a block without its tab, a tab without `stats.view`) is rejected. 201 role, 409 `ROLE_NAME_TAKEN` (case-insensitive, per restaurant), 422 |
 | `PATCH /api/roles/:id` | Owner only. Body with any of `{name, permissions, active}`; the permissions are replaced as a whole in one D1 batch and take effect on the member's next request. 200 role, 404 `ROLE_NOT_FOUND`, 409 `SYSTEM_ROLE` / `ROLE_NAME_TAKEN`, 422 |
 | `DELETE /api/roles/:id` | Owner only. 204, 404, 409 `SYSTEM_ROLE`, 409 `ROLE_IN_USE` with `error.memberCount` |
+| `GET /api/reports/meta` | `stats.view`. 200 `{shifts, couriers, delivery, takeaway}`: the distinct opening slots with their label (for the Turno filter), the active couriers and whether the local delivers and/or has take away. 403 `PLAN_FEATURE` on a plan without `reports` |
+| `GET /api/reports/evolution` | `stats.tab.evolution`. Query `from`, `to` (`YYYY-MM-DD`, Argentina time; today by default and at most 366 days), `shift`, `fulfillment`, `payment`, `source`, `courier` (empty = all). 200 `{range, previousRange, widgets}` for the Evolución tab (16a); 400 `INVALID_REPORT_RANGE`, 403 `FORBIDDEN` without the tab, 403 `PLAN_FEATURE` without `reports` |
 
 Product: `{id, categoryId, name, description, priceCents, imageUrl, available, ingredients, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado". `ingredients` is the ordered list of customizable ingredients (`[]` when none), returned on every plan by `GET /api/categories` and `GET /api/products/:id`.
 
 Ingredient: `{name, includedQty, minQty, maxQty, extraPriceCents}`. `extraPriceCents` is charged for each unit above `includedQty`. Rules (shared Zod schema, enforced by the API and the admin form): name 1-40 characters and unique inside the product ignoring case, quantities are integers 0-99, `maxQty >= 1`, `minQty <= includedQty <= maxQty`, extra price is zero or more, at most 20 per product. Ingredients are deleted with their product. This change only covers saving them in the admin; ordering them from the public menu and the price calculation come with the public menu.
 
-All `/api/restaurants/*`, `/api/categories/*`, `/api/products/*`, `/api/orders/*`, `/api/cash-sessions/*`, `/api/couriers/*`, `/api/deliveries/*`, `/api/members/*` and `/api/roles/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. Besides the codes listed per endpoint, any of them can answer the access errors of "Users and roles" below (the `/api/deliveries/*` ones answer 403 `NOT_A_COURIER` when the member is not marked as a courier). The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
+All `/api/restaurants/*`, `/api/categories/*`, `/api/products/*`, `/api/orders/*`, `/api/cash-sessions/*`, `/api/couriers/*`, `/api/deliveries/*`, `/api/members/*`, `/api/roles/*` and `/api/reports/*` endpoints answer 401 `UNAUTHORIZED` without a session, and 404 `RESTAURANT_NOT_FOUND` when the user has no restaurant. Besides the codes listed per endpoint, any of them can answer the access errors of "Users and roles" below (the `/api/deliveries/*` ones answer 403 `NOT_A_COURIER` when the member is not marked as a courier). The tenant is the session's restaurant: an id that belongs to another restaurant answers 404, never 403. WhatsApp numbers are stored normalized as `549` + area code + number (digits only).
 
 ### Users and roles
 
@@ -168,9 +170,9 @@ Permissions are text keys `<section>.<action>`, defined in `packages/shared/src/
 | Mi menú | `menu.view`, `menu.edit` |
 | Mi local | `store.view`, `store.edit` (data, appearance, hours, delivery, payments, pause; also the `/me/places/*` lookups) |
 | Link y QR | `qr.view` (the QR card inside Resumen; no section of its own) |
-| Reportes | `stats.view` |
+| Reportes | `stats.view`, plus three levels: general `stats.amounts` (see $ amounts) and `stats.export` (CSV); filters `stats.f.date`, `stats.f.shift`, `stats.f.fulfillment`, `stats.f.payment`, `stats.f.source`, `stats.f.courier`; tabs `stats.tab.evolution`, `stats.tab.billing`, `stats.tab.sales`, `stats.tab.couriers`, `stats.tab.cash`; and the blocks `stats.w.<tab>.<block>` (34 in the catalog). A block needs its tab and the tab needs `stats.view`; `effectivePermissions` drops a block whose chain is incomplete |
 
-Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given. "Mis repartos" (`/api/deliveries/*`, admin `/mis-repartos`) is not a permission either: it follows the `is_courier` mark, so the same member keeps its role's sections and gains the courier one.
+Reads need the `.view` key and writes the sub-permission; `GET /api/restaurants/me/settings`, `/hours`, `/location` and `/delivery-zones` need `store.view`. "Usuarios" (`/api/members`, `/api/roles`) and "Plan y pagos" (`PUT /api/restaurants/me/plan`) are owner only: they are not permissions anyone can be given. "Mis repartos" (`/api/deliveries/*`, admin `/mis-repartos`) is not a permission either: it follows the `is_courier` mark, so the same member keeps its role's sections and gains the courier one. Reports has a third level: the 47 keys below `stats.view` are declared in `packages/shared/src/report-permissions.ts`, migration `0017` gives them to every role that already had `stats.view`, and new roles start without them. The same tree feeds the roles editor and Usuarios › Reportes › "Configurar vista por rol" (`/reportes/configurar`), which previews a role's page and saves the draft through `PATCH /api/roles/:id`.
 
 New error codes (body `{"error": {"code", "message", ...}}`):
 
@@ -195,6 +197,7 @@ New error codes (body `{"error": {"code", "message", ...}}`):
 | `CASH_SESSION_NOT_FOUND`, `CASH_MOVEMENT_NOT_FOUND` | 404 | Unknown cash or movement id, or one of another restaurant |
 | `NOT_A_COURIER` | 403 | A member without the `is_courier` mark called an `/api/deliveries/*` route |
 | `MEMBER_HAS_HISTORY` | 409 | Deleting a member with orders assigned; deactivate it instead |
+| `INVALID_REPORT_RANGE` | 400 | A reports range with `from` after `to` or longer than 366 days |
 
 A user who is already a member also gets 409 `ALREADY_HAS_RESTAURANT` on `POST /api/restaurants`. Accounts created by the owner go through `apps/api/src/auth-admin.ts` (Better Auth's internal adapter): verified email, hashed password, no email sent. API error messages are in Spanish.
 
@@ -211,7 +214,7 @@ A user who is already a member also gets 409 `ALREADY_HAS_RESTAURANT` on `POST /
 
 Plan limits live only in `packages/shared/src/plans.ts` (`PLAN_LIMITS`, `planLimitsFor`); unknown plans get Basic. Basic: up to 40 products, product photos included. Pro: unlimited products. One photo per product on every plan; no category limit. Only creating products is limited (403 `PLAN_LIMIT`): a restaurant above the limit keeps, edits, moves and deletes its products.
 
-Plan flags (`PlanLimits`): `maxProducts` (Basic 40, Pro unlimited), `productPhotos` (both plans), `customIngredients` and `customColors` (both `false` on Basic, `true` on Pro), `cashRegister` (`true` on both plans; turning it off makes every `/api/cash-sessions/*` route answer 403 `PLAN_FEATURE`). `customColors` gates the menu's background and primary colors (see "Menu theme"); cover, description and the featured category have no plan limit. Customizable ingredients are a Pro feature: writing them without the flag answers 403 `PLAN_FEATURE` and changes nothing, while reading is open to every plan. A downgrade never deletes them: the admin shows the saved list read-only inside the locked "Ingredientes" section until the account is Pro again. The admin and the API read the flag from `planLimitsFor(plan)`, never from `plan === "pro"`. In the product editor, Basic accounts see "Ingredientes" and "Extras y variantes" greyed out with the PRO badge and a "Ver plan Pro" link (`ProLock`); "Extras y variantes" is a "Próximamente" placeholder on every plan (no data, no API).
+Plan flags (`PlanLimits`): `maxProducts` (Basic 40, Pro unlimited), `productPhotos` (both plans), `customIngredients` and `customColors` (both `false` on Basic, `true` on Pro), `cashRegister` (`true` on both plans; turning it off makes every `/api/cash-sessions/*` route answer 403 `PLAN_FEATURE`) and `reports` (`false` on Basic, `true` on Pro; every `/api/reports/*` route answers 403 `PLAN_FEATURE` without it). `customColors` gates the menu's background and primary colors (see "Menu theme"); cover, description and the featured category have no plan limit. Customizable ingredients are a Pro feature: writing them without the flag answers 403 `PLAN_FEATURE` and changes nothing, while reading is open to every plan. A downgrade never deletes them: the admin shows the saved list read-only inside the locked "Ingredientes" section until the account is Pro again. The admin and the API read the flag from `planLimitsFor(plan)`, never from `plan === "pro"`. In the product editor, Basic accounts see "Ingredientes" and "Extras y variantes" greyed out with the PRO badge and a "Ver plan Pro" link (`ProLock`); "Extras y variantes" is a "Próximamente" placeholder on every plan (no data, no API).
 
 
 ### Order flow and lifecycle
@@ -249,7 +252,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/local` | Mi local |
 | `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
-| `/reportes` | Reportes: "Próximamente" placeholder |
+| `/reportes`, `/reportes/configurar` | Reportes (Pro): Evolución with filters, indicators, income statement, pace, chart, heatmap, movers, payment methods and recurring customers; the owner configures what each role sees and previews it. The other tabs come in 16b/16c; Campañas is gray |
 
 Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
 
