@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { EvolutionReport, ReportFilters, ReportMeta } from "@menucito/shared";
+import type { BillingReport, EvolutionReport, ReportFilters, ReportMeta, SalesReport } from "@menucito/shared";
 import { api } from "./restaurant";
 
 export const REPORTS_KEY = ["reports"] as const;
@@ -26,6 +26,24 @@ export function useEvolutionReport(filters: ReportFilters, enabled = true) {
   return useQuery({
     queryKey: [...REPORTS_KEY, "evolution", filters],
     queryFn: () => api<EvolutionReport>(`/api/reports/evolution?${reportQueryString(filters)}`),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useBillingReport(filters: ReportFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...REPORTS_KEY, "billing", filters],
+    queryFn: () => api<BillingReport>(`/api/reports/billing?${reportQueryString(filters)}`),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useSalesReport(filters: ReportFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...REPORTS_KEY, "sales", filters],
+    queryFn: () => api<SalesReport>(`/api/reports/sales?${reportQueryString(filters)}`),
     enabled,
     staleTime: 60_000,
   });

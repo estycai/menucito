@@ -4,6 +4,8 @@ import { ComingSoon } from "@/components/ComingSoon";
 import { ProLock } from "@/components/ProLock";
 import { QueryError } from "@/components/QueryError";
 import { EvolutionTab } from "@/components/reports/EvolutionTab";
+import { BillingTab } from "@/components/reports/billing/BillingTab";
+import { SalesTab } from "@/components/reports/sales/SalesTab";
 import { ReportFilters } from "@/components/reports/ReportFilters";
 import { ReportTabs } from "@/components/reports/ReportTabs";
 import { Button } from "@/components/ui/button";
@@ -11,11 +13,14 @@ import { useAccess } from "@/lib/access";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
 import { filtersFromSearch, searchWithFilters, searchWithTab, tabFromSearch, withDefaultRange } from "@/lib/report-filters";
 import { filtersForAccess, visibleFilters, visibleTabs } from "@/lib/report-access";
-import { useEvolutionReport, useReportMeta } from "@/lib/reports";
+import { useBillingReport, useEvolutionReport, useReportMeta, useSalesReport } from "@/lib/reports";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
-/** Tabs that already have a screen; 16b and 16c add the rest (their keys exist in the catalog). */
-const IMPLEMENTED_TABS = [{ key: "stats.tab.evolution", label: "Evolución" }] as const;
+const IMPLEMENTED_TABS = [
+  { key: "stats.tab.evolution", label: "Evolución" },
+  { key: "stats.tab.billing", label: "Facturación" },
+  { key: "stats.tab.sales", label: "Ventas" },
+] as const;
 
 export function ReportsPage() {
   useDocumentTitle("Reportes");
@@ -34,7 +39,11 @@ export function ReportsPage() {
   // A filter the role lacks is neither shown, nor counted, nor sent (the API ignores it too).
   const urlFilters = filtersFromSearch(search);
   const filters = withDefaultRange(access ? filtersForAccess(access, urlFilters) : urlFilters, canSeeDate, new Date());
-  const report = useEvolutionReport(filters, Boolean(access) && !planLocked && active === "stats.tab.evolution");
+  const enabled = Boolean(access) && !planLocked;
+  const evolution = useEvolutionReport(filters, enabled && active === "stats.tab.evolution");
+  const billing = useBillingReport(filters, enabled && active === "stats.tab.billing");
+  const sales = useSalesReport(filters, enabled && active === "stats.tab.sales");
+  const report = active === "stats.tab.billing" ? billing : active === "stats.tab.sales" ? sales : evolution;
 
   const onFiltersChange = (next: typeof filters) => setParams(searchWithFilters(search, next), { replace: true });
   const onTabSelect = (key: string) => setParams(searchWithTab(search, key));
@@ -91,9 +100,13 @@ export function ReportsPage() {
             )
           ) : report.isPending || !report.data ? (
             <ReportSkeleton />
-          ) : (
-            <EvolutionTab data={report.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
-          )}
+          ) : active === "stats.tab.billing" && billing.data ? (
+            <BillingTab data={billing.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
+          ) : active === "stats.tab.sales" && sales.data ? (
+            <SalesTab data={sales.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
+          ) : evolution.data ? (
+            <EvolutionTab data={evolution.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
+          ) : null}
         </>
       )}
     </div>

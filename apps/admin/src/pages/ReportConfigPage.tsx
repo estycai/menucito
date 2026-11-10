@@ -17,12 +17,16 @@ import { ProLock } from "@/components/ProLock";
 import { Modal } from "@/components/Modal";
 import { QueryError } from "@/components/QueryError";
 import { EvolutionTab } from "@/components/reports/EvolutionTab";
+import { BillingTab } from "@/components/reports/billing/BillingTab";
+import { SalesTab } from "@/components/reports/sales/SalesTab";
 import { ReportFilters as ReportFiltersBar } from "@/components/reports/ReportFilters";
 import { ReportTabs } from "@/components/reports/ReportTabs";
 import { Switch } from "@/components/ui/switch";
 import { useMyRestaurant } from "@/lib/restaurant";
 import {
+  clipBillingReport,
   clipEvolutionReport,
+  clipSalesReport,
   filtersForAccess,
   reportViewSummary,
   simulatedAccess,
@@ -30,12 +34,16 @@ import {
   visibleFilters,
   visibleTabs,
 } from "@/lib/report-access";
-import { useEvolutionReport, useReportMeta } from "@/lib/reports";
+import { useBillingReport, useEvolutionReport, useReportMeta, useSalesReport } from "@/lib/reports";
 import { useRoles, useUpdateRole } from "@/lib/roles";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { cn } from "@/lib/utils";
 
-const PREVIEW_TABS = [{ key: "stats.tab.evolution", label: "Evolución" }] as const;
+const PREVIEW_TABS = [
+  { key: "stats.tab.evolution", label: "Evolución" },
+  { key: "stats.tab.billing", label: "Facturación" },
+  { key: "stats.tab.sales", label: "Ventas" },
+] as const;
 
 const GENERAL_HELP: Record<string, string> = {
   "stats.amounts": "Apagado: ve solo cantidades (pedidos, unidades, %).",
@@ -90,6 +98,7 @@ export function ReportConfigPage() {
 
   const [draftState, setDraftState] = useState<{ roleId: string; permissions: PermissionKey[] } | null>(null);
   const [blockTab, setBlockTab] = useState<ReportTabKey>("stats.tab.evolution");
+  const [previewTab, setPreviewTab] = useState<ReportTabKey>("stats.tab.evolution");
   const [confirm, setConfirm] = useState<ConfirmAction | null>(null);
   const [previewFilters, setPreviewFilters] = useState<ReportFilters>(() => {
     const range = presetRange("7d", new Date());
@@ -108,9 +117,15 @@ export function ReportConfigPage() {
   const previewTabs = simulated ? visibleTabs(simulated).filter((key) => PREVIEW_TABS.some((tab) => tab.key === key)) : [];
   const previewAvailableFilters = simulated ? visibleFilters(simulated) : [];
   const previewCanSeeDate = previewAvailableFilters.includes("stats.f.date");
-  const previewEvolution = previewTabs.includes("stats.tab.evolution");
+  const activePreviewTab = previewTabs.includes(previewTab) ? previewTab : previewTabs[0];
+  const previewEvolution = activePreviewTab === "stats.tab.evolution";
+  const previewBilling = activePreviewTab === "stats.tab.billing";
+  const previewSales = activePreviewTab === "stats.tab.sales";
   const previewQueryFilters = simulated ? filtersForAccess(simulated, previewFilters) : previewFilters;
-  const report = useEvolutionReport(previewQueryFilters, !planLocked && previewEvolution);
+  const evolutionQuery = useEvolutionReport(previewQueryFilters, !planLocked && previewEvolution);
+  const billingQuery = useBillingReport(previewQueryFilters, !planLocked && previewBilling);
+  const salesQuery = useSalesReport(previewQueryFilters, !planLocked && previewSales);
+  const report = previewBilling ? billingQuery : previewSales ? salesQuery : evolutionQuery;
 
   // Warn on reload or tab close while there are unsaved changes.
   useEffect(() => {
@@ -399,25 +414,33 @@ export function ReportConfigPage() {
           meta={meta.data}
           compact
         />
-        <ReportTabs tabs={PREVIEW_TABS.filter((tab) => previewTabs.includes(tab.key))} active="stats.tab.evolution" onSelect={() => {}} />
-        {!previewEvolution ? (
+        <ReportTabs
+          tabs={PREVIEW_TABS.filter((tab) => previewTabs.includes(tab.key))}
+          active={activePreviewTab ?? ""}
+          onSelect={(key) => setPreviewTab(key as ReportTabKey)}
+        />
+        {!activePreviewTab ? (
           <section className="rounded-2xl border border-line bg-white p-8 text-center text-sm text-muted">
             {previewTabs.length === 0 && visibleTabs(simulated).length > 0
-              ? "Las pestañas que ve este rol todavía no tienen pantalla (llegan con Facturación, Ventas, Repartidores y Arqueos)."
+              ? "Las pestañas que ve este rol todavía no tienen pantalla (Repartidores y Arqueos llegan pronto)."
               : "Con este borrador, el rol no ve ninguna pestaña de Reportes."}
           </section>
         ) : report.isError ? (
           <QueryError message="No pudimos cargar la vista previa." onRetry={() => void report.refetch()} retrying={report.isRefetching} />
         ) : report.isPending || !report.data ? (
           <div className="h-64 animate-pulse rounded-2xl bg-line-soft" aria-label="Cargando la vista previa" />
-        ) : (
+        ) : previewBilling && billingQuery.data ? (
+          <BillingTab data={clipBillingReport(billingQuery.data, simulated)} access={simulated} canSeeDate={previewCanSeeDate} onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })} />
+        ) : previewSales && salesQuery.data ? (
+          <SalesTab data={clipSalesReport(salesQuery.data, simulated)} access={simulated} canSeeDate={previewCanSeeDate} onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })} />
+        ) : evolutionQuery.data ? (
           <EvolutionTab
-            data={clipEvolutionReport(report.data, simulated)}
+            data={clipEvolutionReport(evolutionQuery.data, simulated)}
             access={simulated}
             onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })}
             canSeeDate={previewCanSeeDate}
           />
-        )}
+        ) : null}
       </section>
 
       {confirm && (

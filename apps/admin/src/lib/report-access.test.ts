@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { Access, EvolutionReport, PermissionKey } from "@menucito/shared";
+import type { Access, BillingReport, EvolutionReport, PermissionKey, SalesReport } from "@menucito/shared";
 import {
   canExport,
   canSeeAmounts,
+  clipBillingReport,
   clipEvolutionReport,
+  clipSalesReport,
   filtersForAccess,
   reportViewSummary,
   simulatedAccess,
@@ -128,5 +130,64 @@ describe("toggleReportView (Configurar vista eyes)", () => {
       widgets: { on: 1, total: 13 },
     });
     expect(reportViewSummary(["stats.view"], "stats.tab.evolution").widgets.on).toBe(0);
+  });
+});
+
+describe("clipBillingReport and clipSalesReport (Configurar vista preview)", () => {
+  const range = { from: "2026-06-01", to: "2026-06-30" };
+  const billing: BillingReport = {
+    range,
+    hasActivity: true,
+    widgets: {
+      total: {
+        billedCents: 100_000,
+        orders: 3,
+        rows: [
+          { method: "cash", orders: 2, billedCents: 30_000, percent: 30 },
+          { method: "transfer", orders: 2, billedCents: 70_000, percent: 70 },
+        ],
+      },
+      source: [
+        { source: "web", orders: 3, ticketCents: 10_000, billedCents: 90_000, percent: 90 },
+        { source: "local", orders: 1, ticketCents: 10_000, billedCents: 10_000, percent: 10 },
+        { source: "whatsapp", orders: 0, ticketCents: 0, billedCents: 0, percent: 0 },
+      ],
+    },
+  };
+  const sales: SalesReport = {
+    range,
+    hasActivity: true,
+    widgets: {
+      top: { byUnits: [{ name: "Pizza", units: 3, revenueCents: 30_000 }], byRevenue: [{ name: "Pizza", units: 3, revenueCents: 30_000 }] },
+      categories: {
+        rows: [
+          { category: "Pizzas", products: 1, units: 1, revenueCents: 90_000, percent: 90 },
+          { category: "Bebidas", products: 1, units: 3, revenueCents: 10_000, percent: 10 },
+        ],
+        total: { category: "Total", products: 2, units: 4, revenueCents: 100_000, percent: 100 },
+      },
+      products: [],
+    },
+  };
+
+  it("keeps only the role's blocks and, without amounts, percentages over orders and no cents", () => {
+    const role = access(["stats.view", "stats.tab.billing", "stats.w.billing.total"]);
+    const clipped = clipBillingReport(billing, role);
+    expect(Object.keys(clipped.widgets)).toEqual(["total"]);
+    expect(clipped.widgets.total?.rows.map((row) => row.percent)).toEqual([50, 50]);
+    expect(JSON.stringify(clipped)).not.toContain("Cents");
+    expect(clipped.hasActivity).toBe(true);
+  });
+
+  it("drops the revenue order and ranks the categories by units without amounts", () => {
+    const role = access(["stats.view", "stats.tab.sales", "stats.w.sales.top", "stats.w.sales.categories"]);
+    const clipped = clipSalesReport(sales, role);
+    expect(clipped.widgets.top?.byRevenue).toBeUndefined();
+    expect(clipped.widgets.categories?.rows.map((row) => [row.category, row.percent])).toEqual([
+      ["Bebidas", 75],
+      ["Pizzas", 25],
+    ]);
+    expect(clipped.widgets.products).toBeUndefined();
+    expect(JSON.stringify(clipped)).not.toContain("Cents");
   });
 });

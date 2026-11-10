@@ -103,10 +103,10 @@ export interface DonutDatum {
 }
 
 /** Doughnut of the billed amount (or the orders) by payment method. */
-export function DonutChart({ data, money }: { data: DonutDatum[]; money: boolean }) {
+export function DonutChart({ data, money, label = "Distribución por medio de pago" }: { data: DonutDatum[]; money: boolean; label?: string }) {
   const colors = [PRIMARY, INFO];
   return (
-    <div role="img" aria-label="Distribución por medio de pago">
+    <div role="img" aria-label={label}>
       <ResponsiveContainer width="100%" height={220}>
         <PieChart>
           <Pie data={data} dataKey="value" nameKey="name" innerRadius={55} outerRadius={85} paddingAngle={2}>

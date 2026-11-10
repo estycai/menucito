@@ -6,6 +6,8 @@ import {
   percentage,
   withoutCents,
   type Access,
+  type BillingReport,
+  type BillingWidgets,
   type EvolutionReport,
   type EvolutionWidgets,
   type PermissionKey,
@@ -13,6 +15,8 @@ import {
   type ReportFilters,
   type ReportTabKey,
   type Role,
+  type SalesReport,
+  type SalesWidgets,
 } from "@menucito/shared";
 
 /**
@@ -82,6 +86,56 @@ export function clipEvolutionReport(report: EvolutionReport, access: Access): Ev
     };
   }
   return { ...report, widgets: canSeeAmounts(access) ? widgets : withoutCents(widgets) };
+}
+
+/** The owner's Billing report clipped to `access`, for the "Configurar vista" preview. */
+export function clipBillingReport(report: BillingReport, access: Access): BillingReport {
+  const allowed = new Set(visibleWidgets(access, "stats.tab.billing"));
+  const amounts = canSeeAmounts(access);
+  const widgets: BillingWidgets = {};
+  const total = report.widgets.total;
+  if (allowed.has("stats.w.billing.total") && total) {
+    const orders = total.rows.reduce((sum, row) => sum + row.orders, 0);
+    widgets.total = {
+      ...total,
+      rows: total.rows.map((row) => ({ ...row, percent: amounts ? row.percent : percentage(row.orders, orders) })),
+    };
+  }
+  if (allowed.has("stats.w.billing.orders_total")) widgets.orders_total = report.widgets.orders_total;
+  if (allowed.has("stats.w.billing.delivery")) widgets.delivery = report.widgets.delivery;
+  if (allowed.has("stats.w.billing.takeaway")) widgets.takeaway = report.widgets.takeaway;
+  const source = report.widgets.source;
+  if (allowed.has("stats.w.billing.source") && source) {
+    const orders = source.reduce((sum, row) => sum + row.orders, 0);
+    widgets.source = source.map((row) => ({ ...row, percent: amounts ? row.percent : percentage(row.orders, orders) }));
+  }
+  return { ...report, widgets: amounts ? widgets : withoutCents(widgets) };
+}
+
+/** The owner's Sales report clipped to `access`, for the "Configurar vista" preview. */
+export function clipSalesReport(report: SalesReport, access: Access): SalesReport {
+  const allowed = new Set(visibleWidgets(access, "stats.tab.sales"));
+  const amounts = canSeeAmounts(access);
+  const widgets: SalesWidgets = {};
+  if (allowed.has("stats.w.sales.top") && report.widgets.top) {
+    widgets.top = amounts ? report.widgets.top : { byUnits: report.widgets.top.byUnits };
+  }
+  if (allowed.has("stats.w.sales.categories") && report.widgets.categories) {
+    const units = report.widgets.categories.rows.reduce((sum, row) => sum + row.units, 0);
+    widgets.categories = {
+      total: report.widgets.categories.total,
+      rows: report.widgets.categories.rows
+        .map((row) => ({ ...row, percent: amounts ? row.percent : percentage(row.units, units) }))
+        .sort((a, b) =>
+          amounts
+            ? (b.revenueCents ?? 0) - (a.revenueCents ?? 0) || a.category.localeCompare(b.category)
+            : b.units - a.units || a.category.localeCompare(b.category),
+        ),
+    };
+  }
+  if (allowed.has("stats.w.sales.products")) widgets.products = report.widgets.products;
+  if (allowed.has("stats.w.sales.addons")) widgets.addons = report.widgets.addons;
+  return { ...report, widgets: amounts ? widgets : withoutCents(widgets) };
 }
 
 /** A role as an `Access`, with `draft` as its permissions and an active role: the preview of Configurar vista. */
