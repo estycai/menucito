@@ -83,8 +83,17 @@ export function createRolesRepository(d1: D1Database): RolesRepository {
 
   type BatchStatement = Parameters<typeof db.batch>[0][number];
 
-  const permissionRows = (roleId: string, permissions: readonly string[]) =>
-    permissions.map((permission) => ({ roleId, permission }));
+  /** D1 caps bound parameters per statement at 100; one permission row is two of them. */
+  const PERMISSION_ROWS_PER_STATEMENT = 40;
+
+  const permissionStatements = (roleId: string, permissions: readonly string[]): BatchStatement[] => {
+    const rows = permissions.map((permission) => ({ roleId, permission }));
+    const statements: BatchStatement[] = [];
+    for (let start = 0; start < rows.length; start += PERMISSION_ROWS_PER_STATEMENT) {
+      statements.push(db.insert(rolePermissions).values(rows.slice(start, start + PERMISSION_ROWS_PER_STATEMENT)));
+    }
+    return statements;
+  };
 
   return {
     list: (restaurantId) => load(restaurantId),
@@ -92,9 +101,7 @@ export function createRolesRepository(d1: D1Database): RolesRepository {
     find,
 
     async insert(row, permissions) {
-      const statements: BatchStatement[] = [db.insert(roles).values(row)];
-      const rows = permissionRows(row.id, permissions);
-      if (rows.length > 0) statements.push(db.insert(rolePermissions).values(rows));
+      const statements: BatchStatement[] = [db.insert(roles).values(row), ...permissionStatements(row.id, permissions)];
       await translatingUniqueViolations(() => db.batch(statements as [BatchStatement, ...BatchStatement[]]));
       const inserted = await find(row.restaurantId, row.id);
       if (!inserted) throw new Error("Role disappeared right after insert");
@@ -112,8 +119,7 @@ export function createRolesRepository(d1: D1Database): RolesRepository {
       ];
       if (permissions !== undefined) {
         statements.push(db.delete(rolePermissions).where(eq(rolePermissions.roleId, id)));
-        const rows = permissionRows(id, permissions);
-        if (rows.length > 0) statements.push(db.insert(rolePermissions).values(rows));
+        statements.push(...permissionStatements(id, permissions));
       }
       await translatingUniqueViolations(() => db.batch(statements as [BatchStatement, ...BatchStatement[]]));
       return find(restaurantId, id);

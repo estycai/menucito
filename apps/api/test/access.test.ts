@@ -107,7 +107,12 @@ describe("a permission per route (scenarios 11 and 12)", () => {
       const { client } = await staffClient({ owner, permissions: key === section ? [key] : [section, key] });
       for (const route of routes) {
         const res = await call(client, route);
-        expect(res.status, `${route.method} ${route.pattern} with ${key}`).not.toBe(403);
+        // Reports is Pro-only: a Free local answers 403 PLAN_FEATURE after the guard lets it through.
+        if (route.pattern.startsWith("/api/reports/") && res.status === 403) {
+          expect(await errorCode(res), `${route.method} ${route.pattern}`).toBe("PLAN_FEATURE");
+        } else {
+          expect(res.status, `${route.method} ${route.pattern} with ${key}`).not.toBe(403);
+        }
       }
     }
   });

@@ -100,6 +100,9 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("POST", "/api/roles", "owner"),
   route("PATCH", "/api/roles/:id", "owner"),
   route("DELETE", "/api/roles/:id", "owner"),
+
+  route("GET", "/api/reports/meta", "stats.view"),
+  route("GET", "/api/reports/evolution", "stats.tab.evolution"),
 ];
 
 /**

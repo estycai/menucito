@@ -531,6 +531,7 @@ describe("plan limits", () => {
         customIngredients: false,
         customColors: false,
         cashRegister: true,
+        reports: false,
       }),
     });
     const upload = { bytes: webpBytes().buffer as ArrayBuffer, contentType: "image/webp" };
@@ -830,6 +831,7 @@ describe("PUT /api/products/:id/ingredients (scenarios 4, 6, 7)", () => {
         customIngredients: false,
         customColors: false,
         cashRegister: true,
+        reports: false,
       }),
     });
     await expect(service.replaceIngredients(restaurantId, product.id, [ingredient("Bacon")])).rejects.toBeInstanceOf(PlanFeatureError);

@@ -11,6 +11,7 @@ import { orderMessagesRoutes } from "./routes/order-messages";
 import { ordersRoutes } from "./routes/orders";
 import { productsRoutes } from "./routes/products";
 import { publicRoutes } from "./routes/public";
+import { reportsRoutes } from "./routes/reports";
 import { restaurantsRoutes } from "./routes/restaurants";
 import { rolesRoutes } from "./routes/roles";
 
@@ -40,6 +41,7 @@ app.route("/api/couriers", couriersRoutes);
 app.route("/api/deliveries", deliveriesRoutes);
 app.route("/api/members", membersRoutes);
 app.route("/api/roles", rolesRoutes);
+app.route("/api/reports", reportsRoutes);
 app.route("/api/public", publicRoutes);
 
 export default app;

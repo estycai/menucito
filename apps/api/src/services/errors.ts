@@ -22,6 +22,11 @@ export class ValidationError extends DomainError {
   readonly code = "VALIDATION_ERROR";
 }
 
+/** The date range of a report is invalid (more than a year, or from after to). */
+export class ReportRangeError extends DomainError {
+  readonly code = "INVALID_REPORT_RANGE";
+}
+
 export class StorePausedError extends DomainError {
   readonly code = "STORE_PAUSED";
   constructor(message = "Este local no está recibiendo pedidos por ahora") {
