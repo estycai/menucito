@@ -146,10 +146,12 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `POST /api/roles` | Owner only. Body `{name (1-40), permissions}`; unknown keys are dropped, a permission without its parent key (a block without its tab, a tab without `stats.view`) is rejected. 201 role, 409 `ROLE_NAME_TAKEN` (case-insensitive, per restaurant), 422 |
 | `PATCH /api/roles/:id` | Owner only. Body with any of `{name, permissions, active}`; the permissions are replaced as a whole in one D1 batch and take effect on the member's next request. 200 role, 404 `ROLE_NOT_FOUND`, 409 `SYSTEM_ROLE` / `ROLE_NAME_TAKEN`, 422 |
 | `DELETE /api/roles/:id` | Owner only. 204, 404, 409 `SYSTEM_ROLE`, 409 `ROLE_IN_USE` with `error.memberCount` |
-| `GET /api/reports/meta` | `stats.view`. 200 `{shifts, couriers, delivery, takeaway}`: the distinct opening slots with their label (for the Turno filter), the active couriers and whether the local delivers and/or has take away. 403 `PLAN_FEATURE` on a plan without `reports` |
+| `GET /api/reports/meta` | `stats.view`. 200 `{shifts, couriers, delivery, takeaway}`: the distinct opening slots with their label (for the Turno filter), the members marked as couriers plus those with deliveries in the last year, and whether the local delivers and/or has take away. 403 `PLAN_FEATURE` on a plan without `reports` |
 | `GET /api/reports/evolution` | `stats.tab.evolution`. Query `from`, `to` (`YYYY-MM-DD`, Argentina time; today by default and at most 366 days), `shift`, `fulfillment`, `payment`, `source`, `courier` (empty = all). 200 `{range, previousRange, widgets}` for the Evolución tab (16a); 400 `INVALID_REPORT_RANGE`, 403 `FORBIDDEN` without the tab, 403 `PLAN_FEATURE` without `reports` |
 | `GET /api/reports/billing` | `stats.tab.billing`. Same query and errors. 200 `{range, widgets}` for the Facturación tab (16b): total by payment method, orders by modality, Delivery and Take away by payment method (with a total row) and orders by source. A split order adds its part to each method; a disabled modality without sales is omitted |
 | `GET /api/reports/sales` | `stats.tab.sales`. Same query and errors. 200 `{range, widgets}` for the Ventas tab (16b): Top 10 by units and by revenue, categories with their share, every product sold and the addons paid above what is included. Without `stats.amounts` there are no `*Cents` and no `byRevenue` |
+| `GET /api/reports/couriers` | `stats.tab.couriers`. Same query and errors; `fulfillment` is ignored (the tab is always Delivery). 200 `{range, previousRange, widgets}` for the Repartidores tab (16c): orders, shipping, tips and average delivery time against the previous period, by courier (with the settled cash) and by zone (or a single "Tarifa fija" row). Only delivery sales with an assigned courier count |
+| `GET /api/reports/cash` | `stats.tab.cash`. Same query and errors; only `shift` and `payment` apply (the method filters the method table and the movements, not the indicators). 200 `{range, widgets}` for the Arqueos tab (16c): the open drawer now (whatever the dates), 6 indicators, by shift, by method, the hand-made movements grouped by concept and the session detail. Sessions enter by `opened_at`; without `cash.expected` the expected, the counted, the difference and the cash on hand are removed |
 
 Product: `{id, categoryId, name, description, priceCents, imageUrl, available, ingredients, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado". `ingredients` is the ordered list of customizable ingredients (`[]` when none), returned on every plan by `GET /api/categories` and `GET /api/products/:id`.
 
@@ -167,7 +169,7 @@ Permissions are text keys `<section>.<action>`, defined in `packages/shared/src/
 | --- | --- |
 | Resumen | `summary.view` |
 | Pedidos | `orders.view`, `orders.status` (change status, cancel), `orders.payment` (mark paid or pending), `orders.export` (CSV), `orders.assign` (choose the courier), `orders.create` (load an order by hand), `orders.settings` (messages per status change) |
-| Cajas | `cash.view`, `cash.open`, `cash.movements` (create, edit, void), `cash.close`, `cash.settle` (settle orders, give change), `cash.history` (history and printed arqueo), `cash.expected` (see the expected and the cash totals; without it the close is blind) |
+| Cajas | `cash.view`, `cash.open`, `cash.movements` (create, edit, void), `cash.close`, `cash.settle` (settle orders, give change), `cash.history` (history and printed arqueo), `cash.expected` (see the expected and the cash totals; without it the close is blind, and the Arqueos report hides the expected, the counted, the difference and the cash on hand) |
 | Repartidores | `couriers.view` (daily summary by courier; the page is `/repartidores`) |
 | Mi menú | `menu.view`, `menu.edit` |
 | Mi local | `store.view`, `store.edit` (data, appearance, hours, delivery, payments, pause; also the `/me/places/*` lookups) |
@@ -254,7 +256,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/local` | Mi local |
 | `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
-| `/reportes`, `/reportes/configurar` | Reportes (Pro): Evolución, Facturación (totals by payment method and modality, tables by modality and by source) and Ventas (Top 10, categories, products with search and pages of 20, addons); the owner configures what each role sees and previews the three tabs. Repartidores and Arqueos come in 16c; Campañas is gray |
+| `/reportes`, `/reportes/configurar` | Reportes (Pro): Evolución, Facturación (totals by payment method and modality, tables by modality and by source), Ventas (Top 10, categories, products with search and pages of 20, addons), Repartidores (indicators, by courier with settled cash, by zone) and Arqueos (open drawer now, indicators, by shift, by method, movements and sessions). The owner configures what each role sees and previews the five tabs. Campañas is gray |
 
 Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
 
