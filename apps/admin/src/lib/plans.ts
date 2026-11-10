@@ -60,7 +60,7 @@ export function planComparison(): ComparisonRow[] {
     { label: "Usuarios y roles", free: true, premium: true },
     { label: "Ingredientes personalizables", free: free.customIngredients, premium: premium.customIngredients },
     { label: "Colores propios del menú", free: free.customColors, premium: premium.customColors },
-    { label: "Reportes de ventas", free: false, premium: "soon" },
+    { label: "Reportes de ventas", free: false, premium: true },
     { label: "Stock y recetas", free: false, premium: "soon" },
     { label: "Soporte", free: { text: "Por email" }, premium: { text: "Prioritario" } },
   ];

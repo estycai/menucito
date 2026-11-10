@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { toast } from "sonner";
 import { z } from "zod";
@@ -26,8 +26,17 @@ export function RoleFormDialog({ role, onClose }: { role: Role | null; onClose: 
     register,
     handleSubmit,
     setError,
+    control,
     formState: { errors, isSubmitting },
   } = useForm<NameValues>({ resolver: zodResolver(nameFormSchema), defaultValues: { name: role?.name ?? "" } });
+
+  // The Reports preview link leaves this dialog: offer it only while nothing would be lost.
+  const name = useWatch({ control, name: "name" });
+  const savedPermissions = role?.permissions ?? [];
+  const dirty =
+    name !== (role?.name ?? "") ||
+    permissions.length !== savedPermissions.length ||
+    permissions.some((key) => !savedPermissions.includes(key));
 
   async function onValid({ name }: NameValues) {
     const body = { name: name.trim(), permissions };
@@ -68,7 +77,15 @@ export function RoleFormDialog({ role, onClose }: { role: Role | null; onClose: 
           <p className="m-0 text-xs text-muted">
             Marcá lo que puede ver esta persona. Dentro de cada sección podés elegir también qué puede cambiar.
           </p>
-          <PermissionTree value={permissions} onChange={setPermissions} label="Permisos del rol" />
+          <PermissionTree
+            value={permissions}
+            onChange={setPermissions}
+            label="Permisos del rol"
+            roleId={role && role.active && !dirty ? role.id : undefined}
+          />
+          {role && dirty && permissions.includes("stats.view") && (
+            <p className="m-0 text-xs text-muted">Guardá los cambios para configurar Reportes con vista previa.</p>
+          )}
         </div>
 
         {errors.root?.message && <Notice tone="error">{errors.root.message}</Notice>}

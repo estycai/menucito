@@ -43,6 +43,30 @@ describe("togglePermission", () => {
     togglePermission(selected, "orders.status");
     expect(selected).toEqual(["orders.view"]);
   });
+
+  it("checks the block, its tab and Reportes together", () => {
+    expect(togglePermission([], "stats.w.evolution.billed")).toEqual([
+      "stats.view",
+      "stats.tab.evolution",
+      "stats.w.evolution.billed",
+    ]);
+  });
+
+  it("unchecks the blocks of a tab when the tab is unchecked", () => {
+    const selected: PermissionKey[] = ["stats.view", "stats.tab.evolution", "stats.w.evolution.billed"];
+    expect(togglePermission(selected, "stats.tab.evolution")).toEqual(["stats.view"]);
+  });
+
+  it("unchecks every Reports key when Reportes is unchecked", () => {
+    const selected: PermissionKey[] = [
+      "menu.view",
+      "stats.view",
+      "stats.tab.evolution",
+      "stats.w.evolution.billed",
+      "stats.f.date",
+    ];
+    expect(togglePermission(selected, "stats.view")).toEqual(["menu.view"]);
+  });
 });
 
 describe("sectionState", () => {
@@ -63,5 +87,14 @@ describe("sectionState", () => {
 
   it("reports an unchecked section", () => {
     expect(sectionState([], section("menu.view")).checked).toBe(false);
+  });
+
+  it("counts the 47 keys of Reportes, not its 13 direct ones", () => {
+    expect(sectionState(["stats.view", "stats.tab.evolution", "stats.w.evolution.billed"], section("stats.view"))).toEqual({
+      checked: true,
+      checkedCount: 2,
+      totalCount: 47,
+      summary: "2 de 47",
+    });
   });
 });

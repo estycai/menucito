@@ -1,42 +1,58 @@
-import { PERMISSION_SECTIONS, normalizePermissions, type PermissionKey, type PermissionSection } from "@menucito/shared";
+import {
+  PERMISSION_SECTIONS,
+  childKeysOf,
+  normalizePermissions,
+  parentOf,
+  type PermissionDefinition,
+  type PermissionGroup,
+  type PermissionKey,
+  type PermissionSection,
+} from "@menucito/shared";
+
+/** Every key below `key` (a section's sub-permissions, a tab's blocks). */
+function descendants(key: PermissionKey): PermissionKey[] {
+  return childKeysOf(key).flatMap((child) => [child, ...descendants(child)]);
+}
 
 /**
- * Checking logic of the permission list of a role. The rules (spec 12, decision 2 and scenario 51):
- * a sub-permission only counts with its section, so checking one checks the section and unchecking
- * the section unchecks every sub-permission. The result is always normalized (catalog order).
+ * Checking logic of the permission list of a role. A key counts only with its whole chain, so checking
+ * a block checks its tab and `stats.view`; unchecking a tab or a section takes its children with it.
+ * The result is always normalized (catalog order).
  */
 export function togglePermission(selected: readonly PermissionKey[], key: PermissionKey): PermissionKey[] {
   const next = new Set<string>(selected);
-  const section = PERMISSION_SECTIONS.find(
-    (candidate) => candidate.key === key || candidate.subpermissions.some((sub) => sub.key === key),
-  );
-  if (!section) return normalizePermissions(selected);
-
   if (next.has(key)) {
     next.delete(key);
-    // Unchecking a section takes its sub-permissions with it.
-    if (key === section.key) for (const sub of section.subpermissions) next.delete(sub.key);
+    for (const child of descendants(key)) next.delete(child);
   } else {
     next.add(key);
-    // Checking a sub-permission checks its section.
-    next.add(section.key);
+    let parent = parentOf(key);
+    while (parent) {
+      next.add(parent);
+      parent = parentOf(parent);
+    }
   }
   return normalizePermissions([...next]);
 }
 
 export interface SectionState {
   checked: boolean;
-  /** How many sub-permissions are checked. */
+  /** How many sub-permissions are checked, at every level (a Reports tab and each of its blocks count). */
   checkedCount: number;
   totalCount: number;
-  /** "2 de 3" when some sub-permissions are checked; `null` otherwise (and for sections without any). */
+  /** "27 de 47" when some leaves are checked; `null` otherwise (and for sections without any). */
   summary: string | null;
+}
+
+function sectionKeys(entries: readonly (PermissionDefinition | PermissionGroup)[]): string[] {
+  return entries.flatMap((entry) => [entry.key, ...("children" in entry ? sectionKeys(entry.children) : [])]);
 }
 
 export function sectionState(selected: readonly PermissionKey[], section: PermissionSection): SectionState {
   const chosen = new Set<string>(selected);
-  const checkedCount = section.subpermissions.filter((sub) => chosen.has(sub.key)).length;
-  const totalCount = section.subpermissions.length;
+  const keys = sectionKeys(section.subpermissions);
+  const checkedCount = keys.filter((key) => chosen.has(key)).length;
+  const totalCount = keys.length;
   return {
     checked: chosen.has(section.key),
     checkedCount,
@@ -44,3 +60,9 @@ export function sectionState(selected: readonly PermissionKey[], section: Permis
     summary: totalCount > 0 && checkedCount > 0 ? `${checkedCount} de ${totalCount}` : null,
   };
 }
+
+/** Number of keys of the whole catalog (tabs included), for the tree's total. */
+export const PERMISSION_LEAF_COUNT = PERMISSION_SECTIONS.reduce(
+  (sum, section) => sum + sectionKeys(section.subpermissions).length,
+  0,
+);

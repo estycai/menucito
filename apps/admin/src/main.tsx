@@ -8,7 +8,6 @@ import { CashHistoryPage } from "@/pages/CashHistoryPage";
 import { CashPage } from "@/pages/CashPage";
 import { CashPrintPage } from "@/pages/CashPrintPage";
 import { CashSessionDetailPage } from "@/pages/CashSessionDetailPage";
-import { ComingSoonPage } from "@/pages/ComingSoonPage";
 import { CouriersPage } from "@/pages/CouriersPage";
 import { DeliveriesPage } from "@/pages/DeliveriesPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
@@ -26,6 +25,8 @@ import { OnboardingPage } from "@/pages/OnboardingPage";
 import { OrdersPage } from "@/pages/OrdersPage";
 import { PlanPage } from "@/pages/PlanPage";
 import { ProductEditorPage } from "@/pages/ProductEditorPage";
+import { ReportConfigPage } from "@/pages/ReportConfigPage";
+import { ReportsPage } from "@/pages/ReportsPage";
 import { ResetPasswordPage } from "@/pages/ResetPasswordPage";
 import { SummaryPage } from "@/pages/SummaryPage";
 import { UsersPage, UsersRolesTab, UsersMembersTab } from "@/pages/UsersPage";
@@ -105,9 +106,10 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                   </Route>
                 </Route>
                 <Route element={<RequirePermission permission="stats.view" />}>
-                  <Route path="/reportes" element={<ComingSoonPage id="stats" />} />
+                  <Route path="/reportes" element={<ReportsPage />} />
                 </Route>
                 <Route element={<RequirePermission ownerOnly />}>
+                  <Route path="/reportes/configurar" element={<ReportConfigPage />} />
                   <Route path="/plan" element={<PlanPage />} />
                 </Route>
               </Route>
