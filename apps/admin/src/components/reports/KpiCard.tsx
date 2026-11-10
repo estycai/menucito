@@ -20,6 +20,7 @@ interface KpiCardProps {
  */
 export function KpiCard({ label, value, hint, change, invert = false, secondary }: KpiCardProps) {
   const variation = change ?? null;
+  const showChange = change !== undefined;
   const good = variation !== null && (invert ? variation < 0 : variation > 0);
   const bad = variation !== null && (invert ? variation > 0 : variation < 0);
 
@@ -31,15 +32,17 @@ export function KpiCard({ label, value, hint, change, invert = false, secondary 
       </div>
       <b className="font-display text-[26px] leading-tight font-extrabold break-words tabular-nums">{value}</b>
       {secondary && <span className="text-xs text-muted">{secondary}</span>}
-      <span className="text-xs">
-        {variation === null ? (
-          <span className="text-muted">Sin datos para comparar</span>
-        ) : (
-          <span className={cn("font-bold", good && "text-success", bad && "text-danger", !good && !bad && "text-muted")}>
-            {formatChange(variation)} <span className="font-normal text-muted">vs período anterior</span>
-          </span>
-        )}
-      </span>
+      {showChange && (
+        <span className="text-xs">
+          {variation === null ? (
+            <span className="text-muted">Sin datos para comparar</span>
+          ) : (
+            <span className={cn("font-bold", good && "text-success", bad && "text-danger", !good && !bad && "text-muted")}>
+              {formatChange(variation)} <span className="font-normal text-muted">vs período anterior</span>
+            </span>
+          )}
+        </span>
+      )}
     </article>
   );
 }

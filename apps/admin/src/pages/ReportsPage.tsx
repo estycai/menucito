@@ -5,6 +5,8 @@ import { ProLock } from "@/components/ProLock";
 import { QueryError } from "@/components/QueryError";
 import { EvolutionTab } from "@/components/reports/EvolutionTab";
 import { BillingTab } from "@/components/reports/billing/BillingTab";
+import { CashTab } from "@/components/reports/cash/CashTab";
+import { CouriersTab } from "@/components/reports/couriers/CouriersTab";
 import { SalesTab } from "@/components/reports/sales/SalesTab";
 import { ReportFilters } from "@/components/reports/ReportFilters";
 import { ReportTabs } from "@/components/reports/ReportTabs";
@@ -13,13 +15,15 @@ import { useAccess } from "@/lib/access";
 import { ApiError, useMyRestaurant } from "@/lib/restaurant";
 import { filtersFromSearch, searchWithFilters, searchWithTab, tabFromSearch, withDefaultRange } from "@/lib/report-filters";
 import { filtersForAccess, visibleFilters, visibleTabs } from "@/lib/report-access";
-import { useBillingReport, useEvolutionReport, useReportMeta, useSalesReport } from "@/lib/reports";
+import { useBillingReport, useCashReport, useCouriersReport, useEvolutionReport, useReportMeta, useSalesReport } from "@/lib/reports";
 import { useDocumentTitle } from "@/lib/use-document-title";
 
 const IMPLEMENTED_TABS = [
   { key: "stats.tab.evolution", label: "Evolución" },
   { key: "stats.tab.billing", label: "Facturación" },
   { key: "stats.tab.sales", label: "Ventas" },
+  { key: "stats.tab.couriers", label: "Repartidores" },
+  { key: "stats.tab.cash", label: "Arqueos" },
 ] as const;
 
 export function ReportsPage() {
@@ -43,7 +47,18 @@ export function ReportsPage() {
   const evolution = useEvolutionReport(filters, enabled && active === "stats.tab.evolution");
   const billing = useBillingReport(filters, enabled && active === "stats.tab.billing");
   const sales = useSalesReport(filters, enabled && active === "stats.tab.sales");
-  const report = active === "stats.tab.billing" ? billing : active === "stats.tab.sales" ? sales : evolution;
+  const couriers = useCouriersReport(filters, enabled && active === "stats.tab.couriers");
+  const cash = useCashReport(filters, enabled && active === "stats.tab.cash");
+  const report =
+    active === "stats.tab.billing"
+      ? billing
+      : active === "stats.tab.sales"
+        ? sales
+        : active === "stats.tab.couriers"
+          ? couriers
+          : active === "stats.tab.cash"
+            ? cash
+            : evolution;
 
   const onFiltersChange = (next: typeof filters) => setParams(searchWithFilters(search, next), { replace: true });
   const onTabSelect = (key: string) => setParams(searchWithTab(search, key));
@@ -85,6 +100,8 @@ export function ReportsPage() {
             available={availableFilters}
             canSeeDate={canSeeDate}
             meta={meta.data}
+            tab={active}
+            note={active === "stats.tab.couriers" ? "En esta pestaña la modalidad queda en Delivery." : undefined}
           />
 
           {report.isError ? (
@@ -104,6 +121,17 @@ export function ReportsPage() {
             <BillingTab data={billing.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
           ) : active === "stats.tab.sales" && sales.data ? (
             <SalesTab data={sales.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
+          ) : active === "stats.tab.couriers" && couriers.data ? (
+            <CouriersTab data={couriers.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
+          ) : active === "stats.tab.cash" && cash.data ? (
+            <CashTab
+              data={cash.data}
+              access={access!}
+              onLast7Days={onLast7Days}
+              canSeeDate={canSeeDate}
+              onRefresh={() => void cash.refetch()}
+              refreshing={cash.isRefetching}
+            />
           ) : evolution.data ? (
             <EvolutionTab data={evolution.data} access={access!} onLast7Days={onLast7Days} canSeeDate={canSeeDate} />
           ) : null}

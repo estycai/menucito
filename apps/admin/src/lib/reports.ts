@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { BillingReport, EvolutionReport, ReportFilters, ReportMeta, SalesReport } from "@menucito/shared";
+import type { BillingReport, CashReport, CouriersReport, EvolutionReport, ReportFilters, ReportMeta, SalesReport } from "@menucito/shared";
 import { api } from "./restaurant";
 
 export const REPORTS_KEY = ["reports"] as const;
@@ -44,6 +44,24 @@ export function useSalesReport(filters: ReportFilters, enabled = true) {
   return useQuery({
     queryKey: [...REPORTS_KEY, "sales", filters],
     queryFn: () => api<SalesReport>(`/api/reports/sales?${reportQueryString(filters)}`),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useCouriersReport(filters: ReportFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...REPORTS_KEY, "couriers", filters],
+    queryFn: () => api<CouriersReport>(`/api/reports/couriers?${reportQueryString(filters)}`),
+    enabled,
+    staleTime: 60_000,
+  });
+}
+
+export function useCashReport(filters: ReportFilters, enabled = true) {
+  return useQuery({
+    queryKey: [...REPORTS_KEY, "cash", filters],
+    queryFn: () => api<CashReport>(`/api/reports/cash?${reportQueryString(filters)}`),
     enabled,
     staleTime: 60_000,
   });
@@ -101,11 +119,13 @@ export function downloadCsv(fileName: string, content: string) {
 const moneyFormat = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 const numberFormat = new Intl.NumberFormat("es-AR");
 const percentFormat = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
+const decimalFormat = new Intl.NumberFormat("es-AR", { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 
 /** "$ 3.679.400" */
 export const formatMoney = (cents: number) => moneyFormat.format(cents / 100).replace(/\u00a0/g, " ");
 export const formatCount = (value: number) => numberFormat.format(value);
 export const formatPercent = (value: number) => `${percentFormat.format(value)}%`;
+export const formatDecimal = (value: number) => decimalFormat.format(value);
 export const formatChange = (value: number | null) =>
   value === null ? null : `${value > 0 ? "+" : ""}${percentFormat.format(value)}%`;
 /** "$ 320.000" with a non-breaking space, so a chart axis keeps it on one line. */

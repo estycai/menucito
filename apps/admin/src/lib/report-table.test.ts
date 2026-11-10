@@ -36,6 +36,15 @@ describe("sortReportRows", () => {
   });
 });
 
+describe("sortReportRows with empty values", () => {
+  it("keeps the rows without data last in both directions", () => {
+    const rows = [{ m: 12.5 }, { m: "" as const }, { m: 9.5 }, { m: 30 }];
+    const columns = [{ key: "m", kind: "count" as const, value: (row: { m: number | "" }) => row.m }];
+    expect(sortReportRows(rows, columns, { key: "m", direction: "asc" }).map((row) => row.m)).toEqual([9.5, 12.5, 30, ""]);
+    expect(sortReportRows(rows, columns, { key: "m", direction: "desc" }).map((row) => row.m)).toEqual([30, 12.5, 9.5, ""]);
+  });
+});
+
 describe("nextSort", () => {
   it("starts numbers from the biggest and text from A, and flips on a second tap", () => {
     expect(nextSort(null, "units", "count")).toEqual({ key: "units", direction: "desc" });

@@ -18,6 +18,8 @@ import { Modal } from "@/components/Modal";
 import { QueryError } from "@/components/QueryError";
 import { EvolutionTab } from "@/components/reports/EvolutionTab";
 import { BillingTab } from "@/components/reports/billing/BillingTab";
+import { CashTab } from "@/components/reports/cash/CashTab";
+import { CouriersTab } from "@/components/reports/couriers/CouriersTab";
 import { SalesTab } from "@/components/reports/sales/SalesTab";
 import { ReportFilters as ReportFiltersBar } from "@/components/reports/ReportFilters";
 import { ReportTabs } from "@/components/reports/ReportTabs";
@@ -25,6 +27,8 @@ import { Switch } from "@/components/ui/switch";
 import { useMyRestaurant } from "@/lib/restaurant";
 import {
   clipBillingReport,
+  clipCashReport,
+  clipCouriersReport,
   clipEvolutionReport,
   clipSalesReport,
   filtersForAccess,
@@ -34,7 +38,14 @@ import {
   visibleFilters,
   visibleTabs,
 } from "@/lib/report-access";
-import { useBillingReport, useEvolutionReport, useReportMeta, useSalesReport } from "@/lib/reports";
+import {
+  useBillingReport,
+  useCashReport,
+  useCouriersReport,
+  useEvolutionReport,
+  useReportMeta,
+  useSalesReport,
+} from "@/lib/reports";
 import { useRoles, useUpdateRole } from "@/lib/roles";
 import { useDocumentTitle } from "@/lib/use-document-title";
 import { cn } from "@/lib/utils";
@@ -43,6 +54,8 @@ const PREVIEW_TABS = [
   { key: "stats.tab.evolution", label: "Evolución" },
   { key: "stats.tab.billing", label: "Facturación" },
   { key: "stats.tab.sales", label: "Ventas" },
+  { key: "stats.tab.couriers", label: "Repartidores" },
+  { key: "stats.tab.cash", label: "Arqueos" },
 ] as const;
 
 const GENERAL_HELP: Record<string, string> = {
@@ -65,6 +78,18 @@ const WIDGET_TAGS: Record<string, string> = {
   "stats.w.evolution.movers": "Cantidad",
   "stats.w.evolution.payment_methods": "Gráfico y tabla",
   "stats.w.evolution.customers": "Tabla con teléfonos",
+  "stats.w.couriers.orders": "Cantidad",
+  "stats.w.couriers.shipping": "Monto",
+  "stats.w.couriers.tips": "Monto",
+  "stats.w.couriers.time": "Cantidad",
+  "stats.w.couriers.by_courier": "Tabla",
+  "stats.w.couriers.by_zone": "Tabla",
+  "stats.w.cash.open": "Monto",
+  "stats.w.cash.kpis": "Monto y cantidad",
+  "stats.w.cash.by_shift": "Tabla",
+  "stats.w.cash.by_method": "Tabla",
+  "stats.w.cash.movements": "Tabla",
+  "stats.w.cash.sessions": "Tabla",
 };
 
 /** Striped background of a hidden item (board 36). */
@@ -121,11 +146,23 @@ export function ReportConfigPage() {
   const previewEvolution = activePreviewTab === "stats.tab.evolution";
   const previewBilling = activePreviewTab === "stats.tab.billing";
   const previewSales = activePreviewTab === "stats.tab.sales";
+  const previewCouriers = activePreviewTab === "stats.tab.couriers";
+  const previewCash = activePreviewTab === "stats.tab.cash";
   const previewQueryFilters = simulated ? filtersForAccess(simulated, previewFilters) : previewFilters;
   const evolutionQuery = useEvolutionReport(previewQueryFilters, !planLocked && previewEvolution);
   const billingQuery = useBillingReport(previewQueryFilters, !planLocked && previewBilling);
   const salesQuery = useSalesReport(previewQueryFilters, !planLocked && previewSales);
-  const report = previewBilling ? billingQuery : previewSales ? salesQuery : evolutionQuery;
+  const couriersQuery = useCouriersReport(previewQueryFilters, !planLocked && previewCouriers);
+  const cashQuery = useCashReport(previewQueryFilters, !planLocked && previewCash);
+  const report = previewBilling
+    ? billingQuery
+    : previewSales
+      ? salesQuery
+      : previewCouriers
+        ? couriersQuery
+        : previewCash
+          ? cashQuery
+          : evolutionQuery;
 
   // Warn on reload or tab close while there are unsaved changes.
   useEffect(() => {
@@ -397,6 +434,11 @@ export function ReportConfigPage() {
           })}
         </div>
         <p className="m-0 text-xs text-muted">Si una pestaña está oculta, sus bloques también lo están.</p>
+        {chosenTab.key === "stats.tab.cash" && (
+          <p className="m-0 text-xs text-muted">
+            El esperado y la diferencia también necesitan "Ver el esperado" en Cajas.
+          </p>
+        )}
       </Card>
 
       <section aria-labelledby="config-preview" className="flex flex-col gap-3">
@@ -412,6 +454,8 @@ export function ReportConfigPage() {
           available={previewAvailableFilters}
           canSeeDate={previewCanSeeDate}
           meta={meta.data}
+          tab={activePreviewTab}
+          note={activePreviewTab === "stats.tab.couriers" ? "En esta pestaña la modalidad queda en Delivery." : undefined}
           compact
         />
         <ReportTabs
@@ -421,9 +465,7 @@ export function ReportConfigPage() {
         />
         {!activePreviewTab ? (
           <section className="rounded-2xl border border-line bg-white p-8 text-center text-sm text-muted">
-            {previewTabs.length === 0 && visibleTabs(simulated).length > 0
-              ? "Las pestañas que ve este rol todavía no tienen pantalla (Repartidores y Arqueos llegan pronto)."
-              : "Con este borrador, el rol no ve ninguna pestaña de Reportes."}
+            Con este borrador, el rol no ve ninguna pestaña de Reportes.
           </section>
         ) : report.isError ? (
           <QueryError message="No pudimos cargar la vista previa." onRetry={() => void report.refetch()} retrying={report.isRefetching} />
@@ -433,6 +475,17 @@ export function ReportConfigPage() {
           <BillingTab data={clipBillingReport(billingQuery.data, simulated)} access={simulated} canSeeDate={previewCanSeeDate} onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })} />
         ) : previewSales && salesQuery.data ? (
           <SalesTab data={clipSalesReport(salesQuery.data, simulated)} access={simulated} canSeeDate={previewCanSeeDate} onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })} />
+        ) : previewCouriers && couriersQuery.data ? (
+          <CouriersTab data={clipCouriersReport(couriersQuery.data, simulated)} access={simulated} canSeeDate={previewCanSeeDate} onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })} />
+        ) : previewCash && cashQuery.data ? (
+          <CashTab
+            data={clipCashReport(cashQuery.data, simulated)}
+            access={simulated}
+            canSeeDate={previewCanSeeDate}
+            onLast7Days={() => setPreviewFilters({ ...previewFilters, ...presetRange("7d", new Date()) })}
+            onRefresh={() => void cashQuery.refetch()}
+            refreshing={cashQuery.isRefetching}
+          />
         ) : evolutionQuery.data ? (
           <EvolutionTab
             data={clipEvolutionReport(evolutionQuery.data, simulated)}

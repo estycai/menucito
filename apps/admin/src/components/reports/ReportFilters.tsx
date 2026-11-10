@@ -4,6 +4,7 @@ import {
   ORDER_SOURCE_LABELS,
   PAYMENT_LABELS,
   REPORT_PRESETS,
+  TAB_FILTERS,
   presetRange,
   type Fulfillment,
   type OrderSource,
@@ -11,6 +12,7 @@ import {
   type ReportFilterKey,
   type ReportFilters,
   type ReportMeta,
+  type ReportTabKey,
 } from "@menucito/shared";
 import { activeFilterCount, dateLabel, presetOfRange } from "@/lib/report-filters";
 import { useBackdropClose } from "@/lib/backdrop-close";
@@ -33,13 +35,18 @@ interface ReportFiltersProps {
   available: readonly ReportFilterKey[];
   canSeeDate: boolean;
   meta: ReportMeta | undefined;
+  /** The tab being shown: its filters are the only ones drawn (change 16c). */
+  tab?: ReportTabKey;
+  /** A line under the filters, e.g. the fixed modality of Repartidores. */
+  note?: string;
   /** `true` in the "Configurar vista" preview: the same bar without the URL. */
   compact?: boolean;
 }
 
 /** Date shortcuts + filters; on mobile the selects live in a bottom sheet. */
-export function ReportFilters({ filters, onChange, available, canSeeDate, meta, compact = false }: ReportFiltersProps) {
+export function ReportFilters({ filters, onChange, available, canSeeDate, meta, tab, note, compact = false }: ReportFiltersProps) {
   const [sheetOpen, setSheetOpen] = useState(false);
+  const applicable = tab ? available.filter((key) => TAB_FILTERS[tab].includes(key)) : available;
   const set = <K extends keyof ReportFilters>(key: K, value: ReportFilters[K]) => onChange({ ...filters, [key]: value });
   const range = { from: filters.from ?? "", to: filters.to ?? "" };
   const preset = range.from && range.to ? presetOfRange({ from: range.from, to: range.to }, new Date()) : null;
@@ -47,19 +54,19 @@ export function ReportFilters({ filters, onChange, available, canSeeDate, meta, 
     const next = presetRange(id, new Date());
     onChange({ ...filters, from: next.from, to: next.to });
   };
+  // Only the filters of this tab: the others stay in the URL and apply again on their tabs (change 16c).
   const clear = () =>
     onChange({
-      from: filters.from,
-      to: filters.to,
-      shift: undefined,
-      fulfillment: undefined,
-      payment: undefined,
-      source: undefined,
-      courier: undefined,
+      ...filters,
+      ...(applicable.includes("stats.f.shift") && { shift: undefined }),
+      ...(applicable.includes("stats.f.fulfillment") && { fulfillment: undefined }),
+      ...(applicable.includes("stats.f.payment") && { payment: undefined }),
+      ...(applicable.includes("stats.f.source") && { source: undefined }),
+      ...(applicable.includes("stats.f.courier") && { courier: undefined }),
     });
 
   const fields = (
-    <FilterFields filters={filters} onChange={onChange} available={available} canSeeDate={canSeeDate} meta={meta} />
+    <FilterFields filters={filters} onChange={onChange} available={applicable} canSeeDate={canSeeDate} meta={meta} />
   );
 
   return (
@@ -111,6 +118,8 @@ export function ReportFilters({ filters, onChange, available, canSeeDate, meta, 
 
       <div className="hidden flex-wrap items-end gap-3 sm:flex">{fields}</div>
 
+      {note && <p className="m-0 text-xs text-muted">{note}</p>}
+
       <div className="flex items-center justify-between gap-2 sm:hidden">
         <span className="text-sm text-muted">
           {canSeeDate && range.from && range.to ? `${dateLabel(range.from)} – ${dateLabel(range.to)}` : ""}
@@ -120,7 +129,7 @@ export function ReportFilters({ filters, onChange, available, canSeeDate, meta, 
           onClick={() => setSheetOpen(true)}
           className="inline-flex min-h-11 cursor-pointer items-center rounded-xl border border-line px-4 text-sm font-bold"
         >
-          Filtros ({activeFilterCount(filters)})
+          Filtros ({activeFilterCount(filters, applicable)})
         </button>
       </div>
 
@@ -129,7 +138,7 @@ export function ReportFilters({ filters, onChange, available, canSeeDate, meta, 
           <FilterFields
             filters={filters}
             onChange={onChange}
-            available={available}
+            available={applicable}
             canSeeDate={canSeeDate}
             meta={meta}
             withDates
@@ -146,7 +155,7 @@ export function ReportFilters({ filters, onChange, available, canSeeDate, meta, 
         </BottomSheet>
       )}
 
-      {activeFilterCount(filters) > 0 && (
+      {activeFilterCount(filters, applicable) > 0 && (
         <button type="button" onClick={clear} className="-ml-1 self-start text-xs font-bold text-link underline-offset-2 hover:underline">
           Limpiar filtros
         </button>

@@ -7,6 +7,7 @@ import {
   localDateKey,
   presetRange,
   type ReportFilters,
+  type ReportFilterKey,
   type ReportPreset,
   type ReportRange,
 } from "@menucito/shared";
@@ -87,8 +88,18 @@ export function withDefaultRange(filters: ReportFilters, canSeeDate: boolean, no
 }
 
 /** How many filters besides the date are active, for the "Filtros (n)" button. */
-export function activeFilterCount(filters: ReportFilters): number {
-  return [filters.shift, filters.fulfillment, filters.payment, filters.source, filters.courier].filter(Boolean).length;
+export function activeFilterCount(
+  filters: ReportFilters,
+  available?: readonly ReportFilterKey[],
+): number {
+  const entries = [
+    ["stats.f.shift", filters.shift],
+    ["stats.f.fulfillment", filters.fulfillment],
+    ["stats.f.payment", filters.payment],
+    ["stats.f.source", filters.source],
+    ["stats.f.courier", filters.courier],
+  ] as const;
+  return entries.filter(([key, value]) => Boolean(value) && (!available || available.includes(key))).length;
 }
 
 /** "10/11/2026" for a `YYYY-MM-DD` key. */

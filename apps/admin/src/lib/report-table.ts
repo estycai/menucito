@@ -27,6 +27,8 @@ export function sortReportRows<T>(
   return [...rows].sort((a, b) => {
     const left = column.value(a);
     const right = column.value(b);
+    // An empty value (no data, e.g. a time without Enviado or a session in progress) always goes last.
+    if (left === "" || right === "") return left === right ? 0 : left === "" ? 1 : -1;
     const result =
       typeof left === "string" || typeof right === "string"
         ? String(left).localeCompare(String(right), "es", { sensitivity: "base" })

@@ -10,6 +10,10 @@ export interface ReportColumn<T> {
   /** `money` columns are hidden without "Ver montos" and exported with two decimals. */
   kind: ReportColumnKind;
   value: (row: T) => string | number;
+  /** Custom display of the value (minutes, kilometres, a dash for empty); the CSV uses it too. */
+  format?: (value: string | number) => string;
+  /** A cell drawn with markup instead of text (the "En curso" badge of the arqueos). */
+  render?: (row: T) => ReactNode;
 }
 
 interface ReportExport {
@@ -46,6 +50,7 @@ interface ReportTableProps<T> {
 
 const cellText = <T,>(column: ReportColumn<T>, row: T): string => {
   const value = column.value(row);
+  if (column.format) return column.format(value);
   if (column.kind === "money") return formatMoney(Number(value));
   if (column.kind === "count") return formatCount(Number(value));
   if (column.kind === "percent") return formatPercent(Number(value));
@@ -90,7 +95,7 @@ export function ReportTable<T>({
   const shown = pageSize ? sorted.slice(current * pageSize, (current + 1) * pageSize) : sorted;
   const csvColumns: CsvColumn<T>[] = visible.map((column) => ({
     header: column.header,
-    value: (row) => column.value(row),
+    value: (row) => (column.format ? column.format(column.value(row)) : column.value(row)),
     money: column.kind === "money",
   }));
   // The file is the table as seen: every row (not only the page), in the chosen order, with the total.
@@ -152,7 +157,14 @@ export function ReportTable<T>({
                   className={cn(onRowClick && "cursor-pointer hover:bg-bg", active && "bg-primary/10")}
                 >
                   {visible.map((column, index) => (
-                    <td key={column.key} className={cn("px-3 py-2 tabular-nums", ALIGN[column.kind], column.kind === "text" && "font-bold")}>
+                    <td
+                      key={column.key}
+                      className={cn(
+                        "px-3 py-2 tabular-nums",
+                        ALIGN[column.kind],
+                        column.kind === "text" ? "font-bold" : "whitespace-nowrap",
+                      )}
+                    >
                       {index === 0 && onRowClick ? (
                         // The real control for keyboards and screen readers; the row click is a mouse shortcut.
                         <button
@@ -167,6 +179,8 @@ export function ReportTable<T>({
                         >
                           {cellText(column, row)}
                         </button>
+                      ) : column.render ? (
+                        column.render(row)
                       ) : (
                         cellText(column, row)
                       )}
@@ -185,8 +199,11 @@ export function ReportTable<T>({
             {totalRow && (
               <tr className="border-t-2 border-line font-bold">
                 {visible.map((column) => (
-                  <td key={column.key} className={cn("px-3 py-2 tabular-nums", ALIGN[column.kind])}>
-                    {cellText(column, totalRow)}
+                  <td
+                    key={column.key}
+                    className={cn("px-3 py-2 tabular-nums", ALIGN[column.kind], column.kind !== "text" && "whitespace-nowrap")}
+                  >
+                    {column.render ? column.render(totalRow) : cellText(column, totalRow)}
                   </td>
                 ))}
               </tr>

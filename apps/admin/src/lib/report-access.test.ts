@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { Access, BillingReport, EvolutionReport, PermissionKey, SalesReport } from "@menucito/shared";
+import type { Access, BillingReport, CashReport, CouriersReport, EvolutionReport, PermissionKey, SalesReport } from "@menucito/shared";
 import {
   canExport,
   canSeeAmounts,
+  canSeeCashExpected,
   clipBillingReport,
+  clipCashReport,
+  clipCouriersReport,
   clipEvolutionReport,
   clipSalesReport,
   filtersForAccess,
@@ -189,5 +192,83 @@ describe("clipBillingReport and clipSalesReport (Configurar vista preview)", () 
     ]);
     expect(clipped.widgets.products).toBeUndefined();
     expect(JSON.stringify(clipped)).not.toContain("Cents");
+  });
+});
+
+describe("clipCouriersReport and clipCashReport (16c preview)", () => {
+  const range = { from: "2026-06-01", to: "2026-06-30" };
+
+  it("keeps the courier blocks of the role and hides the cents without amounts", () => {
+    const report: CouriersReport = {
+      range,
+      previousRange: { from: "2026-05-02", to: "2026-05-31" },
+      hasActivity: true,
+      widgets: {
+        orders: { current: 2, previous: 1, changePercent: 100 },
+        shipping: { currentCents: 10_000, previousCents: 5_000, changePercent: 100 },
+      },
+    };
+    const role = access(["stats.view", "stats.tab.couriers", "stats.w.couriers.orders"]);
+    const clipped = clipCouriersReport(report, role);
+    expect(Object.keys(clipped.widgets)).toEqual(["orders"]);
+    expect(clipped.widgets.shipping).toBeUndefined();
+  });
+
+  it("applies the blind close of Cajas to the preview", () => {
+    const report: CashReport = {
+      range,
+      hasActivity: true,
+      widgets: {
+        kpis: {
+          sessions: 1,
+          closed: 1,
+          inProgress: 0,
+          salesCents: 100_000,
+          orders: 1,
+          incomeCents: 0,
+          expenseCents: 0,
+          differenceCents: 0,
+          expectedCents: 100_000,
+          countedCents: 100_000,
+          balanced: 1,
+        },
+        by_method: {
+          rows: [
+            { method: "cash", orders: 1, salesCents: 70_000, percent: 70, incomeCents: 0, expenseCents: 0 },
+            { method: "transfer", orders: 1, salesCents: 30_000, percent: 30, incomeCents: 0, expenseCents: 0 },
+          ],
+          total: { orders: 2, salesCents: 100_000, percent: 100, incomeCents: 0, expenseCents: 0 },
+        },
+        sessions: [
+          {
+            id: "s1",
+            openedAt: 0,
+            closedAt: 1_000,
+            shift: "off",
+            shiftLabel: "Fuera de horario",
+            openedByName: "Ana",
+            closedByName: "Ana",
+            orders: 1,
+            salesCents: 100_000,
+            expenseCents: 0,
+            expectedCashCents: 100_000,
+            countedCashCents: 100_000,
+            differenceCents: 0,
+          },
+        ],
+      },
+    };
+    const blind = access(["stats.view", "stats.tab.cash", "stats.w.cash.kpis", "stats.w.cash.by_method", "stats.w.cash.sessions", "stats.amounts"]);
+    expect(canSeeCashExpected(blind)).toBe(false);
+    const clipped = clipCashReport(report, blind);
+    expect(clipped.widgets.kpis?.salesCents).toBe(100_000);
+    expect(clipped.widgets.kpis).not.toHaveProperty("expectedCents");
+    expect(clipped.widgets.kpis).not.toHaveProperty("differenceCents");
+    expect(clipped.widgets.sessions?.[0]).not.toHaveProperty("countedCashCents");
+    expect(clipped.widgets.sessions?.[0]).not.toHaveProperty("differenceCents");
+
+    const withoutAmounts = clipCashReport(report, access(["stats.view", "stats.tab.cash", "stats.w.cash.by_method"]));
+    expect(withoutAmounts.widgets.by_method?.rows.map((row) => row.percent)).toEqual([50, 50]);
+    expect(withoutAmounts.widgets.by_method?.rows[0]).not.toHaveProperty("salesCents");
   });
 });

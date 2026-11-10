@@ -57,6 +57,7 @@ describe("Reports URL filters", () => {
     expect(presetOfRange({ from: "2026-10-01", to: "2026-11-10" }, NOW)).toBe("quarter");
     expect(presetOfRange({ from: "2026-11-02", to: "2026-11-10" }, NOW)).toBeNull();
     expect(activeFilterCount({ payment: "cash", source: "web" })).toBe(2);
+    expect(activeFilterCount({ payment: "cash", source: "web" }, ["stats.f.payment"])).toBe(1);
     expect(activeFilterCount({})).toBe(0);
   });
 });

@@ -3,11 +3,16 @@ import {
   REPORT_FILTER_PERMISSIONS,
   REPORT_TABS,
   effectivePermissions,
+  maskCashReportWidgets,
   percentage,
   withoutCents,
   type Access,
   type BillingReport,
   type BillingWidgets,
+  type CashReport,
+  type CashWidgets,
+  type CouriersReport,
+  type CouriersWidgets,
   type EvolutionReport,
   type EvolutionWidgets,
   type PermissionKey,
@@ -51,6 +56,11 @@ export function canSeeAmounts(access: Access): boolean {
 
 export function canExport(access: Access): boolean {
   return keysOf(access).has("stats.export");
+}
+
+/** The blind close of Cajas also applies in Reports (change 16c). */
+export function canSeeCashExpected(access: Access): boolean {
+  return keysOf(access).has("cash.expected");
 }
 
 /** The filters to send for `access`: a filter the role lacks is not applied (the API ignores it too). */
@@ -136,6 +146,47 @@ export function clipSalesReport(report: SalesReport, access: Access): SalesRepor
   if (allowed.has("stats.w.sales.products")) widgets.products = report.widgets.products;
   if (allowed.has("stats.w.sales.addons")) widgets.addons = report.widgets.addons;
   return { ...report, widgets: amounts ? widgets : withoutCents(widgets) };
+}
+
+/** The owner's Couriers report clipped to `access`, for the "Configurar vista" preview. */
+export function clipCouriersReport(report: CouriersReport, access: Access): CouriersReport {
+  const allowed = new Set(visibleWidgets(access, "stats.tab.couriers"));
+  const widgets: CouriersWidgets = {};
+  for (const [key, value] of Object.entries(report.widgets)) {
+    if (allowed.has(`stats.w.couriers.${key}`)) (widgets as Record<string, unknown>)[key] = value;
+  }
+  return { ...report, widgets: canSeeAmounts(access) ? widgets : withoutCents(widgets) };
+}
+
+/**
+ * The owner's Arqueos report clipped to `access`, for the "Configurar vista" preview. Without
+ * `cash.expected` the expected, the counted, the difference and the cash on hand disappear too.
+ */
+export function clipCashReport(report: CashReport, access: Access): CashReport {
+  const allowed = new Set(visibleWidgets(access, "stats.tab.cash"));
+  const widgets: CashWidgets = {};
+  for (const [key, value] of Object.entries(report.widgets)) {
+    if (allowed.has(`stats.w.cash.${key}`)) (widgets as Record<string, unknown>)[key] = value;
+  }
+  // The owner's report computed the percentages over money; without amounts they go over orders.
+  if (!canSeeAmounts(access)) {
+    if (widgets.by_shift) {
+      const totalOrders = widgets.by_shift.total.orders;
+      widgets.by_shift = {
+        ...widgets.by_shift,
+        rows: widgets.by_shift.rows.map((row) => ({ ...row, percent: percentage(row.orders, totalOrders) })),
+      };
+    }
+    if (widgets.by_method) {
+      const totalOrders = widgets.by_method.total.orders;
+      widgets.by_method = {
+        ...widgets.by_method,
+        rows: widgets.by_method.rows.map((row) => ({ ...row, percent: percentage(row.orders, totalOrders) })),
+      };
+    }
+  }
+  const masked = canSeeCashExpected(access) ? widgets : maskCashReportWidgets(widgets);
+  return { ...report, widgets: canSeeAmounts(access) ? masked : withoutCents(masked) };
 }
 
 /** A role as an `Access`, with `draft` as its permissions and an active role: the preview of Configurar vista. */
