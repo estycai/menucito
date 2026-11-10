@@ -148,6 +148,8 @@ Own endpoints follow a layered architecture in `apps/api/src`: `routes/` (Hono, 
 | `DELETE /api/roles/:id` | Owner only. 204, 404, 409 `SYSTEM_ROLE`, 409 `ROLE_IN_USE` with `error.memberCount` |
 | `GET /api/reports/meta` | `stats.view`. 200 `{shifts, couriers, delivery, takeaway}`: the distinct opening slots with their label (for the Turno filter), the active couriers and whether the local delivers and/or has take away. 403 `PLAN_FEATURE` on a plan without `reports` |
 | `GET /api/reports/evolution` | `stats.tab.evolution`. Query `from`, `to` (`YYYY-MM-DD`, Argentina time; today by default and at most 366 days), `shift`, `fulfillment`, `payment`, `source`, `courier` (empty = all). 200 `{range, previousRange, widgets}` for the Evolución tab (16a); 400 `INVALID_REPORT_RANGE`, 403 `FORBIDDEN` without the tab, 403 `PLAN_FEATURE` without `reports` |
+| `GET /api/reports/billing` | `stats.tab.billing`. Same query and errors. 200 `{range, widgets}` for the Facturación tab (16b): total by payment method, orders by modality, Delivery and Take away by payment method (with a total row) and orders by source. A split order adds its part to each method; a disabled modality without sales is omitted |
+| `GET /api/reports/sales` | `stats.tab.sales`. Same query and errors. 200 `{range, widgets}` for the Ventas tab (16b): Top 10 by units and by revenue, categories with their share, every product sold and the addons paid above what is included. Without `stats.amounts` there are no `*Cents` and no `byRevenue` |
 
 Product: `{id, categoryId, name, description, priceCents, imageUrl, available, ingredients, position, createdAt, updatedAt}`. Prices are integer ARS cents (`900000` = `$9.000`); `available: false` means "Agotado". `ingredients` is the ordered list of customizable ingredients (`[]` when none), returned on every plan by `GET /api/categories` and `GET /api/products/:id`.
 
@@ -252,7 +254,7 @@ Every admin page with a restaurant lives inside `AdminShell` (`apps/admin/src/co
 | `/local` | Mi local |
 | `/usuarios/lista`, `/usuarios/roles` | Usuarios (owner only): people with access, and roles with their permission tree |
 | `/plan` | Plan y pagos (current plan, the two plans, optional test switch) |
-| `/reportes`, `/reportes/configurar` | Reportes (Pro): Evolución with filters, indicators, income statement, pace, chart, heatmap, movers, payment methods and recurring customers; the owner configures what each role sees and previews it. The other tabs come in 16b/16c; Campañas is gray |
+| `/reportes`, `/reportes/configurar` | Reportes (Pro): Evolución, Facturación (totals by payment method and modality, tables by modality and by source) and Ventas (Top 10, categories, products with search and pages of 20, addons); the owner configures what each role sees and previews the three tabs. Repartidores and Arqueos come in 16c; Campañas is gray |
 
 Login, sign-up, forgot/reset password, verify email and onboarding render outside the shell. `document.title` is "<Sección> · Menucito".
 
