@@ -38,11 +38,19 @@ export interface PlaceDetailsRequest {
   sessionToken: string;
 }
 
+export interface GeocodeRequest {
+  address: string;
+  /** Prefer results near this point (usually the store). */
+  bias?: LatLng;
+}
+
 /** What the services need from Google; tests swap it for a fake. */
 export interface PlacesClient {
   autocomplete(request: AutocompleteRequest): Promise<PlaceSuggestion[]>;
   placeDetails(request: PlaceDetailsRequest): Promise<PlaceResult>;
   reverseGeocode(point: LatLng): Promise<PlaceResult | null>;
+  /** Forward geocoding of a typed address; `null` when Google has no street-level result. */
+  geocode(request: GeocodeRequest): Promise<PlaceResult | null>;
 }
 
 const AUTOCOMPLETE_URL = "https://places.googleapis.com/v1/places:autocomplete";
@@ -51,6 +59,8 @@ const GEOCODE_URL = "https://maps.googleapis.com/maps/api/geocode/json";
 
 const MAX_SUGGESTIONS = 5;
 const BIAS_RADIUS_M = 20_000;
+/** Half side of the box around the store used as a geocoding bias, in degrees (~22 km). */
+const GEOCODE_BIAS_DEGREES = 0.2;
 
 /**
  * Only fields billed as Place Details Essentials (`id` is Essentials IDs Only). Asking for any Pro or
@@ -193,6 +203,34 @@ export function googleMapsClient(env: GoogleMapsEnv): PlacesClient {
       return {
         placeId: result.place_id,
         formattedAddress: result.formatted_address ?? "",
+        locality: localityOf((result.address_components ?? []).map((c) => ({ name: c.long_name, types: c.types }))),
+        lat: location.lat,
+        lng: location.lng,
+      };
+    },
+
+    async geocode({ address, bias }) {
+      const key = requireKey(env);
+      const params = new URLSearchParams({ address, language: "es", region: "ar", key });
+      if (bias) {
+        params.set(
+          "bounds",
+          `${bias.lat - GEOCODE_BIAS_DEGREES},${bias.lng - GEOCODE_BIAS_DEGREES},${bias.lat + GEOCODE_BIAS_DEGREES},${bias.lng + GEOCODE_BIAS_DEGREES}`,
+        );
+      }
+      const res = await send(`${GEOCODE_URL}?${params}`, {}, "Geocode");
+      const data = (await res.json()) as GeocodeResponse;
+      if (data.status === "ZERO_RESULTS") return null;
+      if (data.status !== "OK") {
+        console.error(`[google-maps] Geocode status ${data.status}: ${data.error_message ?? ""}`);
+        throw new GoogleMapsError("upstream", `Geocode status ${data.status}`);
+      }
+      const result = data.results?.find((candidate) => candidate.types?.some((type) => STREET_LEVEL_TYPES.includes(type)));
+      const location = result?.geometry?.location;
+      if (!result?.place_id || location?.lat === undefined || location.lng === undefined) return null;
+      return {
+        placeId: result.place_id,
+        formattedAddress: result.formatted_address ?? address,
         locality: localityOf((result.address_components ?? []).map((c) => ({ name: c.long_name, types: c.types }))),
         lat: location.lat,
         lng: location.lng,

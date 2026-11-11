@@ -309,7 +309,12 @@ async function writeOrder(
   restaurant: RestaurantRow,
   storeSettings: StoreSettings,
   req: OrderDraft,
-  extra: { source: OrderSource; notes: string | null },
+  extra: {
+    source: OrderSource;
+    notes: string | null;
+    whatsappOptIn: boolean;
+    whatsappOptInSource: "web" | "manual";
+  },
   now: () => Date,
   generateId: () => string,
 ): Promise<{ order: OrderDetail; resent: boolean }> {
@@ -390,6 +395,8 @@ async function writeOrder(
     fulfillment: req.fulfillment,
     paymentMethod: req.paymentMethod,
     source: extra.source,
+    whatsappOptIn: extra.whatsappOptIn,
+    whatsappOptInSource: extra.whatsappOptInSource,
     notes: extra.notes,
     splitCashCents: req.splitCashCents,
     cashTenderedCents: req.cashTenderedCents,
@@ -460,7 +467,7 @@ export function createPublicOrdersService({
         restaurant,
         storeSettings,
         req,
-        { source: "web", notes: null },
+        { source: "web", notes: null, whatsappOptIn: true, whatsappOptInSource: "web" },
         now,
         generateId,
       );
@@ -676,7 +683,12 @@ export function createOwnerOrdersService({
         restaurant,
         storeSettings,
         req,
-        { source: req.source, notes: req.notes },
+        {
+          source: req.source,
+          notes: req.notes,
+          whatsappOptIn: req.whatsappConsent,
+          whatsappOptInSource: "manual",
+        },
         now,
         generateId,
       );

@@ -237,10 +237,52 @@ export const customers = sqliteTable(
     address: text("address"),
     notes: text("notes"),
     firstOrderAt: integer("first_order_at", { mode: "timestamp_ms" }),
+    // WhatsApp notices (change 17a): when and where the customer accepted, and whether they asked
+    // not to be written to. `whatsapp_opt_in_at = NULL` means there is no permission.
+    whatsappOptInAt: integer("whatsapp_opt_in_at", { mode: "timestamp_ms" }),
+    // `web` | `manual`.
+    whatsappOptInSource: text("whatsapp_opt_in_source"),
+    whatsappOptOut: integer("whatsapp_opt_out", { mode: "boolean" }).notNull().default(false),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
   (t) => [uniqueIndex("customers_restaurant_phone_unique").on(t.restaurantId, t.phone)],
+);
+
+// Tags the owner creates to label customers (change 17a). Names are unique per restaurant ignoring
+// case; the color is one of the fixed palette.
+export const customerTags = sqliteTable(
+  "customer_tags",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    color: text("color").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("customer_tags_restaurant_name_unique").on(t.restaurantId, sql`lower(${t.name})`)],
+);
+
+// N:M between customers and tags; both sides cascade.
+export const customerTagLinks = sqliteTable(
+  "customer_tag_links",
+  {
+    customerId: text("customer_id")
+      .notNull()
+      .references(() => customers.id, { onDelete: "cascade" }),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => customerTags.id, { onDelete: "cascade" }),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.customerId, t.tagId] }),
+    index("customer_tag_links_tag_idx").on(t.tagId),
+  ],
 );
 
 // Addresses a customer used before (N:1 with `customers`), geocoded so they can be offered again.
@@ -412,6 +454,7 @@ export const orders = sqliteTable(
     index("orders_restaurant_status_number_idx").on(t.restaurantId, t.status, t.number),
     index("orders_restaurant_created_idx").on(t.restaurantId, t.createdAt),
     index("orders_customer_idx").on(t.customerId),
+    index("orders_restaurant_customer_created_idx").on(t.restaurantId, t.customerId, t.createdAt),
     index("orders_restaurant_courier_status_idx").on(t.restaurantId, t.courierMemberId, t.status),
     index("orders_restaurant_delivered_idx").on(t.restaurantId, t.deliveredAt),
     index("orders_restaurant_cash_session_idx").on(t.restaurantId, t.cashSessionId),
@@ -477,6 +520,8 @@ export type IngredientRow = typeof ingredients.$inferSelect;
 export type NewIngredientRow = typeof ingredients.$inferInsert;
 export type CustomerRow = typeof customers.$inferSelect;
 export type NewCustomerRow = typeof customers.$inferInsert;
+export type CustomerTagRow = typeof customerTags.$inferSelect;
+export type NewCustomerTagRow = typeof customerTags.$inferInsert;
 export type CustomerAddressRow = typeof customerAddresses.$inferSelect;
 export type NewCustomerAddressRow = typeof customerAddresses.$inferInsert;
 export type DeliveryZoneRow = typeof deliveryZones.$inferSelect;

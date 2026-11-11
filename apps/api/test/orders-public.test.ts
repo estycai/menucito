@@ -586,8 +586,8 @@ describe("POST /api/public/menus/:slug/orders (scenarios 14-30)", () => {
     const customers = await env.DB.prepare("SELECT * FROM customers WHERE restaurant_id = ?").bind(restaurant.id).all();
     expect(customers.results).toHaveLength(1);
     const cust = customers.results[0] as Record<string, unknown>;
-    expect(cust.name).toBe("Juan Perez"); // Original customer row not overwritten
-    expect(cust.address).toBe("Calle 1");
+    expect(cust.name).toBe("Pedro Gomez"); // The last name wins (change 17a)
+    expect(cust.address).toBeNull(); // Addresses live in `customer_addresses`
 
     const orderRow1 = await env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(await orderIdByNumber(restaurant.id, order1.number)).first<Record<string, unknown>>();
     const orderRow2 = await env.DB.prepare("SELECT * FROM orders WHERE id = ?").bind(await orderIdByNumber(restaurant.id, order2.number)).first<Record<string, unknown>>();
@@ -617,6 +617,30 @@ describe("POST /api/public/menus/:slug/orders (scenarios 14-30)", () => {
     const otherCustomers = await env.DB.prepare("SELECT * FROM customers WHERE restaurant_id = ?").bind(otherOwner.restaurant.id).all();
     expect(otherCustomers.results).toHaveLength(1);
     expect(otherCustomers.results[0]?.id).not.toBe(cust.id);
+  });
+
+  it("gives the WhatsApp permission to every customer that orders from the web menu", async () => {
+    const { client, restaurant } = await owner();
+    const cat = await createCategory(client, "Burgers");
+    const prod = await createProduct(client, cat.id, { priceCents: 500_000 });
+
+    const res = await new Client().post(`/api/public/menus/${restaurant.slug}/orders`, {
+      items: [{ productId: prod.id, quantity: 1 }],
+      customer: { name: "Web", phone: "11 5555-3333", address: "Calle 1" },
+      fulfillment: "delivery",
+      paymentMethod: "cash",
+      clientOrderId: sampleUuid(),
+      expectedTotalCents: 500_000,
+    });
+    expect(res.status).toBe(201);
+
+    const customer = await env.DB.prepare(
+      "SELECT whatsapp_opt_in_at, whatsapp_opt_in_source FROM customers WHERE restaurant_id = ? AND phone = '5491155553333'",
+    )
+      .bind(restaurant.id)
+      .first<{ whatsapp_opt_in_at: number | null; whatsapp_opt_in_source: string | null }>();
+    expect(customer?.whatsapp_opt_in_at).not.toBeNull();
+    expect(customer?.whatsapp_opt_in_source).toBe("web");
   });
 
   it("assigns sequential correlative numbers starting from 1 (scenario 24)", async () => {

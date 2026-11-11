@@ -68,7 +68,42 @@ describe("15b: POST /api/orders", () => {
     expect(row?.notes).toBeNull();
   });
 
-  it("creates a flat delivery with its shipping, and a Local without phone stores an empty one", async () => {
+  it("keeps the last name and only adds the WhatsApp permission when the tilde is checked", async () => {
+    const owner = await ownerWithRestaurant();
+    const product = await createCatalog(owner);
+    const phone = "11 5555-4321";
+
+    await owner.client.post("/api/orders", payload(product.id, { customer: { name: "Primer Nombre", phone } }));
+    const withConsent = await owner.client.post(
+      "/api/orders",
+      payload(product.id, {
+        customer: { name: "Último Nombre", phone },
+        whatsappConsent: true,
+        clientOrderId: crypto.randomUUID(),
+      }),
+    );
+    expect(withConsent.status).toBe(201);
+
+    let customer = await env.DB.prepare("SELECT name, whatsapp_opt_in_at, whatsapp_opt_in_source FROM customers WHERE restaurant_id = ? AND phone = ?")
+      .bind(owner.restaurantId, "5491155554321")
+      .first<{ name: string; whatsapp_opt_in_at: number | null; whatsapp_opt_in_source: string | null }>();
+    expect(customer?.name).toBe("Último Nombre");
+    expect(customer?.whatsapp_opt_in_at).not.toBeNull();
+    expect(customer?.whatsapp_opt_in_source).toBe("manual");
+
+    // A later order without the tilde does not remove the permission.
+    await owner.client.post(
+      "/api/orders",
+      payload(product.id, { customer: { name: "Sin Tilde", phone }, clientOrderId: crypto.randomUUID() }),
+    );
+    customer = await env.DB.prepare("SELECT name, whatsapp_opt_in_at, whatsapp_opt_in_source FROM customers WHERE restaurant_id = ? AND phone = ?")
+      .bind(owner.restaurantId, "5491155554321")
+      .first();
+    expect(customer?.name).toBe("Sin Tilde");
+    expect(customer?.whatsapp_opt_in_at).not.toBeNull();
+  });
+
+  it("creates a flat delivery with its shipping and normalizes the phone", async () => {
     const owner = await ownerWithRestaurant();
     const product = await createCatalog(owner);
     await owner.client.patch("/api/restaurants/me/settings", { shippingCents: 50_000 });
@@ -78,7 +113,7 @@ describe("15b: POST /api/orders", () => {
       payload(product.id, {
         source: "local",
         fulfillment: "delivery",
-        customer: { name: "Mostrador", address: "Av. Corrientes 1234" },
+        customer: { name: "Mostrador", phone: "11 5555-1234", address: "Av. Corrientes 1234" },
         notes: "  tocar timbre 2B  ",
         expectedTotalCents: 950_000,
       }),
@@ -91,7 +126,7 @@ describe("15b: POST /api/orders", () => {
       shippingCents: number;
       totalCents: number;
     };
-    expect(order.customerPhone).toBe("");
+    expect(order.customerPhone).toBe("5491155551234");
     expect(order.deliveryAddress).toBe("Av. Corrientes 1234");
     expect(order.notes).toBe("tocar timbre 2B");
     expect(order.shippingCents).toBe(50_000);
@@ -237,21 +272,22 @@ describe("15b: POST /api/orders", () => {
     expect(count?.n).toBe(1);
   });
 
-  it("requires the phone for WhatsApp and keeps Local without one", async () => {
+  it("requires the phone on every source", async () => {
     const owner = await ownerWithRestaurant();
     const product = await createCatalog(owner);
 
-    const missingPhone = await owner.client.post(
+    const missingWhatsappPhone = await owner.client.post(
       "/api/orders",
       payload(product.id, { customer: { name: "Juan" } }),
     );
-    expect(missingPhone.status).toBe(422);
+    expect(missingWhatsappPhone.status).toBe(422);
+    expect(await errorCode(missingWhatsappPhone)).toBe("VALIDATION_ERROR");
 
-    const local = await owner.client.post(
+    const missingLocalPhone = await owner.client.post(
       "/api/orders",
       payload(product.id, { source: "local", customer: { name: "Mostrador" } }),
     );
-    expect(local.status).toBe(201);
+    expect(missingLocalPhone.status).toBe(422);
   });
 
   it("marks a new order paid: with cash open it enters, without cash it stays charged outside", async () => {

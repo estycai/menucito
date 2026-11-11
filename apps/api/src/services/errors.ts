@@ -167,6 +167,44 @@ export class OrderNotFoundError extends DomainError {
   }
 }
 
+export class CustomerNotFoundError extends DomainError {
+  readonly code = "CUSTOMER_NOT_FOUND";
+  constructor(message = "Cliente no encontrado") {
+    super(message);
+  }
+}
+
+export class CustomerTagNotFoundError extends DomainError {
+  readonly code = "CUSTOMER_TAG_NOT_FOUND";
+  constructor(message = "Etiqueta no encontrada") {
+    super(message);
+  }
+}
+
+/** The phone already belongs to another customer of the local; `name` is that customer. */
+export class PhoneInUseError extends DomainError {
+  readonly code = "PHONE_IN_USE";
+  readonly details: { name: string };
+  constructor(name: string) {
+    super(`Ese teléfono ya es de ${name}`);
+    this.details = { name };
+  }
+}
+
+export class CustomerTagNameTakenError extends DomainError {
+  readonly code = "CUSTOMER_TAG_NAME_TAKEN";
+  constructor(message = "Ya hay una etiqueta con ese nombre") {
+    super(message);
+  }
+}
+
+export class CustomerAddressNotFoundError extends DomainError {
+  readonly code = "CUSTOMER_ADDRESS_NOT_FOUND";
+  constructor(message = "Dirección no encontrada") {
+    super(message);
+  }
+}
+
 /** The order is already paid or entered in a cash drawer: its payment method cannot change. */
 export class PaymentLockedError extends DomainError {
   readonly code = "PAYMENT_LOCKED";

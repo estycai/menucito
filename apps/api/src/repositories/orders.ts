@@ -67,6 +67,10 @@ export interface InsertOrderData {
   paymentMethod: PaymentMethod;
   /** `web` for the public menu; `local` or `whatsapp` for the orders loaded by an employee. */
   source: OrderSource;
+  /** The customer accepted WhatsApp notices with this order (change 17a). */
+  whatsappOptIn: boolean;
+  /** `web` or `manual`; ignored when `whatsappOptIn` is false. */
+  whatsappOptInSource: "web" | "manual";
   /** Comment of the whole order; `null` when there is none. */
   notes: string | null;
   /** Cash part of a `split` order; `null` otherwise. */
@@ -489,12 +493,24 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
             restaurantId: data.restaurantId,
             name: data.customerName,
             phone: data.customerPhone,
-            address: data.deliveryAddress,
+            // Addresses live in `customer_addresses`; the text column is only the import fallback.
             firstOrderAt: data.createdAt,
             createdAt: data.createdAt,
             updatedAt: data.createdAt,
+            whatsappOptInAt: data.whatsappOptIn ? data.createdAt : null,
+            whatsappOptInSource: data.whatsappOptIn ? data.whatsappOptInSource : null,
           })
-          .onConflictDoNothing(),
+          .onConflictDoUpdate({
+            target: [customers.restaurantId, customers.phone],
+            set: {
+              // The last name wins (change 17a). A missing permission never removes an older one.
+              name: data.customerName,
+              updatedAt: data.createdAt,
+              ...(data.whatsappOptIn
+                ? { whatsappOptInAt: data.createdAt, whatsappOptInSource: data.whatsappOptInSource }
+                : {}),
+            },
+          }),
         db.insert(orders).values({
           id: data.orderId,
           restaurantId: data.restaurantId,

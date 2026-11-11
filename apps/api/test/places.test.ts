@@ -183,6 +183,9 @@ describe("createPlacesService", () => {
       async reverseGeocode() {
         return null;
       },
+      async geocode() {
+        return null;
+      },
       ...overrides,
     };
     return fake;

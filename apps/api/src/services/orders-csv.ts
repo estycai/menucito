@@ -15,7 +15,7 @@ import {
   type PaymentStatus,
 } from "@menucito/shared";
 
-function escapeCsvCell(val: string | number): string {
+export function escapeCsvCell(val: string | number): string {
   let str = String(val);
   // Formula injection protection: prefix with apostrophe if starts with =, +, -, @, tab or carriage return
   if (/^[=+\-@\t\r]/.test(str)) {
@@ -28,7 +28,7 @@ function escapeCsvCell(val: string | number): string {
   return str;
 }
 
-function formatMoneyCsv(cents: number): string {
+export function formatMoneyCsv(cents: number): string {
   return (cents / 100).toFixed(2).replace(".", ",");
 }
 
