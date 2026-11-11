@@ -42,6 +42,15 @@ export const PERMISSION_SECTIONS = [
     ],
   },
   {
+    key: "customers.view",
+    label: "Clientes",
+    subpermissions: [
+      { key: "customers.edit", label: "Editar e importar" },
+      { key: "customers.delete", label: "Eliminar" },
+      { key: "customers.export", label: "Exportar a CSV" },
+    ],
+  },
+  {
     key: "cash.view",
     label: "Cajas",
     subpermissions: [

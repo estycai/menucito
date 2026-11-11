@@ -33,6 +33,11 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
         ["orders.status", "orders.payment", "orders.export", "orders.assign", "orders.create", "orders.settings"],
       ],
       [
+        "customers.view",
+        "Clientes",
+        ["customers.edit", "customers.delete", "customers.export"],
+      ],
+      [
         "cash.view",
         "Cajas",
         ["cash.open", "cash.movements", "cash.close", "cash.settle", "cash.history", "cash.expected"],

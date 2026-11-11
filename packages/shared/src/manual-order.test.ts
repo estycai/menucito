@@ -33,16 +33,17 @@ describe("15b: createManualOrderRequestSchema", () => {
     expect(parsed.notes).toBeNull();
   });
 
-  it("requires the phone only for WhatsApp", () => {
-    expect(
-      createManualOrderRequestSchema.safeParse({ ...validOrder, customer: { name: "Juan" } }).success,
-    ).toBe(false);
-    const local = createManualOrderRequestSchema.parse({
-      ...validOrder,
-      source: "local",
-      customer: { name: "Juan" },
-    });
-    expect(local.customer.phone).toBe("");
+  it("17a: requires the phone for every source", () => {
+    for (const source of MANUAL_ORDER_SOURCES) {
+      expect(
+        createManualOrderRequestSchema.safeParse({ ...validOrder, source, customer: { name: "Juan" } }).success,
+      ).toBe(false);
+    }
+  });
+
+  it("17a: WhatsApp consent defaults to false", () => {
+    expect(createManualOrderRequestSchema.parse(validOrder).whatsappConsent).toBe(false);
+    expect(createManualOrderRequestSchema.parse({ ...validOrder, whatsappConsent: true }).whatsappConsent).toBe(true);
   });
 
   it("trims the comment and turns a blank one into null", () => {

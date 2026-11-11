@@ -215,5 +215,7 @@ export interface ApiErrorBody {
     permission?: string;
     /** On 409 `ROLE_IN_USE`: how many members still have the role. */
     memberCount?: number;
+    /** On 409 `PHONE_IN_USE`: the customer that already has the phone. */
+    name?: string;
   };
 }

@@ -446,7 +446,7 @@ export type CreateOrderRequest = z.infer<typeof createOrderRequestSchema>;
  */
 export type CreateOrderRequestInput = z.input<typeof createOrderRequestSchema>;
 
-/** Customer of a manually created order: the phone is optional unless the source is WhatsApp. */
+/** Customer of a manually created order: the phone is always required (change 17a). */
 export const createManualOrderCustomerSchema = z.object({
   name: z
     .string()
@@ -454,13 +454,11 @@ export const createManualOrderCustomerSchema = z.object({
     .min(1, ORDERS_MESSAGES.manualNameRequired)
     .max(ORDER_NAME_MAX_LENGTH, ORDERS_MESSAGES.nameTooLong),
   phone: z
-    .string()
+    .string(ORDERS_MESSAGES.manualPhoneRequired)
     .trim()
-    .nullish()
+    .min(1, ORDERS_MESSAGES.manualPhoneRequired)
     .transform((val, ctx) => {
-      const trimmed = val?.trim() ?? "";
-      if (trimmed === "") return "";
-      const normalized = normalizeArWhatsapp(trimmed);
+      const normalized = normalizeArWhatsapp(val);
       if (!normalized) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: ORDERS_MESSAGES.phoneInvalid });
         return z.NEVER;
@@ -495,6 +493,8 @@ export const createManualOrderRequestSchema = z
       .nullish()
       .transform((value) => (value ? value : null)),
     markPaid: z.boolean().default(false),
+    /** The customer accepted WhatsApp notices (unchecked by default; only the employee marks it). */
+    whatsappConsent: z.boolean().default(false),
     clientOrderId: z.string().uuid(ORDERS_MESSAGES.clientOrderIdInvalid),
     expectedTotalCents: z
       .number()
@@ -507,15 +507,6 @@ export const createManualOrderRequestSchema = z
     const charges = normalizeOrderCharges(val, ctx);
     if (!charges) return z.NEVER;
     const { splitCashCents, cashTenderedCents } = charges;
-
-    if (val.source === "whatsapp" && val.customer.phone === "") {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: ORDERS_MESSAGES.manualPhoneRequired,
-        path: ["customer", "phone"],
-      });
-      return z.NEVER;
-    }
 
     if (val.fulfillment === "delivery") {
       const addr = val.customer.address?.trim() ?? "";
