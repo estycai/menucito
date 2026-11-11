@@ -19,3 +19,4 @@ export * from "./restaurant";
 export * from "./settings";
 export * from "./theme";
 export * from "./time";
+export * from "./whatsapp";

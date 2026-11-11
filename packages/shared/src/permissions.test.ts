@@ -46,6 +46,7 @@ describe("PERMISSION_SECTIONS (scenario 1)", () => {
       ["menu.view", "Mi menú", ["menu.edit"]],
       ["store.view", "Mi local", ["store.edit"]],
       ["qr.view", "Link y QR", []],
+      ["integrations.view", "Integraciones", ["integrations.edit"]],
       [
         "stats.view",
         "Reportes",

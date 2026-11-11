@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { formatArs } from "./catalog";
 
 /** Messages the store keeps for each status change, one set for delivery and one for takeaway. */
 export const ORDER_MESSAGE_FULFILLMENTS = ["delivery", "takeaway"] as const;
@@ -90,4 +91,23 @@ export function resolveOrderMessage(
     )?.body ?? null;
 
   return find(fulfillment) ?? (fulfillment === "takeaway" ? find("delivery") : null);
+}
+
+/** Values of the four variables of a message body. */
+export interface OrderMessageValues {
+  customerName: string;
+  number: number;
+  totalCents: number;
+  restaurantName: string;
+}
+
+/** Replaces `{nombre}`, `{numero}`, `{total}` and `{local}`; an unknown token is left untouched. */
+export function fillOrderMessage(body: string, values: OrderMessageValues): string {
+  const replacements: Record<string, string> = {
+    "{nombre}": values.customerName,
+    "{numero}": String(values.number),
+    "{total}": formatArs(values.totalCents),
+    "{local}": values.restaurantName,
+  };
+  return body.replace(/\{(?:nombre|numero|total|local)\}/g, (token) => replacements[token] ?? token);
 }

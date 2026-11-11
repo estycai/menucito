@@ -12,6 +12,7 @@ import {
 import { type AddressLabel, orderDeliverySchema } from "./delivery";
 import { normalizeArWhatsapp } from "./restaurant";
 import { isCalendarDateKey } from "./time";
+import type { WhatsappNotificationAlert } from "./whatsapp";
 
 export const ORDER_STATUSES = ["new", "preparing", "ready", "sent", "delivered", "cancelled"] as const;
 export type OrderStatus = (typeof ORDER_STATUSES)[number];
@@ -733,6 +734,12 @@ export interface OrderSummary {
   settledAt: number | null;
   customerName: string;
   customerPhone: string;
+  /** The customer accepted WhatsApp notices and did not opt out (change 17b). */
+  whatsappOptIn: boolean;
+  /** The customer wrote to the store in the last 24 h: a free-form notice can be sent. */
+  whatsappWindowOpen: boolean;
+  /** The notice of the current transition needs attention, or `null`. */
+  notificationAlert: WhatsappNotificationAlert | null;
   /** Where the order came from: the public menu, the counter or WhatsApp. */
   source: OrderSource;
   /** Comment of the order; `null` when the employee left none. */
@@ -815,6 +822,9 @@ export interface OrderDetail {
   cashSessionId: string | null;
   /** When "Ingresar a la caja" was used; `null` for orders not delivered in cash. */
   settledAt: number | null;
+  /** Change 17b: the customer allowed WhatsApp notices and the 24-hour window is open. */
+  whatsappOptIn?: boolean;
+  whatsappWindowOpen?: boolean;
   payment?: OrderPaymentInfo | null;
 }
 

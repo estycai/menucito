@@ -3,6 +3,7 @@ import {
   ORDER_MESSAGE_BODY_MAX_LENGTH,
   ORDER_MESSAGE_MESSAGES,
   ORDER_MESSAGE_VARIABLES,
+  fillOrderMessage,
   orderMessageTemplatesSchema,
   resolveOrderMessage,
   type OrderMessageTemplate,
@@ -93,5 +94,18 @@ describe("ORDER_MESSAGE_VARIABLES", () => {
       "{total}",
       "{local}",
     ]);
+  });
+});
+
+describe("fillOrderMessage", () => {
+  it("replaces the four variables and leaves unknown tokens untouched", () => {
+    expect(
+      fillOrderMessage("Hola {nombre}, el pedido #{numero} de {local} sale {total}. {otro}", {
+        customerName: "Juan",
+        number: 12,
+        totalCents: 1_250_000,
+        restaurantName: "Lo de Marta",
+      }),
+    ).toBe("Hola Juan, el pedido #12 de Lo de Marta sale $12.500. {otro}");
   });
 });

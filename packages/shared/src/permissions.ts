@@ -74,6 +74,11 @@ export const PERMISSION_SECTIONS = [
     subpermissions: [{ key: "store.edit", label: "Editar datos, apariencia, horarios, envío, pagos y pausa" }],
   },
   { key: "qr.view", label: "Link y QR", subpermissions: [] },
+  {
+    key: "integrations.view",
+    label: "Integraciones",
+    subpermissions: [{ key: "integrations.edit", label: "Conectar y configurar" }],
+  },
   REPORTS_SECTION,
 ] as const satisfies readonly PermissionSection[];
 
