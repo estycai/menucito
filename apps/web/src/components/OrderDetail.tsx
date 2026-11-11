@@ -724,6 +724,7 @@ export function OrderDetail({ slug, apiUrl, ...initialStore }: OrderDetailProps)
             Tu dirección está fuera de la zona de entrega
           </p>
         )}
+        <p class="order-note">Te vamos a avisar por WhatsApp cómo va tu pedido.</p>
         <p class="order-note">Al enviar, se abrirá WhatsApp con el detalle de tu pedido para coordinar con el local.</p>
       </form>
 
