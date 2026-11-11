@@ -25,15 +25,20 @@ export const newOrderDetailsSchema = z
       .trim()
       .min(1, ORDERS_MESSAGES.manualNameRequired)
       .max(ORDER_NAME_MAX_LENGTH, ORDER_MESSAGES.nameTooLong),
-    customerPhone: z.string().trim(),
+    customerPhone: z
+      .string()
+      .trim()
+      .min(1, ORDERS_MESSAGES.manualPhoneRequired)
+      .refine((value) => value === "" || normalizeArWhatsapp(value) !== null, ORDERS_MESSAGES.phoneInvalid),
     address: z.string().trim().max(ORDER_ADDRESS_MAX_LENGTH, ORDER_MESSAGES.addressTooLong),
     source: z.enum(MANUAL_ORDER_SOURCES, ORDERS_MESSAGES.manualSourceInvalid),
     notes: z.string().trim().max(ORDER_NOTES_MAX_LENGTH, ORDERS_MESSAGES.notesTooLong),
+    whatsappConsent: z.boolean(),
   })
   .superRefine((value, ctx) => {
-    if (value.source === "whatsapp" && value.customerPhone === "") {
+    if (value.customerPhone === "") {
       ctx.addIssue({ code: "custom", message: ORDERS_MESSAGES.manualPhoneRequired, path: ["customerPhone"] });
-    } else if (value.customerPhone !== "" && !normalizeArWhatsapp(value.customerPhone)) {
+    } else if (!normalizeArWhatsapp(value.customerPhone)) {
       ctx.addIssue({ code: "custom", message: ORDERS_MESSAGES.phoneInvalid, path: ["customerPhone"] });
     }
     if (value.fulfillment === "delivery" && value.address === "") {
@@ -96,7 +101,7 @@ export function buildManualOrderBody({
     })),
     customer: {
       name: values.customerName.trim(),
-      ...(phone ? { phone } : {}),
+      phone: phone,
       ...(values.fulfillment === "delivery" || address ? { address: address || null } : {}),
     },
     fulfillment: values.fulfillment,
@@ -106,6 +111,7 @@ export function buildManualOrderBody({
     source: values.source,
     ...(notes ? { notes } : {}),
     markPaid: values.markPaid,
+    whatsappConsent: values.whatsappConsent,
     clientOrderId,
     expectedTotalCents: totalCents,
     tipCents,

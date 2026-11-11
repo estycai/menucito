@@ -141,15 +141,22 @@ export function NewOrderDetailsStep({
         <FormField
           label="Teléfono"
           error={errors.customerPhone?.message}
-          hint={
-            source === "whatsapp"
-              ? "Obligatorio para pedidos de WhatsApp."
-              : "Opcional. Con código de área, por ejemplo 11 1234-5678."
-          }
+          hint="Obligatorio. Con código de área, por ejemplo 11 1234-5678."
           inputMode="tel"
           autoComplete="off"
           {...register("customerPhone")}
         />
+        <label className="flex items-start gap-2.5 rounded-xl border border-line bg-bg/50 px-3.5 py-3">
+          <input
+            type="checkbox"
+            className="mt-0.5 size-5 shrink-0 accent-primary"
+            {...register("whatsappConsent")}
+          />
+          <span className="flex flex-col gap-0.5">
+            <span className="text-sm font-semibold text-ink">El cliente acepta avisos por WhatsApp</span>
+            <span className="text-xs text-muted">Marcalo solo si el cliente dice que sí.</span>
+          </span>
+        </label>
 
         {fulfillment === "delivery" &&
           (zones ? (

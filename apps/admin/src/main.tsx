@@ -9,6 +9,8 @@ import { CashPage } from "@/pages/CashPage";
 import { CashPrintPage } from "@/pages/CashPrintPage";
 import { CashSessionDetailPage } from "@/pages/CashSessionDetailPage";
 import { CouriersPage } from "@/pages/CouriersPage";
+import { CustomersMapPage } from "@/pages/CustomersMapPage";
+import { CustomersPage } from "@/pages/CustomersPage";
 import { DeliveriesPage } from "@/pages/DeliveriesPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
 import {
@@ -67,6 +69,10 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                 </Route>
                 <Route element={<RequirePermission permission="orders.view" />}>
                   <Route path="/pedidos" element={<OrdersPage />} />
+                </Route>
+                <Route element={<RequirePermission permission="customers.view" />}>
+                  <Route path="/clientes" element={<CustomersPage />} />
+                  <Route path="/clientes/mapa" element={<CustomersMapPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="cash.view" />}>
                   <Route path="/cajas" element={<CashPage />} />

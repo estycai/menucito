@@ -40,6 +40,7 @@ export function NewOrderDialog({ slug, onClose }: { slug: string | null; onClose
       address: "",
       source: "whatsapp",
       notes: "",
+      whatsappConsent: false,
       paymentMethod: "cash",
       splitCash: "",
       cashTendered: "",

@@ -5,7 +5,7 @@ import { buildManualOrderBody, shouldConfirmClose, type NewOrderFormValues } fro
 const values: NewOrderFormValues = {
   fulfillment: "takeaway",
   customerName: " Juan ",
-  customerPhone: "",
+  customerPhone: "11 5555-1234",
   address: "",
   source: "local",
   notes: "  timbre 2B  ",
@@ -14,6 +14,7 @@ const values: NewOrderFormValues = {
   cashTendered: "",
   markPaid: false,
   tipCents: 0,
+  whatsappConsent: false,
 };
 
 const line: CartLine = {
@@ -37,7 +38,8 @@ describe("15b: buildManualOrderBody", () => {
       cashTenderedCents: null,
     });
     expect(body.items).toEqual([{ productId: "prod-1", quantity: 2, choices: { Bacon: 2 } }]);
-    expect(body.customer).toEqual({ name: "Juan" });
+    expect(body.customer).toEqual({ name: "Juan", phone: "11 5555-1234" });
+    expect(body.whatsappConsent).toBe(false);
     expect(body.notes).toBe("timbre 2B");
     expect(body.source).toBe("local");
     expect(body.expectedTotalCents).toBe(200_000);
