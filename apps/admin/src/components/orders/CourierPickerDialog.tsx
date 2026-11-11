@@ -1,5 +1,6 @@
 import { useId, useState } from "react";
 import { Link } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { formatArs, type OrderStatus } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { Modal } from "@/components/Modal";
@@ -10,6 +11,7 @@ import { useAccess } from "@/lib/access";
 import { ApiError } from "@/lib/restaurant";
 import { assignFailureMessage, courierName, inProgressText, useCouriers } from "@/lib/couriers";
 import { useAssignCourier } from "@/lib/orders";
+import { askManualSent, markCurrentNoticeManual, navigateWhatsappWindow, reserveWhatsappWindow } from "@/lib/whatsapp";
 import { cn } from "@/lib/utils";
 
 const COURIERS_LOAD_FAILED = "No pudimos cargar los repartidores.";
@@ -29,6 +31,8 @@ interface CourierPickerDialogProps {
   status: OrderStatus;
   /** The courier already on the order, kept out of the list when reassigning. */
   currentCourierId?: string | null;
+  /** Closed WhatsApp window: open this text after the assignment (Ready orders only). */
+  noticeUrl?: string | null;
   onClose: () => void;
   /** Called once the API confirmed the assignment. */
   onAssigned: () => void;
@@ -42,11 +46,13 @@ export function CourierPickerDialog({
   order,
   status,
   currentCourierId = null,
+  noticeUrl = null,
   onClose,
   onAssigned,
 }: CourierPickerDialogProps) {
   const groupName = useId();
   const { isOwner } = useAccess();
+  const queryClient = useQueryClient();
   const couriersQuery = useCouriers();
   const assignMutation = useAssignCourier();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -61,10 +67,22 @@ export function CourierPickerDialog({
   async function handleAssign() {
     if (!selectedId) return;
     setErrorMsg(null);
+    const popup = noticeUrl ? reserveWhatsappWindow() : null;
     try {
       await assignMutation.mutateAsync({ id: order.id, courierMemberId: selectedId });
+      if (noticeUrl && navigateWhatsappWindow(popup, noticeUrl)) {
+        askManualSent(() => {
+          void markCurrentNoticeManual(order.id, "sent").finally(() => {
+            void queryClient.invalidateQueries({ queryKey: ["orders"] });
+            void queryClient.invalidateQueries({ queryKey: ["order-notifications"] });
+          });
+        });
+      } else {
+        popup?.close();
+      }
       onAssigned();
     } catch (error) {
+      popup?.close();
       setErrorMsg(assignFailureMessage(error));
       // The picked courier was deactivated or unmarked meanwhile: reload the list without it.
       if (error instanceof ApiError && error.code === "VALIDATION_ERROR") {

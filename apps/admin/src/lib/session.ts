@@ -3,6 +3,7 @@ import { useNavigate } from "react-router";
 import { authClient, unwrap } from "./auth-client";
 import { ORDERS_KEY } from "./orders";
 import { RESTAURANT_KEY } from "./restaurant";
+import { WHATSAPP_KEY, WHATSAPP_NOTICE_CONFIG_KEY } from "./whatsapp";
 
 export const SESSION_KEY = ["session"] as const;
 
@@ -28,6 +29,10 @@ export function clearSession(queryClient: QueryClient) {
   queryClient.setQueryData(SESSION_KEY, null);
   queryClient.removeQueries({ queryKey: RESTAURANT_KEY });
   queryClient.removeQueries({ queryKey: ORDERS_KEY });
+  // WhatsApp connection, notice config and history belong to the local that just signed out.
+  queryClient.removeQueries({ queryKey: WHATSAPP_KEY });
+  queryClient.removeQueries({ queryKey: WHATSAPP_NOTICE_CONFIG_KEY });
+  queryClient.removeQueries({ queryKey: ["order-notifications"] });
 }
 
 /** Ends the session, clears the cached session, restaurant and orders, and lands on /login. */

@@ -10,6 +10,7 @@ import {
 import { formatElapsed } from "@/lib/elapsed";
 import { cn } from "@/lib/utils";
 import { OrderSourceBadge } from "@/components/orders/OrderSourceBadge";
+import { Badge } from "@/components/ui/badge";
 
 const EMPTY_MESSAGES: Partial<Record<OrderStatus, string>> = {
   new: "No hay pedidos nuevos",
@@ -77,9 +78,14 @@ export function OrdersListView({ orders, deliveryEnabled, onSelectOrder }: Order
                 style={{ borderLeftColor: `var(--color-status-${order.status})` }}
                 className="flex min-h-14 w-full cursor-pointer flex-col gap-1 rounded-xl border border-line border-l-4 bg-white px-4 py-3 text-left shadow-sm transition hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-primary"
               >
-                <span className="flex items-center gap-2 text-sm font-extrabold text-ink">
+                <span className="flex flex-wrap items-center gap-2 text-sm font-extrabold text-ink">
                   N°{order.number} {FULFILLMENT_LABELS[order.fulfillment]}
                   <OrderSourceBadge source={order.source} />
+                  {order.notificationAlert && (
+                    <Badge tone="warning">
+                      {order.notificationAlert === "failed" ? "⚠ Aviso no enviado" : "Aviso pendiente de enviar"}
+                    </Badge>
+                  )}
                 </span>
                 <span className="text-xs text-muted">
                   {formatElapsed(now - order.createdAt)} | {PAYMENT_LABELS[order.paymentMethod]} |{" "}

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import type { BoardColumnConfig } from "@/lib/board-dnd";
 import type { OrderSummary } from "@menucito/shared";
-import { ORDER_CARD_CLASS, OrderCardContent } from "@/components/orders/OrderCard";
+import { OrderCardContent, orderCardClass } from "@/components/orders/OrderCard";
 import { cn } from "@/lib/utils";
 
 export type ColumnDragState = "idle" | "valid" | "invalid";
@@ -58,7 +58,7 @@ export function BoardColumn({
                 key={order.id}
                 type="button"
                 onClick={() => onSelectOrder(order.id)}
-                className={ORDER_CARD_CLASS}
+                className={orderCardClass(order.notificationAlert)}
               >
                 <OrderCardContent order={order} />
               </button>
@@ -106,7 +106,7 @@ function DraggableOrderCard({
       aria-busy={isSaving || undefined}
       onClick={onClick}
       className={cn(
-        ORDER_CARD_CLASS,
+        orderCardClass(order.notificationAlert),
         "touch-manipulation",
         isSaving ? "cursor-progress opacity-70" : "cursor-grab",
         isDragging && "opacity-40",

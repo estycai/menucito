@@ -26,6 +26,7 @@ describe("NAV_ITEMS", () => {
       "Mi menú",
       "Mi local",
       "Usuarios",
+      "Integraciones",
       "Reportes",
       "Plan y pagos",
     ]);
@@ -58,6 +59,7 @@ describe("activeNavItem", () => {
     ["/local/zonas", "Mi local"],
     ["/usuarios", "Usuarios"],
     ["/usuarios/roles", "Usuarios"],
+    ["/integraciones", "Integraciones"],
     ["/reportes", "Reportes"],
     ["/plan", "Plan y pagos"],
   ])("%s -> %s", (pathname, label) => {

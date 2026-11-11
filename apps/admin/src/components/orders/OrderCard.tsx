@@ -10,14 +10,20 @@ import { OrderStatusBadge } from "@/components/orders/OrderStatusBadge";
 import { OrderSourceBadge } from "@/components/orders/OrderSourceBadge";
 import { Badge } from "@/components/ui/badge";
 import { courierName } from "@/lib/couriers";
+import { cn } from "@/lib/utils";
 
 export const ORDER_CARD_CLASS =
   "flex min-h-[44px] cursor-pointer flex-col gap-2 rounded-xl border border-line bg-white p-4 text-left shadow-sm transition hover:border-primary/50 focus-visible:outline-2 focus-visible:outline-primary";
 
+/** Amber border when the notice of the current transition failed or is waiting for the employee. */
+export function orderCardClass(notificationAlert: OrderSummary["notificationAlert"]): string {
+  return cn(ORDER_CARD_CLASS, notificationAlert && "border-warning!");
+}
+
 /** Order card of the mobile history list: it mixes statuses, so it shows the colored status. */
 export function OrderCard({ order, onClick }: { order: OrderSummary; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className={ORDER_CARD_CLASS}>
+    <button type="button" onClick={onClick} className={orderCardClass(order.notificationAlert)}>
       <OrderCardContent order={order} showStatus />
     </button>
   );
@@ -43,6 +49,11 @@ export function OrderCardContent({ order, showStatus = false }: { order: OrderSu
       <div className="flex flex-wrap items-center gap-1.5">
         <OrderSourceBadge source={order.source} />
         <Badge tone="subtle">{FULFILLMENT_LABELS[order.fulfillment]}</Badge>
+        {order.notificationAlert && (
+          <Badge tone="warning">
+            {order.notificationAlert === "failed" ? "⚠ Aviso no enviado" : "Aviso pendiente de enviar"}
+          </Badge>
+        )}
       </div>
 
       {order.courier && (

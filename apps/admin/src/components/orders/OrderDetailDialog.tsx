@@ -1,9 +1,11 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ADDRESS_LABEL_TEXT,
   FULFILLMENT_LABELS,
   ORDER_STATUS_LABELS,
   PAYMENT_LABELS,
+  WHATSAPP_NOTIFICATION_STATUS_LABELS,
   describeOrderOptions,
   formatArs,
   formatLocalDateTime,
@@ -12,6 +14,7 @@ import {
   type OrderDetail,
   type OrderStatus,
   type PaymentStatus,
+  type WhatsappNotification,
 } from "@menucito/shared";
 import { Notice } from "@/components/AuthLayout";
 import { QueryError } from "@/components/QueryError";
@@ -33,6 +36,20 @@ import {
   useOrder,
 } from "@/lib/orders";
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
+import { useMyRestaurant } from "@/lib/restaurant";
+import {
+  ORDER_NOTIFICATIONS_KEY,
+  askManualSent,
+  manualNoticeUrlFor,
+  markCurrentNoticeManual,
+  navigateWhatsappWindow,
+  openManualNotice,
+  reserveWhatsappWindow,
+  useMarkNotificationManual,
+  useOrderNotifications,
+  useRetryNotification,
+  useWhatsappNoticeConfig,
+} from "@/lib/whatsapp";
 import { useScrollLock } from "@/lib/use-scroll-lock";
 import { useBackdropClose } from "@/lib/backdrop-close";
 import { orderCashNote } from "@/lib/order-cash-note";
@@ -43,6 +60,8 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const titleId = useId();
 
   const { data: order, isLoading, isError, isRefetching, refetch } = useOrder(orderId);
+  const queryClient = useQueryClient();
+  const { data: restaurant } = useMyRestaurant();
   const { can } = useAccess();
   const canChangeStatus = can("orders.status");
   const canChangePayment = can("orders.payment");
@@ -53,6 +72,10 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   const cash = useCashCurrent(canSettle);
   const settleMutation = useSettleOrders();
   const unsettleMutation = useUnsettleOrder();
+  const noticeConfig = useWhatsappNoticeConfig(canChangeStatus || canAssign);
+  const notificationsQuery = useOrderNotifications(orderId, can("orders.view"));
+  const retryMutation = useRetryNotification(orderId);
+  const manualMutation = useMarkNotificationManual(orderId);
 
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [showCancelConfirm, setShowCancelConfirm] = useState(false);
@@ -70,10 +93,33 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
   async function handleStatusChange(targetStatus: OrderStatus) {
     if (!order) return;
     setErrorMsg(null);
+    // Reserve the hand-off window in the click, before the API call, or the browser blocks it.
+    const noticeUrl = manualNoticeUrlFor(
+      {
+        ...order,
+        whatsappOptIn: order.whatsappOptIn ?? false,
+        whatsappWindowOpen: order.whatsappWindowOpen ?? false,
+      },
+      targetStatus,
+      noticeConfig.data,
+      restaurant?.name ?? "",
+    );
+    const popup = noticeUrl ? reserveWhatsappWindow() : null;
     try {
       await statusMutation.mutateAsync({ id: order.id, status: targetStatus });
+      if (noticeUrl && navigateWhatsappWindow(popup, noticeUrl)) {
+        askManualSent(() => {
+          void markCurrentNoticeManual(order.id, targetStatus).finally(() => {
+            void queryClient.invalidateQueries({ queryKey: ["orders"] });
+            void queryClient.invalidateQueries({ queryKey: ORDER_NOTIFICATIONS_KEY(order.id) });
+          });
+        });
+      } else {
+        popup?.close();
+      }
       setShowCancelConfirm(false);
     } catch (err: unknown) {
+      popup?.close();
       if (isInvalidTransitionError(err)) {
         refetch();
         setErrorMsg(ORDERS_UI_MESSAGES.orderChanged);
@@ -171,6 +217,23 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
             )}
             <OrderItems order={order} />
             <OrderTotals order={order} />
+
+            {notificationsQuery.data && notificationsQuery.data.notifications.length > 0 && (
+              <OrderWhatsappNotice
+                order={order}
+                notifications={notificationsQuery.data.notifications}
+                retrying={retryMutation.isPending}
+                markingManual={manualMutation.isPending}
+                onRetry={(notificationId) =>
+                  retryMutation.mutate(notificationId, {
+                    onError: () => setErrorMsg(ORDERS_UI_MESSAGES.updateFailed),
+                  })
+                }
+                onManual={(notification) =>
+                  openManualNotice(order.customerPhone, notification.body, () => manualMutation.mutate(notification.id))
+                }
+              />
+            )}
 
             {(canChangeStatus || canChangePayment || canAssign) && (
             <div className="flex flex-col gap-2 border-t border-line pt-4">
@@ -320,6 +383,20 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
         }}
         status={order.status}
         currentCourierId={order.courier?.memberId ?? null}
+        noticeUrl={
+          order.status === "ready"
+            ? manualNoticeUrlFor(
+                {
+                  ...order,
+                  whatsappOptIn: order.whatsappOptIn ?? false,
+                  whatsappWindowOpen: order.whatsappWindowOpen ?? false,
+                },
+                "sent",
+                noticeConfig.data,
+                restaurant?.name ?? "",
+              )
+            : null
+        }
         onClose={() => setShowCourierPicker(false)}
         onAssigned={() => setShowCourierPicker(false)}
       />
@@ -329,6 +406,85 @@ export function OrderDetailDialog({ orderId, onClose }: { orderId: string; onClo
       <OrderPaymentDialog order={order} onClose={() => setShowPaymentDialog(false)} />
     )}
     </>
+  );
+}
+
+function notificationTone(status: WhatsappNotification["status"]) {
+  if (status === "failed") return "danger" as const;
+  if (status === "pending_manual") return "warning" as const;
+  if (status === "skipped") return "subtle" as const;
+  if (status === "sending") return "info" as const;
+  return "success" as const;
+}
+
+/** History of the order's WhatsApp notices, with the reason and the two recovery actions. */
+function OrderWhatsappNotice({
+  order,
+  notifications,
+  retrying,
+  markingManual,
+  onRetry,
+  onManual,
+}: {
+  order: OrderDetail;
+  notifications: WhatsappNotification[];
+  retrying: boolean;
+  markingManual: boolean;
+  onRetry: (notificationId: string) => void;
+  onManual: (notification: WhatsappNotification) => void;
+}) {
+  const current = notifications.find((notification) => notification.targetStatus === order.status);
+  const manualTarget =
+    current && (current.status === "failed" || current.status === "pending_manual") ? current : null;
+
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-line p-3.5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-xs font-bold text-muted">Aviso por WhatsApp</span>
+        {current?.status === "failed" && <Badge tone="warning">⚠ Aviso no enviado</Badge>}
+        {current?.status === "pending_manual" && <Badge tone="warning">Aviso pendiente de enviar</Badge>}
+      </div>
+      <ul className="m-0 flex list-none flex-col divide-y divide-line p-0">
+        {notifications.map((notification) => (
+          <li key={notification.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+            <span className="text-ink">{ORDER_STATUS_LABELS[notification.targetStatus]}</span>
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-xs text-muted">{formatLocalDateTime(notification.createdAt)}</span>
+              <Badge tone={notificationTone(notification.status)}>
+                {WHATSAPP_NOTIFICATION_STATUS_LABELS[notification.status]}
+              </Badge>
+            </span>
+            {notification.status === "failed" && notification.errorMessage && (
+              <span className="basis-full text-xs text-danger">{notification.errorMessage}</span>
+            )}
+          </li>
+        ))}
+      </ul>
+
+      {manualTarget && (
+        <div className="flex flex-col-reverse gap-2 pt-1 sm:flex-row sm:justify-end">
+          {manualTarget.status === "failed" && (
+            <Button
+              type="button"
+              variant="outline"
+              disabled={retrying || markingManual}
+              onClick={() => onRetry(manualTarget.id)}
+              className="min-h-11 px-4 text-sm font-bold"
+            >
+              {retrying ? "Reintentando…" : "Reintentar"}
+            </Button>
+          )}
+          <Button
+            type="button"
+            disabled={retrying || markingManual}
+            onClick={() => onManual(manualTarget)}
+            className="min-h-11 px-4 text-sm font-bold"
+          >
+            Enviar a mano
+          </Button>
+        </div>
+      )}
+    </div>
   );
 }
 

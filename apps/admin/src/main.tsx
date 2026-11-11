@@ -13,6 +13,7 @@ import { CustomersMapPage } from "@/pages/CustomersMapPage";
 import { CustomersPage } from "@/pages/CustomersPage";
 import { DeliveriesPage } from "@/pages/DeliveriesPage";
 import { ForgotPasswordPage } from "@/pages/ForgotPasswordPage";
+import { IntegrationsPage } from "@/pages/IntegrationsPage";
 import {
   LocalAppearanceTab,
   LocalGeneralTab,
@@ -110,6 +111,9 @@ createRoot(document.getElementById("root") as HTMLElement).render(
                     ))}
                     <Route path="*" element={<Navigate to={DEFAULT_USERS_TAB_PATH} replace />} />
                   </Route>
+                </Route>
+                <Route element={<RequirePermission permission="integrations.view" />}>
+                  <Route path="/integraciones" element={<IntegrationsPage />} />
                 </Route>
                 <Route element={<RequirePermission permission="stats.view" />}>
                   <Route path="/reportes" element={<ReportsPage />} />

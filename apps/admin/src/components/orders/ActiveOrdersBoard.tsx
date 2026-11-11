@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { useMutationState } from "@tanstack/react-query";
+import { useMutationState, useQueryClient } from "@tanstack/react-query";
 import {
   DndContext,
   DragOverlay,
@@ -37,6 +37,15 @@ import {
   useChangeOrderStatus,
 } from "@/lib/orders";
 import { ORDERS_UI_MESSAGES } from "@/lib/orders-messages";
+import { useMyRestaurant } from "@/lib/restaurant";
+import {
+  askManualSent,
+  manualNoticeUrlFor,
+  markCurrentNoticeManual,
+  navigateWhatsappWindow,
+  reserveWhatsappWindow,
+  useWhatsappNoticeConfig,
+} from "@/lib/whatsapp";
 
 interface ActiveOrdersBoardProps {
   /** `orders.status`: without it the cards open the detail but cannot be dragged. */
@@ -72,10 +81,15 @@ export function ActiveOrdersBoard({
   onShowDeliveredHistory,
 }: ActiveOrdersBoardProps) {
   const statusMutation = useChangeOrderStatus();
+  const queryClient = useQueryClient();
+  const { data: restaurant } = useMyRestaurant();
+  const noticeConfig = useWhatsappNoticeConfig(canMove || canAssign);
   const [boardError, setBoardError] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<UniqueIdentifier | null>(null);
   /** Ready order waiting for a courier: the picker is open for it (change 13 scenario 39). */
   const [assignOrderId, setAssignOrderId] = useState<string | null>(null);
+  /** Closed window of a Ready order: the picker opens WhatsApp Web after the assignment. */
+  const [assignNoticeUrl, setAssignNoticeUrl] = useState<string | null>(null);
 
   // Orders with a status change in flight (from the board or the detail dialog) cannot be dragged.
   const savingIds = useMutationState({
@@ -156,14 +170,30 @@ export function ActiveOrdersBoard({
     // "Enviados" is only reached by assigning a courier: the drop opens the picker.
     if (over.id === "sent") {
       setBoardError(null);
+      setAssignNoticeUrl(manualNoticeUrlFor(order, "sent", noticeConfig.data, restaurant?.name ?? ""));
       setAssignOrderId(order.id);
       return;
     }
 
+    const targetStatus = over.id;
+    // Reserve the hand-off window inside the drop, before any await, or the browser blocks it.
+    const noticeUrl = manualNoticeUrlFor(order, targetStatus, noticeConfig.data, restaurant?.name ?? "");
+    const popup = noticeUrl ? reserveWhatsappWindow() : null;
     setBoardError(null);
     try {
-      await statusMutation.mutateAsync({ id: order.id, status: over.id });
+      await statusMutation.mutateAsync({ id: order.id, status: targetStatus });
+      if (noticeUrl && navigateWhatsappWindow(popup, noticeUrl)) {
+        askManualSent(() => {
+          void markCurrentNoticeManual(order.id, targetStatus).finally(() => {
+            void queryClient.invalidateQueries({ queryKey: ["orders"] });
+            void queryClient.invalidateQueries({ queryKey: ["order-notifications"] });
+          });
+        });
+      } else {
+        popup?.close();
+      }
     } catch (err: unknown) {
+      popup?.close();
       if (isInvalidTransitionError(err)) {
         onRefresh();
         setBoardError(ORDERS_UI_MESSAGES.orderChanged);
@@ -231,8 +261,15 @@ export function ActiveOrdersBoard({
           }}
           status={assignOrder.status}
           currentCourierId={assignOrder.courier?.memberId ?? null}
-          onClose={() => setAssignOrderId(null)}
-          onAssigned={() => setAssignOrderId(null)}
+          noticeUrl={assignNoticeUrl}
+          onClose={() => {
+            setAssignOrderId(null);
+            setAssignNoticeUrl(null);
+          }}
+          onAssigned={() => {
+            setAssignOrderId(null);
+            setAssignNoticeUrl(null);
+          }}
         />
       )}
     </div>

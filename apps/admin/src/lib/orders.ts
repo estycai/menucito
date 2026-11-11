@@ -21,6 +21,7 @@ import {
   type UpdateOrderPaymentMethodInput,
 } from "@menucito/shared";
 import { ApiError, api } from "./restaurant";
+import { ORDER_NOTIFICATIONS_KEY } from "./whatsapp";
 
 export const ORDERS_KEY = ["orders"] as const;
 export const ORDER_DETAIL_KEY = (id: string) => ["orders", "detail", id] as const;
@@ -403,6 +404,19 @@ function writeBoard(queryClient: QueryClient, current: BoardPages, next: BoardPa
   if (next.delivered !== current.delivered) queryClient.setQueryData(DELIVERED_TODAY_KEY, next.delivered);
 }
 
+/**
+ * Writes a mutation's answer into the detail cache. Only `GET /api/orders/:id` carries the WhatsApp
+ * fields (`whatsappOptIn`, `whatsappWindowOpen`), so they are kept from the cached detail; without
+ * them a second status change in the same dialog would never open WhatsApp Web (change 17b).
+ */
+function setOrderDetail(queryClient: QueryClient, updated: OrderDetail) {
+  queryClient.setQueryData<OrderDetail>(ORDER_DETAIL_KEY(updated.id), (previous) => ({
+    ...updated,
+    whatsappOptIn: updated.whatsappOptIn ?? previous?.whatsappOptIn,
+    whatsappWindowOpen: updated.whatsappWindowOpen ?? previous?.whatsappWindowOpen,
+  }));
+}
+
 export function useChangeOrderStatus() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -430,11 +444,13 @@ export function useChangeOrderStatus() {
       writeBoard(queryClient, pages, revertOrder(pages, context.previousOrder));
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      setOrderDetail(queryClient, updated);
     },
     // Both board lists (and the history) reload whatever the outcome.
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+      // The detail shows the notice history of this order (change 17b).
+      void queryClient.invalidateQueries({ queryKey: ORDER_NOTIFICATIONS_KEY(variables.id) });
     },
   });
 }
@@ -459,12 +475,13 @@ export function useAssignCourier() {
       ]);
     },
     onSuccess: (updated) => {
-      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      setOrderDetail(queryClient, updated);
       const pages = readBoard(queryClient);
       writeBoard(queryClient, pages, applyAssignment(pages, updated));
     },
-    onSettled: () => {
+    onSettled: (_data, _error, variables) => {
       void queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
+      void queryClient.invalidateQueries({ queryKey: ORDER_NOTIFICATIONS_KEY(variables.id) });
     },
   });
 }
@@ -478,7 +495,7 @@ export function useChangeOrderPayment() {
         body: JSON.stringify({ paymentStatus }),
       }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      setOrderDetail(queryClient, updated);
       queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
     },
   });
@@ -494,7 +511,7 @@ export function useChangeOrderPaymentMethod() {
         body: JSON.stringify(input),
       }),
     onSuccess: (updated) => {
-      queryClient.setQueryData(ORDER_DETAIL_KEY(updated.id), updated);
+      setOrderDetail(queryClient, updated);
       queryClient.invalidateQueries({ queryKey: ORDERS_KEY });
     },
   });
