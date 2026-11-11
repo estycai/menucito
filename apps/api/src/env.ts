@@ -22,6 +22,17 @@ export interface Env {
   GOOGLE_MAPS_SERVER_KEY?: string;
   /** Comma-separated list of allowed origins for public CORS. */
   WEB_ORIGINS?: string;
+  /** Meta app with the WhatsApp use case (Tech Provider). Without it Integrations answers 503. */
+  META_APP_ID?: string;
+  META_APP_SECRET?: string;
+  /** Embedded Signup configuration id (`featureType: whatsapp_business_app_onboarding`). */
+  META_ES_CONFIG_ID?: string;
+  /** Token of `GET /api/webhooks/whatsapp`; Meta sends it back when verifying the URL. */
+  WHATSAPP_WEBHOOK_VERIFY_TOKEN?: string;
+  /** 32-byte AES-GCM key in base64 that encrypts the locals' access tokens in D1. */
+  WHATSAPP_TOKEN_KEY?: string;
+  /** Test seam: replaces the Meta client. Never set in a deployed environment. */
+  WHATSAPP_CLIENT?: import("./whatsapp/graph").WhatsappClient;
 }
 
 /** The signed-in member of a restaurant, resolved by `requireMember` (the tenant always comes from here). */

@@ -243,10 +243,17 @@ export const customers = sqliteTable(
     // `web` | `manual`.
     whatsappOptInSource: text("whatsapp_opt_in_source"),
     whatsappOptOut: integer("whatsapp_opt_out", { mode: "boolean" }).notNull().default(false),
+    // Last message the customer sent to the store (change 17b): Meta's 24-hour window.
+    waLastInboundAt: integer("wa_last_inbound_at", { mode: "timestamp_ms" }),
+    /** Meta's per-business user id, when the webhook sends it. */
+    waBsuid: text("wa_bsuid"),
     createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
     updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
   },
-  (t) => [uniqueIndex("customers_restaurant_phone_unique").on(t.restaurantId, t.phone)],
+  (t) => [
+    uniqueIndex("customers_restaurant_phone_unique").on(t.restaurantId, t.phone),
+    index("customers_restaurant_bsuid_idx").on(t.restaurantId, t.waBsuid),
+  ],
 );
 
 // Tags the owner creates to label customers (change 17a). Names are unique per restaurant ignoring
@@ -498,6 +505,63 @@ export const orderMessageTemplates = sqliteTable(
 );
 
 export type OrderMessageTemplateRow = typeof orderMessageTemplates.$inferSelect;
+
+// WhatsApp connection of a local (1:1, change 17b). `access_token_enc` is AES-GCM ciphertext; it is
+// cleared on disconnect. `status` is `connected`, `disconnected` or `error`.
+export const whatsappConnections = sqliteTable(
+  "whatsapp_connections",
+  {
+    restaurantId: text("restaurant_id")
+      .primaryKey()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    wabaId: text("waba_id").notNull(),
+    phoneNumberId: text("phone_number_id").notNull(),
+    displayPhone: text("display_phone").notNull(),
+    displayName: text("display_name").notNull(),
+    accessTokenEnc: text("access_token_enc"),
+    tokenExpiresAt: integer("token_expires_at", { mode: "timestamp_ms" }),
+    status: text("status").notNull().default("connected"),
+    statusDetail: text("status_detail"),
+    businessVerified: integer("business_verified", { mode: "boolean" }).notNull().default(false),
+    coexistence: integer("coexistence", { mode: "boolean" }).notNull().default(false),
+    autoSend: integer("auto_send", { mode: "boolean" }).notNull().default(true),
+    connectedAt: integer("connected_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [uniqueIndex("whatsapp_connections_phone_number_id_unique").on(t.phoneNumberId)],
+);
+
+export type WhatsappConnectionRow = typeof whatsappConnections.$inferSelect;
+
+// One notice per order and destination status. The unique key is the idempotency of the notifier.
+export const orderNotifications = sqliteTable(
+  "order_notifications",
+  {
+    id: text("id").primaryKey(),
+    restaurantId: text("restaurant_id")
+      .notNull()
+      .references(() => restaurants.id, { onDelete: "cascade" }),
+    orderId: text("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    targetStatus: text("target_status").notNull(),
+    channel: text("channel").notNull(),
+    status: text("status").notNull(),
+    body: text("body").notNull(),
+    errorCode: text("error_code"),
+    errorMessage: text("error_message"),
+    waMessageId: text("wa_message_id"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" }).notNull(),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" }).notNull(),
+  },
+  (t) => [
+    uniqueIndex("order_notifications_order_target_unique").on(t.orderId, t.targetStatus),
+    index("order_notifications_restaurant_status_idx").on(t.restaurantId, t.status),
+    index("order_notifications_wa_message_idx").on(t.waMessageId),
+  ],
+);
+
+export type OrderNotificationRow = typeof orderNotifications.$inferSelect;
 
 // Fixed-window request counters of the public endpoints that cost money (address search). One row
 // per key (e.g. `places:<slug>:<ip>`); `window_start` is the epoch ms the current window began.

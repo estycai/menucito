@@ -35,6 +35,7 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   CUSTOMER_NOT_FOUND: 404,
   CUSTOMER_TAG_NOT_FOUND: 404,
   CUSTOMER_ADDRESS_NOT_FOUND: 404,
+  NOTIFICATION_NOT_FOUND: 404,
   CASH_SESSION_NOT_FOUND: 404,
   CASH_MOVEMENT_NOT_FOUND: 404,
   PLACE_NOT_FOUND: 404,
@@ -82,6 +83,9 @@ const STATUS_BY_CODE: Readonly<Record<string, ContentfulStatusCode>> = {
   RATE_LIMITED: 429,
   ORDER_NUMBER_CONFLICT: 503,
   MAPS_UNAVAILABLE: 503,
+  WHATSAPP_UNAVAILABLE: 503,
+  WHATSAPP_ERROR: 502,
+  WHATSAPP_PHONE_IN_USE: 409,
 };
 
 export function statusFor(error: DomainError): ContentfulStatusCode {
@@ -183,4 +187,16 @@ export async function readUploadedFile(
   const file = form?.file;
   if (!(file instanceof File)) return { response: errorResponse(c, 422, "VALIDATION_ERROR", "file: a file is required") };
   return { file };
+}
+
+/**
+ * Runs the notice without delaying the response: `waitUntil` in Workers, awaited when there is no
+ * execution context (unit tests). The notifier never throws.
+ */
+export async function runNotice(c: Context<AppEnv>, task: Promise<unknown>): Promise<void> {
+  try {
+    c.executionCtx.waitUntil(task);
+  } catch {
+    await task;
+  }
 }

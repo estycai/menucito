@@ -62,7 +62,11 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("GET", "/api/orders/places/search", "orders.create"),
   route("GET", "/api/orders/places/:placeId", "orders.create"),
   route("POST", "/api/orders/delivery-quote", "orders.create"),
+  route("GET", "/api/orders/whatsapp-config", "orders.view"),
   route("GET", "/api/orders/:id", "orders.view"),
+  route("GET", "/api/orders/:id/notifications", "orders.view"),
+  route("POST", "/api/orders/:id/notifications/:notificationId/retry", "orders.status"),
+  route("POST", "/api/orders/:id/notifications/:notificationId/manual", "orders.status"),
   route("PATCH", "/api/orders/:id/status", "orders.status"),
   route("PATCH", "/api/orders/:id/payment", "orders.payment"),
   route("PATCH", "/api/orders/:id/payment-method", "orders.payment"),
@@ -115,6 +119,11 @@ export const OWNER_ROUTES: readonly RouteExpectation[] = [
   route("PATCH", "/api/roles/:id", "owner"),
   route("DELETE", "/api/roles/:id", "owner"),
 
+  route("GET", "/api/integrations/whatsapp", "integrations.view"),
+  route("POST", "/api/integrations/whatsapp/connect", "integrations.edit"),
+  route("PATCH", "/api/integrations/whatsapp", "integrations.edit"),
+  route("DELETE", "/api/integrations/whatsapp", "integrations.edit"),
+
   route("GET", "/api/reports/meta", "stats.view"),
   route("GET", "/api/reports/evolution", "stats.tab.evolution"),
   route("GET", "/api/reports/billing", "stats.tab.billing"),
@@ -133,4 +142,10 @@ export const SESSION_ONLY_ROUTES: readonly string[] = [
 ];
 
 /** Route prefixes that are not the owner's API (no member check applies). */
-export const NON_OWNER_PREFIXES: readonly string[] = ["/health", "/api/auth", "/api/public", "/api/media"];
+export const NON_OWNER_PREFIXES: readonly string[] = [
+  "/health",
+  "/api/auth",
+  "/api/public",
+  "/api/media",
+  "/api/webhooks",
+];

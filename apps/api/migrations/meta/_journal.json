@@ -134,6 +134,13 @@
       "when": 1794358179877,
       "tag": "0018_customers",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "6",
+      "when": 1794371011551,
+      "tag": "0019_whatsapp",
+      "breakpoints": true
     }
   ]
 }

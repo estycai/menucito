@@ -335,3 +335,34 @@ export class RoleNameTakenError extends DomainError {
     super(message);
   }
 }
+
+/** WhatsApp is not configured in this environment (no Meta app id/secret). */
+export class WhatsappUnavailableError extends DomainError {
+  readonly code = "WHATSAPP_UNAVAILABLE";
+  constructor(message = "WhatsApp no está disponible en este entorno") {
+    super(message);
+  }
+}
+
+/** Meta answered with an error while connecting the local. */
+export class WhatsappError extends DomainError {
+  readonly code = "WHATSAPP_ERROR";
+  constructor(message = "No pudimos conectar WhatsApp. Probá de nuevo.") {
+    super(message);
+  }
+}
+
+/** The phone number is already connected by another local. */
+export class WhatsappPhoneInUseError extends DomainError {
+  readonly code = "WHATSAPP_PHONE_IN_USE";
+  constructor(message = "Ese número de WhatsApp ya está conectado en otro local") {
+    super(message);
+  }
+}
+
+export class NotificationNotFoundError extends DomainError {
+  readonly code = "NOTIFICATION_NOT_FOUND";
+  constructor(message = "Aviso no encontrado") {
+    super(message);
+  }
+}

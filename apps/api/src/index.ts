@@ -7,6 +7,7 @@ import { couriersRoutes } from "./routes/couriers";
 import { customerTagsRoutes } from "./routes/customer-tags";
 import { customersRoutes } from "./routes/customers";
 import { deliveriesRoutes } from "./routes/deliveries";
+import { integrationsRoutes } from "./routes/integrations";
 import { mediaRoutes } from "./routes/media";
 import { membersRoutes } from "./routes/members";
 import { orderMessagesRoutes } from "./routes/order-messages";
@@ -16,6 +17,7 @@ import { publicRoutes } from "./routes/public";
 import { reportsRoutes } from "./routes/reports";
 import { restaurantsRoutes } from "./routes/restaurants";
 import { rolesRoutes } from "./routes/roles";
+import { whatsappWebhookRoutes } from "./routes/webhooks";
 
 const app = new Hono<AppEnv>();
 
@@ -46,6 +48,8 @@ app.route("/api/deliveries", deliveriesRoutes);
 app.route("/api/members", membersRoutes);
 app.route("/api/roles", rolesRoutes);
 app.route("/api/reports", reportsRoutes);
+app.route("/api/integrations", integrationsRoutes);
+app.route("/api/webhooks", whatsappWebhookRoutes);
 app.route("/api/public", publicRoutes);
 
 export default app;

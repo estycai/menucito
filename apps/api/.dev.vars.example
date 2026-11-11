@@ -13,3 +13,12 @@ ALLOW_PLAN_SWITCH=true
 WEB_ORIGINS=http://localhost:4321
 # Server key for Places API (New) + Geocoding v3 (store address search). Leave empty to disable it.
 GOOGLE_MAPS_SERVER_KEY=
+# WhatsApp Business (change 17b). Leave META_APP_ID empty to hide Integraciones (503 WHATSAPP_UNAVAILABLE).
+META_APP_ID=
+META_APP_SECRET=
+# Embedded Signup configuration id (`featureType: whatsapp_business_app_onboarding`).
+META_ES_CONFIG_ID=
+# Meta sends it back on GET /api/webhooks/whatsapp.
+WHATSAPP_WEBHOOK_VERIFY_TOKEN=
+# 32-byte AES-GCM key in base64 that encrypts the locals' tokens: openssl rand -base64 32
+WHATSAPP_TOKEN_KEY=

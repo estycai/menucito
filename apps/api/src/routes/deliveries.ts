@@ -4,7 +4,8 @@ import type { AppEnv } from "../env";
 import { requireCourier, requireMember } from "../middleware/require-member";
 import { requireSession } from "../middleware/require-session";
 import { deliveriesServiceFor } from "../services/deliveries";
-import { domainErrorHandler, parseQuery } from "./http";
+import { whatsappNotifierFor } from "../services/whatsapp-notifier";
+import { domainErrorHandler, parseQuery, runNotice } from "./http";
 
 /** "Mis repartos": the courier's own orders. Enabled by the `is_courier` mark, not by a permission. */
 export const deliveriesRoutes = new Hono<AppEnv>()
@@ -29,6 +30,8 @@ export const deliveriesRoutes = new Hono<AppEnv>()
       member.memberId,
       c.req.param("id"),
     );
+    // The courier's "Entregado" notifies the customer like the board's status change (change 17b).
+    await runNotice(c, whatsappNotifierFor(c.env).onStatusChanged(member.restaurantId, order, "delivered"));
     return c.json(order);
   })
 

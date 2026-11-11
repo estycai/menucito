@@ -2,6 +2,7 @@ import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notExists,
 import { drizzle } from "drizzle-orm/d1";
 import {
   ACTIVE_ORDER_STATUSES,
+  WHATSAPP_WINDOW_MS,
   type AddressLabel,
   type CourierDelivery,
   type CourierOption,
@@ -605,6 +606,7 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
     async list(restaurantId, filter) {
       const limit = Math.min(100, Math.max(1, filter.limit ?? 50));
       const whereCondition = buildFilterConditions(restaurantId, filter);
+      const windowStart = Date.now() - WHATSAPP_WINDOW_MS;
 
       const rows = await db
         .select({
@@ -612,6 +614,16 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
           itemCount: sql<number>`(SELECT count(*) FROM order_items WHERE order_items.order_id = orders.id)`,
           courierFirstName: restaurantMembers.firstName,
           courierLastName: restaurantMembers.lastName,
+          // Only the notice of the transition the order is in: an older failed notice stops showing.
+          notificationAlert: sql<string | null>`(SELECT n.status FROM order_notifications n
+              WHERE n.order_id = orders.id AND n.target_status = orders.status
+                AND n.status IN ('failed','pending_manual') LIMIT 1)`,
+          whatsappOptIn: sql<number>`COALESCE((SELECT CASE
+              WHEN c.whatsapp_opt_in_at IS NOT NULL AND c.whatsapp_opt_out = 0 THEN 1 ELSE 0 END
+              FROM customers c WHERE c.id = orders.customer_id), 0)`,
+          whatsappWindowOpen: sql<number>`COALESCE((SELECT CASE
+              WHEN c.wa_last_inbound_at >= ${windowStart} THEN 1 ELSE 0 END
+              FROM customers c WHERE c.id = orders.customer_id), 0)`,
         })
         .from(orders)
         .leftJoin(restaurantMembers, eq(restaurantMembers.id, orders.courierMemberId))
@@ -623,40 +635,46 @@ export function createOrdersRepository(d1: D1Database): OrdersRepository {
       const hasMore = rows.length > limit;
       const sliced = hasMore ? rows.slice(0, limit) : rows;
 
-      const orderSummaries: OrderSummary[] = sliced.map(({ order, itemCount, courierFirstName, courierLastName }) => ({
-        id: order.id,
-        number: order.number,
-        status: order.status as OrderStatus,
-        paymentStatus: order.paymentStatus as PaymentStatus,
-        fulfillment: order.fulfillment as Fulfillment,
-        paymentMethod: order.paymentMethod as PaymentMethod,
-        source: order.source as OrderSource,
-        splitCashCents: order.splitCashCents,
-        cashTenderedCents: order.cashTenderedCents,
-        paymentBreakdown: paymentBreakdown({
-          totalCents: order.totalCents,
+      const orderSummaries: OrderSummary[] = sliced.map(
+        ({ order, itemCount, courierFirstName, courierLastName, notificationAlert, whatsappOptIn, whatsappWindowOpen }) => ({
+          id: order.id,
+          number: order.number,
+          status: order.status as OrderStatus,
+          paymentStatus: order.paymentStatus as PaymentStatus,
+          fulfillment: order.fulfillment as Fulfillment,
           paymentMethod: order.paymentMethod as PaymentMethod,
+          source: order.source as OrderSource,
           splitCashCents: order.splitCashCents,
           cashTenderedCents: order.cashTenderedCents,
+          paymentBreakdown: paymentBreakdown({
+            totalCents: order.totalCents,
+            paymentMethod: order.paymentMethod as PaymentMethod,
+            splitCashCents: order.splitCashCents,
+            cashTenderedCents: order.cashTenderedCents,
+          }),
+          paidAt: order.paidAt?.getTime() ?? null,
+          cashSessionId: order.cashSessionId,
+          settledAt: order.settledAt?.getTime() ?? null,
+          customerName: order.customerName,
+          customerPhone: order.customerPhone,
+          whatsappOptIn: Boolean(whatsappOptIn),
+          whatsappWindowOpen: Boolean(whatsappWindowOpen),
+          notificationAlert:
+            notificationAlert === "failed" || notificationAlert === "pending_manual" ? notificationAlert : null,
+          notes: order.notes,
+          totalCents: order.totalCents,
+          itemCount: Number(itemCount),
+          createdAt: order.createdAt.getTime(),
+          courier:
+            order.courierMemberId && courierFirstName
+              ? { memberId: order.courierMemberId, firstName: courierFirstName, lastName: courierLastName ?? "" }
+              : null,
+          deliveryLocation:
+            order.deliveryLat === null || order.deliveryLng === null
+              ? null
+              : { lat: order.deliveryLat, lng: order.deliveryLng, zoneName: order.deliveryZoneName },
         }),
-        paidAt: order.paidAt?.getTime() ?? null,
-        cashSessionId: order.cashSessionId,
-        settledAt: order.settledAt?.getTime() ?? null,
-        customerName: order.customerName,
-        customerPhone: order.customerPhone,
-        notes: order.notes,
-        totalCents: order.totalCents,
-        itemCount: Number(itemCount),
-        createdAt: order.createdAt.getTime(),
-        courier:
-          order.courierMemberId && courierFirstName
-            ? { memberId: order.courierMemberId, firstName: courierFirstName, lastName: courierLastName ?? "" }
-            : null,
-        deliveryLocation:
-          order.deliveryLat === null || order.deliveryLng === null
-            ? null
-            : { lat: order.deliveryLat, lng: order.deliveryLng, zoneName: order.deliveryZoneName },
-      }));
+      );
 
       const last = sliced[sliced.length - 1];
       const nextBefore = hasMore && last ? last.order.number : null;
