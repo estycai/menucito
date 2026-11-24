@@ -298,7 +298,7 @@ describe("15b: POST /api/orders", () => {
     expect(withoutCash.status).toBe(201);
     expect(await withoutCash.json()).toMatchObject({ paymentStatus: "paid", cashSessionId: null });
 
-    const session = await owner.client.post("/api/cash-sessions", { openingCashCents: 0 });
+    const session = await owner.client.post("/api/cash-sessions", { openingCashCents: 0, openingTransferCents: 0 });
     expect(session.status).toBe(201);
     const sessionId = ((await session.json()) as { id: string }).id;
 
@@ -321,7 +321,7 @@ describe("15b: POST /api/orders", () => {
       ],
     });
     expect(settings.status).toBe(200);
-    const session = await owner.client.post("/api/cash-sessions", { openingCashCents: 0 });
+    const session = await owner.client.post("/api/cash-sessions", { openingCashCents: 0, openingTransferCents: 0 });
     const sessionId = ((await session.json()) as { id: string }).id;
 
     const split = await owner.client.post(

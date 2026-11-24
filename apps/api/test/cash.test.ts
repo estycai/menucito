@@ -112,8 +112,8 @@ const currentOf = async (client: Client): Promise<CashCurrent> => {
   const res = await client.get("/api/cash-sessions/current");
   return (await res.json()) as CashCurrent;
 };
-const openCash = (owner: OwnerFixture, openingCashCents = 2_000_000) =>
-  owner.client.post("/api/cash-sessions", { openingCashCents });
+const openCash = (owner: OwnerFixture, openingCashCents = 2_000_000, openingTransferCents = 0) =>
+  owner.client.post("/api/cash-sessions", { openingCashCents, openingTransferCents });
 
 describe("14b cash sessions", () => {
   it("opens one session, suggests the previous count and refuses a second (scenarios 1-5)", async () => {
@@ -132,6 +132,78 @@ describe("14b cash sessions", () => {
     const second = await openCash(owner);
     expect(second.status).toBe(409);
     expect(await errorCode(second)).toBe("CASH_SESSION_ALREADY_OPEN");
+  });
+
+  it("keeps the two boxes separate from opening to close and suggests the transfer balance (spec 18)", async () => {
+    const { owner, productId } = await store();
+    const opened = await openCash(owner, 100_000, 500_000);
+    expect(opened.status).toBe(201);
+    const session = (await opened.json()) as CashSession;
+    expect(session).toMatchObject({ openingCashCents: 100_000, openingTransferCents: 500_000 });
+
+    let current = await currentOf(owner.client);
+    expect(current.openingSuggestionCents).toBe(0);
+    expect(current.openingTransferSuggestionCents).toBe(0);
+    expect(current.totals?.cash.openingCents).toBe(100_000);
+    expect(current.totals?.transfer.openingCents).toBe(500_000);
+    expect(current.totals?.expectedCashCents).toBe(100_000);
+    expect(current.totals?.expectedTransferCents).toBe(500_000);
+
+    const transferOrder = await createOrder(owner.slug, productId, { paymentMethod: "transfer" });
+    expect((await owner.client.patch(`/api/orders/${transferOrder.id}/payment`, { paymentStatus: "paid" })).status).toBe(200);
+    expect(
+      (await owner.client.post("/api/cash-sessions/current/movements", {
+        kind: "income",
+        method: "transfer",
+        amountCents: 10_000,
+      })).status,
+    ).toBe(201);
+    expect(
+      (await owner.client.post("/api/cash-sessions/current/movements", {
+        kind: "expense",
+        method: "transfer",
+        amountCents: 5_000,
+      })).status,
+    ).toBe(201);
+
+    current = await currentOf(owner.client);
+    expect(current.totals?.transfer.salesCents).toBe(AMOUNT);
+    expect(current.totals?.cash.totalCents).toBe(100_000);
+    expect(current.totals?.expectedTransferCents).toBe(605_000);
+
+    const closed = await owner.client.post("/api/cash-sessions/current/close", {
+      countedCashCents: 100_000,
+      countedTransferCents: 600_000,
+    });
+    expect(closed.status).toBe(200);
+    const result = (await closed.json()) as CashCloseResult;
+    expect(result.detail.session).toMatchObject({
+      expectedCashCents: 100_000,
+      countedCashCents: 100_000,
+      differenceCents: 0,
+      expectedTransferCents: 605_000,
+      countedTransferCents: 600_000,
+      transferDifferenceCents: -5_000,
+    });
+
+    current = await currentOf(owner.client);
+    expect(current.openingSuggestionCents).toBe(100_000);
+    expect(current.openingTransferSuggestionCents).toBe(600_000);
+
+    const history = (await (await owner.client.get("/api/cash-sessions")).json()) as CashHistory;
+    expect(history.sessions[0]).toMatchObject({
+      id: result.detail.session.id,
+      differenceCents: 0,
+      transferDifferenceCents: -5_000,
+      countedTransferCents: 600_000,
+    });
+
+    const detail = (await (
+      await owner.client.get(`/api/cash-sessions/${result.detail.session.id}`)
+    ).json()) as CashSessionDetail;
+    expect(detail.totals.transfer.openingCents).toBe(500_000);
+    expect(detail.totals.expectedTransferCents).toBe(605_000);
+    expect(detail.totals.consolidatedCents).toBe(705_000);
   });
 
   it("enters takeaway cash and transfers when paid, and delivery cash only on settlement (scenarios 7-14)", async () => {
@@ -289,18 +361,25 @@ describe("14b cash sessions", () => {
   it("closes with a snapshot, keeps the arqueo immutable and closes blind without cash.expected (scenarios 44-55)", async () => {
     const { owner, productId } = await store();
     const staff = await staffClient({ owner, permissions: ["cash.view", "cash.close"] });
-    await openCash(owner);
+    await openCash(owner, 2_000_000, 500_000);
     const cashOrder = await createOrder(owner.slug, productId);
     await owner.client.patch(`/api/orders/${cashOrder.id}/payment`, { paymentStatus: "paid" });
+    const transferOrder = await createOrder(owner.slug, productId, { paymentMethod: "transfer" });
+    await owner.client.patch(`/api/orders/${transferOrder.id}/payment`, { paymentStatus: "paid" });
 
     const blind = await currentOf(staff.client);
     expect(blind.session).not.toBeNull();
     expect(blind.totals?.cash.salesCents).toBe(AMOUNT);
+    expect(blind.totals?.transfer.salesCents).toBe(AMOUNT);
     expect(blind.totals?.cash.totalCents).toBeNull();
     expect(blind.totals?.expectedCashCents).toBeNull();
+    expect(blind.totals?.transfer.openingCents).toBeNull();
+    expect(blind.totals?.transfer.totalCents).toBeNull();
+    expect(blind.totals?.expectedTransferCents).toBeNull();
 
     const closed = await staff.client.post("/api/cash-sessions/current/close", {
       countedCashCents: 2_100_000,
+      countedTransferCents: 450_000,
       note: "Cierre de prueba",
     });
     expect(closed.status).toBe(200);
@@ -308,11 +387,15 @@ describe("14b cash sessions", () => {
     expect(result.detail.session.expectedCashCents).toBe(2_100_000);
     expect(result.detail.session.countedCashCents).toBe(2_100_000);
     expect(result.detail.session.differenceCents).toBe(0);
+    expect(result.detail.session.expectedTransferCents).toBe(600_000);
+    expect(result.detail.session.countedTransferCents).toBe(450_000);
+    expect(result.detail.session.transferDifferenceCents).toBe(-150_000);
     expect(result.detail.session.closedByName).toContain("Ana");
 
     const after = await currentOf(owner.client);
     expect(after.session).toBeNull();
     expect(after.openingSuggestionCents).toBe(2_100_000);
+    expect(after.openingTransferSuggestionCents).toBe(450_000);
     expect(after.lastClosed?.id).toBe(result.detail.session.id);
 
     const history = (await (await owner.client.get("/api/cash-sessions")).json()) as CashHistory;
@@ -329,7 +412,9 @@ describe("14b cash sessions", () => {
       await owner.client.get(`/api/cash-sessions/${result.detail.session.id}`)
     ).json()) as CashSessionDetail;
     expect(afterCancel.totals.cash.salesCents).toBe(AMOUNT);
+    expect(afterCancel.totals.transfer.salesCents).toBe(AMOUNT);
     expect(afterCancel.session.differenceCents).toBe(0);
+    expect(afterCancel.session.transferDifferenceCents).toBe(-150_000);
 
     // A payment after the close stays outside every cash.
     const later = await createOrder(owner.slug, productId);
@@ -401,7 +486,7 @@ describe("14b cash sessions", () => {
     await owner.client.post("/api/cash-sessions/current/settlements", { orderIds: [delivery.id] });
 
     const closed = (await (
-      await owner.client.post("/api/cash-sessions/current/close", { countedCashCents: 0 })
+      await owner.client.post("/api/cash-sessions/current/close", { countedCashCents: 0, countedTransferCents: 0 })
     ).json()) as CashCloseResult;
     expect(closed.detail.courierIncomes).toHaveLength(1);
     expect(closed.detail.courierIncomes[0]).toMatchObject({
@@ -415,13 +500,17 @@ describe("14b cash sessions", () => {
     const { owner } = await store();
     const viewer = await staffClient({ owner, permissions: ["cash.view"] });
     expect((await viewer.client.get("/api/cash-sessions/current")).status).toBe(200);
-    expect((await viewer.client.post("/api/cash-sessions", { openingCashCents: 0 })).status).toBe(403);
+    expect((await viewer.client.post("/api/cash-sessions", { openingCashCents: 0, openingTransferCents: 0 })).status).toBe(403);
 
     const outsider = await staffClient({
       owner,
       permissions: ["orders.view"],
     });
     expect((await outsider.client.get("/api/cash-sessions/current")).status).toBe(403);
+
+    const missingTransfer = await owner.client.post("/api/cash-sessions", { openingCashCents: 0 });
+    expect(missingTransfer.status).toBe(422);
+    expect(await errorCode(missingTransfer)).toBe("VALIDATION_ERROR");
 
     const noSession = await owner.client.post("/api/cash-sessions/current/settlements", { orderIds: ["x"] });
     expect(noSession.status).toBe(409);

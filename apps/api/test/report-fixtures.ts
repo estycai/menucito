@@ -186,15 +186,15 @@ export async function report<T>(client: Client, path: string, values: Record<str
 export const RANGE = { from: "2026-06-01", to: "2026-06-30" };
 
 /** Opens a cash drawer through the API and returns its id. */
-export async function openCash(store: Store, openingCashCents = 0): Promise<string> {
-  const res = await store.client.post("/api/cash-sessions", { openingCashCents });
+export async function openCash(store: Store, openingCashCents = 0, openingTransferCents = 0): Promise<string> {
+  const res = await store.client.post("/api/cash-sessions", { openingCashCents, openingTransferCents });
   expect(res.status).toBe(201);
   return ((await res.json()) as { id: string }).id;
 }
 
 /** Closes the open drawer and returns the stored arqueo. */
-export async function closeCash(store: Store, countedCashCents: number) {
-  const res = await store.client.post("/api/cash-sessions/current/close", { countedCashCents });
+export async function closeCash(store: Store, countedCashCents: number, countedTransferCents = 0) {
+  const res = await store.client.post("/api/cash-sessions/current/close", { countedCashCents, countedTransferCents });
   expect(res.status).toBe(200);
   return (await res.json()) as { detail: { session: { id: string; expectedCashCents: number; differenceCents: number } } };
 }

@@ -167,6 +167,13 @@ function differenceOf(session: CashSessionRow, totals: CashTotals): number {
   return counted - (session.expectedCashCents ?? totals.expectedCashCents ?? 0);
 }
 
+/** Difference of the transfer box, same rule as the cash one. */
+function transferDifferenceOf(session: CashSessionRow, totals: CashTotals): number {
+  if (session.transferDifferenceCents !== null) return session.transferDifferenceCents;
+  const counted = session.countedTransferCents ?? 0;
+  return counted - (session.expectedTransferCents ?? totals.expectedTransferCents ?? 0);
+}
+
 function zeroBillingTotals(fulfillment: (typeof MODALITIES)[number]): BillingTotalsRow {
   return {
     fulfillment,
@@ -877,6 +884,8 @@ export function createReportsService({
           cashCents: totals?.cash.totalCents ?? undefined,
           transferSalesCount: totals?.transfer.salesCount ?? 0,
           transferSalesCents: totals?.transfer.salesCents,
+          openingTransferCents: totals?.transfer.openingCents ?? undefined,
+          transferCents: totals?.transfer.totalCents ?? undefined,
           onTheStreet: drawer.onTheStreet,
         };
       }
@@ -894,7 +903,14 @@ export function createReportsService({
           differenceCents,
           expectedCents: sum(closed.map((entry) => entry.row.expectedCashCents ?? entry.totals.expectedCashCents ?? 0)),
           countedCents: sum(closed.map((entry) => entry.row.countedCashCents ?? 0)),
-          balanced: closed.filter((entry) => differenceOf(entry.row, entry.totals) === 0).length,
+          transferDifferenceCents: sum(closed.map((entry) => transferDifferenceOf(entry.row, entry.totals))),
+          transferExpectedCents: sum(
+            closed.map((entry) => entry.row.expectedTransferCents ?? entry.totals.expectedTransferCents ?? 0),
+          ),
+          transferCountedCents: sum(closed.map((entry) => entry.row.countedTransferCents ?? 0)),
+          balanced: closed.filter(
+            (entry) => differenceOf(entry.row, entry.totals) === 0 && transferDifferenceOf(entry.row, entry.totals) === 0,
+          ).length,
         };
       }
 
@@ -925,6 +941,11 @@ export function createReportsService({
                   .filter((entry) => entry.row.closedAt !== null)
                   .map((entry) => differenceOf(entry.row, entry.totals)),
               ),
+              transferDifferenceCents: sum(
+                entries
+                  .filter((entry) => entry.row.closedAt !== null)
+                  .map((entry) => transferDifferenceOf(entry.row, entry.totals)),
+              ),
             };
           })
           .sort(
@@ -944,6 +965,7 @@ export function createReportsService({
             percent: 100,
             expenseCents: totalExpenseCents,
             differenceCents: sum(closed.map((entry) => differenceOf(entry.row, entry.totals))),
+            transferDifferenceCents: sum(closed.map((entry) => transferDifferenceOf(entry.row, entry.totals))),
           },
         };
       }
@@ -1031,6 +1053,11 @@ export function createReportsService({
             expectedCashCents: expected ?? undefined,
             countedCashCents: counted,
             differenceCents: difference,
+            expectedTransferCents:
+              (entry.row.expectedTransferCents ?? entry.totals.expectedTransferCents) ?? undefined,
+            countedTransferCents: entry.row.countedTransferCents ?? undefined,
+            transferDifferenceCents:
+              entry.row.closedAt !== null ? transferDifferenceOf(entry.row, entry.totals) : undefined,
           };
         });
         widgets.sessions = rows;

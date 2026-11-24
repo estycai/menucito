@@ -309,6 +309,7 @@ export function createCashService({
         totals: null,
         movements: [],
         openingSuggestionCents: lastClosed?.countedCashCents ?? 0,
+        openingTransferSuggestionCents: lastClosed?.countedTransferCents ?? 0,
         chargedWithoutCashToday: charged,
         toSettle: [],
         courierAccounts: [],
@@ -338,6 +339,7 @@ export function createCashService({
 
     const computed = computeCashTotals({
       openingCashCents: session.openingCashCents,
+      openingTransferCents: session.openingTransferCents,
       sales,
       movements: movementRecords.map(({ movement }) => ({
         method: movement.method as CashMethod,
@@ -381,6 +383,7 @@ export function createCashService({
       totals: canSeeExpected ? computed : maskCashTotals(computed),
       movements: groupMovements(movementRecords),
       openingSuggestionCents: lastClosed?.countedCashCents ?? 0,
+      openingTransferSuggestionCents: lastClosed?.countedTransferCents ?? 0,
       chargedWithoutCashToday: charged,
       toSettle,
       courierAccounts,
@@ -413,6 +416,7 @@ export function createCashService({
       }
       totals = computeCashTotals({
         openingCashCents: session.openingCashCents,
+        openingTransferCents: session.openingTransferCents,
         sales,
         movements: movementRecords.map(({ movement }) => ({
           method: movement.method as CashMethod,
@@ -533,6 +537,7 @@ export function createCashService({
           restaurantId,
           openedAt: now(),
           openingCashCents: input.openingCashCents,
+          openingTransferCents: input.openingTransferCents,
           openedByMemberId: member.memberId,
           openedByName: name,
         });
@@ -749,6 +754,7 @@ export function createCashService({
       const name = await memberName(members, restaurantId, member.memberId);
       const closed = await cash.closeSession(restaurantId, session.id, {
         countedCashCents: input.countedCashCents,
+        countedTransferCents: input.countedTransferCents,
         closeNote: input.note?.trim() ? input.note.trim() : null,
         closedByMemberId: member.memberId,
         closedByName: name,

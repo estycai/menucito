@@ -82,6 +82,7 @@ export interface CashMovementGroupRow {
 
 export interface CloseSessionData {
   countedCashCents: number;
+  countedTransferCents: number;
   closeNote: string | null;
   closedByMemberId: string;
   closedByName: string;
@@ -256,17 +257,33 @@ export function createCashRepository(d1: D1Database): CashRepository {
             WHERE m.session_id = cash_sessions.id AND m.voided_at IS NULL AND m.method = 'cash'
               AND m.kind IN ('expense','courier_payment','courier_change_out'))`;
 
+      // Transfer: opening + transfer order totals (tip included) + incomes − expenses.
+      const expectedTransfer = `
+        cash_sessions.opening_transfer_cents
+        + (SELECT COALESCE(SUM(o.total_cents), 0) FROM orders o
+            WHERE o.cash_session_id = cash_sessions.id AND o.status <> 'cancelled' AND o.payment_method = 'transfer')
+        + (SELECT COALESCE(SUM(m.amount_cents), 0) FROM cash_movements m
+            WHERE m.session_id = cash_sessions.id AND m.voided_at IS NULL AND m.method = 'transfer'
+              AND m.kind IN ('income','order_split_income','courier_change_back'))
+        - (SELECT COALESCE(SUM(m.amount_cents), 0) FROM cash_movements m
+            WHERE m.session_id = cash_sessions.id AND m.voided_at IS NULL AND m.method = 'transfer'
+              AND m.kind IN ('expense','courier_payment','courier_change_out'))`;
+
       const update = d1
         .prepare(
           `UPDATE cash_sessions
            SET closed_at = ?1, counted_cash_cents = ?2, expected_cash_cents = ${expected},
-               difference_cents = ?2 - (${expected}), close_note = ?3,
-               closed_by_member_id = ?4, closed_by_name = ?5
-           WHERE id = ?6 AND restaurant_id = ?7 AND closed_at IS NULL`,
+               difference_cents = ?2 - (${expected}),
+               counted_transfer_cents = ?3, expected_transfer_cents = ${expectedTransfer},
+               transfer_difference_cents = ?3 - (${expectedTransfer}),
+               close_note = ?4,
+               closed_by_member_id = ?5, closed_by_name = ?6
+           WHERE id = ?7 AND restaurant_id = ?8 AND closed_at IS NULL`,
         )
         .bind(
           data.at.getTime(),
           data.countedCashCents,
+          data.countedTransferCents,
           data.closeNote,
           data.closedByMemberId,
           data.closedByName,
@@ -726,10 +743,14 @@ export function toCashSession(row: CashSessionRow) {
     id: row.id,
     openedAt: row.openedAt.getTime(),
     openingCashCents: row.openingCashCents,
+    openingTransferCents: row.openingTransferCents,
     closedAt: row.closedAt?.getTime() ?? null,
     countedCashCents: row.countedCashCents,
     expectedCashCents: row.expectedCashCents,
     differenceCents: row.differenceCents,
+    countedTransferCents: row.countedTransferCents,
+    expectedTransferCents: row.expectedTransferCents,
+    transferDifferenceCents: row.transferDifferenceCents,
     closeNote: row.closeNote,
     openedByName: row.openedByName,
     closedByName: row.closedByName,

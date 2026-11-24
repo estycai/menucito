@@ -141,6 +141,13 @@
       "when": 1794371011551,
       "tag": "0019_whatsapp",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1795540813245,
+      "tag": "0020_cash_transfer_balance",
+      "breakpoints": true
     }
   ]
 }

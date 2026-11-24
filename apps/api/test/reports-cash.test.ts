@@ -50,7 +50,7 @@ describe("16c cash: sessions by opening and the open drawer", () => {
     const closed = await seed(store, { date: "2026-06-05", paymentMethod: "cash" });
     await closedSession(store, "2026-06-05", "12:00", { openingCashCents: 100_000, countedCashCents: 200_000, orders: [closed] });
 
-    const openId = await openCash(store, 50_000);
+    const openId = await openCash(store, 50_000, 70_000);
     const openOrder = await seed(store, { date: "2026-07-15", paymentMethod: "cash", shippingCents: 10_000 });
     await settleOrderInto(openId, openOrder.id, dayAt("2026-07-15"));
     await stampSession(openId, dayAt("2026-07-15", "12:00"), null);
@@ -59,7 +59,13 @@ describe("16c cash: sessions by opening and the open drawer", () => {
     expect(june.widgets.kpis).toMatchObject({ sessions: 1, closed: 1, inProgress: 0 });
     expect(june.widgets.sessions).toHaveLength(1);
     expect(june.widgets.open?.openedAt).toBe(dayAt("2026-07-15", "12:00"));
-    expect(june.widgets.open).toMatchObject({ cashSalesCents: 110_000, openingCashCents: 50_000, cashCents: 160_000 });
+    expect(june.widgets.open).toMatchObject({
+      cashSalesCents: 110_000,
+      openingCashCents: 50_000,
+      cashCents: 160_000,
+      openingTransferCents: 70_000,
+      transferCents: 70_000,
+    });
 
     const may = await cashReport(store.client, { from: "2026-05-01", to: "2026-05-31" });
     expect(may.widgets.sessions).toEqual([]);
@@ -94,12 +100,13 @@ describe("16c cash: totals and tables", () => {
     await settleOrderInto(sessionId, transferOrder.id, dayAt("2026-06-10"));
     await addMovement(store, { kind: "income", amountCents: 10_000, comment: "Aporte" });
     await addMovement(store, { kind: "expense", method: "transfer", amountCents: 5_000, comment: "Flete" });
-    await closeCash(store, 170_000);
+    await closeCash(store, 170_000, 100_000);
     await stampSession(sessionId, dayAt("2026-06-10", "12:00"), dayAt("2026-06-10", "23:00"));
 
     const { widgets } = await cashReport(store.client);
     const expected = computeCashTotals({
       openingCashCents: 50_000,
+      openingTransferCents: 0,
       sales: [
         { method: "cash", amountCents: 110_000 },
         { method: "transfer", amountCents: 100_000, tipCents: 5_000 },
@@ -142,6 +149,35 @@ describe("16c cash: totals and tables", () => {
     });
   });
 
+  it("shows a difference and a real balance for each box, and balanced needs both at 0 (spec 18)", async () => {
+    const store = await proStore();
+    const sessionId = await openCash(store, 50_000, 100_000);
+    const transferOrder = await seed(store, { date: "2026-06-13", paymentMethod: "transfer", tipCents: 5_000 });
+    await settleOrderInto(sessionId, transferOrder.id, dayAt("2026-06-13"));
+    await addMovement(store, { kind: "income", method: "transfer", amountCents: 10_000, comment: "Aporte" });
+    await addMovement(store, { kind: "expense", method: "transfer", amountCents: 5_000, comment: "Flete" });
+    await closeCash(store, 50_000, 205_000);
+    await stampSession(sessionId, dayAt("2026-06-13", "12:00"), dayAt("2026-06-13", "23:00"));
+
+    const { widgets } = await cashReport(store.client);
+    expect(widgets.kpis).toMatchObject({
+      differenceCents: 0,
+      expectedCents: 50_000,
+      countedCents: 50_000,
+      transferDifferenceCents: -5_000,
+      transferExpectedCents: 210_000,
+      transferCountedCents: 205_000,
+      balanced: 0,
+    });
+    expect(widgets.sessions?.[0]).toMatchObject({
+      expectedTransferCents: 210_000,
+      countedTransferCents: 205_000,
+      transferDifferenceCents: -5_000,
+    });
+    expect(widgets.by_shift?.rows[0]?.transferDifferenceCents).toBe(-5_000);
+    expect(widgets.by_shift?.total.transferDifferenceCents).toBe(-5_000);
+  });
+
   it("leaves the voided movements out and groups the comments of the others", async () => {
     const store = await proStore();
     const sessionId = await openCash(store);
@@ -175,7 +211,7 @@ describe("16c cash: totals and tables", () => {
     await settleOrderInto(lunchSession, lunchTransfer.id, dayAt("2026-06-10", "12:00"));
     await addMovement(store, { kind: "income", amountCents: 1_000, comment: "Caja chica" });
     await addMovement(store, { kind: "income", method: "transfer", amountCents: 2_000, comment: "Transferencia" });
-    await closeCash(store, 101_000);
+    await closeCash(store, 101_000, 102_000);
     await stampSession(lunchSession, dayAt("2026-06-10", "12:00"), dayAt("2026-06-10", "15:00"));
 
     const nightOrder = await seed(store, { date: "2026-06-10", paymentMethod: "cash" });
@@ -219,10 +255,17 @@ describe("16c cash: blind close and permissions", () => {
     expect(blind.widgets.kpis).not.toHaveProperty("expectedCents");
     expect(blind.widgets.kpis).not.toHaveProperty("countedCents");
     expect(blind.widgets.kpis).not.toHaveProperty("balanced");
+    expect(blind.widgets.kpis).not.toHaveProperty("transferDifferenceCents");
+    expect(blind.widgets.kpis).not.toHaveProperty("transferExpectedCents");
+    expect(blind.widgets.kpis).not.toHaveProperty("transferCountedCents");
     expect(blind.widgets.by_shift?.rows[0]).not.toHaveProperty("differenceCents");
+    expect(blind.widgets.by_shift?.rows[0]).not.toHaveProperty("transferDifferenceCents");
     expect(blind.widgets.sessions?.[0]).not.toHaveProperty("expectedCashCents");
     expect(blind.widgets.sessions?.[0]).not.toHaveProperty("countedCashCents");
     expect(blind.widgets.sessions?.[0]).not.toHaveProperty("differenceCents");
+    expect(blind.widgets.sessions?.[0]).not.toHaveProperty("expectedTransferCents");
+    expect(blind.widgets.sessions?.[0]).not.toHaveProperty("countedTransferCents");
+    expect(blind.widgets.sessions?.[0]).not.toHaveProperty("transferDifferenceCents");
   });
 
   it("omits the blocks the role lacks and refuses the tab or the Basic plan", async () => {
