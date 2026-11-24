@@ -27,8 +27,9 @@ const KPI_HINTS = {
   sales: "Suma de las ventas cobradas en las cajas, sin las propinas.",
   income: "Ingresos cargados a mano y los de los pedidos divididos.",
   expense: "Egresos y pagos a repartidores de las cajas.",
-  difference: "Diferencia de las cajas cerradas: contado − esperado.",
-  balanced: "Cajas cerradas con diferencia 0.",
+  differenceCash: "Diferencia de la caja efectivo: contado − esperado.",
+  differenceTransfer: "Diferencia de la caja transferencia: saldo real − esperado.",
+  balanced: "Cajas cerradas con las dos cajas en 0.",
 } as const;
 
 interface CashTabProps {
@@ -52,7 +53,9 @@ export function CashTab({ data, access, canSeeDate = true, onLast7Days, onRefres
 
   return (
     <div className="flex flex-col gap-4">
-      {widgets.open && <OpenBlock open={widgets.open} amounts={amounts} onRefresh={onRefresh} refreshing={refreshing} />}
+      {widgets.open && (
+        <OpenBlock open={widgets.open} amounts={amounts} seeExpected={seeExpected} onRefresh={onRefresh} refreshing={refreshing} />
+      )}
       {widgets.kpis && <KpisBlock kpis={widgets.kpis} amounts={amounts} seeExpected={seeExpected} />}
       {widgets.by_shift && (
         <ShiftBlock block={widgets.by_shift} range={range} amounts={amounts} seeExpected={seeExpected} exportable={exportable} />
@@ -73,11 +76,13 @@ export function CashTab({ data, access, canSeeDate = true, onLast7Days, onRefres
 function OpenBlock({
   open,
   amounts,
+  seeExpected,
   onRefresh,
   refreshing,
 }: {
   open: NonNullable<CashReport["widgets"]["open"]>;
   amounts: boolean;
+  seeExpected: boolean;
   onRefresh?: () => void;
   refreshing: boolean;
 }) {
@@ -113,7 +118,7 @@ function OpenBlock({
 
       <div className="grid grid-cols-1 gap-x-8 gap-y-1 sm:grid-cols-2">
         <div className="flex flex-col">
-          <span className="text-xs font-bold tracking-wide text-muted uppercase">Efectivo</span>
+          <span className="text-xs font-bold tracking-wide text-muted uppercase">Caja efectivo</span>
           {amounts && open.cashCents !== undefined && <OpenRow label="Efectivo en caja" value={formatMoney(open.cashCents)} strong />}
           {amounts && open.openingCashCents !== undefined && <OpenRow label="Monto inicial" value={formatMoney(open.openingCashCents)} />}
           <OpenRow
@@ -128,7 +133,13 @@ function OpenBlock({
           )}
         </div>
         <div className="flex flex-col">
-          <span className="text-xs font-bold tracking-wide text-muted uppercase">Transferencia</span>
+          <span className="text-xs font-bold tracking-wide text-muted uppercase">Caja transferencia</span>
+          {amounts && seeExpected && open.transferCents !== undefined && (
+            <OpenRow label="En la cuenta" value={formatMoney(open.transferCents)} strong />
+          )}
+          {amounts && seeExpected && open.openingTransferCents !== undefined && (
+            <OpenRow label="Monto inicial" value={formatMoney(open.openingTransferCents)} />
+          )}
           <OpenRow
             label={`Ventas (${formatCount(open.transferSalesCount)})`}
             value={amounts && open.transferSalesCents !== undefined ? formatMoney(open.transferSalesCents) : ""}
@@ -206,10 +217,18 @@ function KpisBlock({
       {amounts && <KpiCard label="Egresos" value={formatMoney(kpis.expenseCents ?? 0)} hint={KPI_HINTS.expense} />}
       {amounts && seeExpected && kpis.differenceCents !== undefined && (
         <KpiCard
-          label="Diferencia de caja"
+          label="Diferencia caja efectivo"
           value={formatCashDifference(kpis.differenceCents)}
-          hint={KPI_HINTS.difference}
-          secondary={`Esperado ${formatMoney(kpis.expectedCents ?? 0)} · Contado ${formatMoney(kpis.countedCents ?? 0)}`}
+          hint={KPI_HINTS.differenceCash}
+          secondary={`Esperado ${formatMoney(kpis.expectedCents ?? 0)} · Real ${formatMoney(kpis.countedCents ?? 0)}`}
+        />
+      )}
+      {amounts && seeExpected && kpis.transferDifferenceCents !== undefined && (
+        <KpiCard
+          label="Diferencia caja transferencia"
+          value={formatCashDifference(kpis.transferDifferenceCents)}
+          hint={KPI_HINTS.differenceTransfer}
+          secondary={`Esperado ${formatMoney(kpis.transferExpectedCents ?? 0)} · Real ${formatMoney(kpis.transferCountedCents ?? 0)}`}
         />
       )}
       {seeExpected && kpis.balanced !== undefined && (
@@ -245,7 +264,15 @@ function ShiftBlock({
     { key: "percent", header: "%", kind: "percent", value: (row) => row.percent },
     { key: "expense", header: "Egresos", kind: "money", value: (row) => row.expenseCents ?? 0 },
     ...(seeExpected
-      ? [{ key: "difference", header: "Diferencia", kind: "money" as const, value: (row: CashShiftRow) => row.differenceCents ?? 0 }]
+      ? [
+          { key: "difference", header: "Dif. efectivo", kind: "money" as const, value: (row: CashShiftRow) => row.differenceCents ?? 0 },
+          {
+            key: "transferDifference",
+            header: "Dif. transferencia",
+            kind: "money" as const,
+            value: (row: CashShiftRow) => row.transferDifferenceCents ?? 0,
+          },
+        ]
       : []),
   ];
   return (
@@ -345,6 +372,19 @@ function MovementsBlock({
   );
 }
 
+function DifferenceValue({ cents }: { cents: number }) {
+  return (
+    <span
+      className={cn(
+        "font-bold",
+        cents > 0 ? "text-success" : cents < 0 ? "text-danger" : "text-muted",
+      )}
+    >
+      {formatCashDifference(cents)}
+    </span>
+  );
+}
+
 function SessionsBlock({
   rows,
   range,
@@ -390,7 +430,7 @@ function SessionsBlock({
     { key: "expense", header: "Egresos", kind: "money", value: (row) => row.expenseCents ?? 0 },
     ...(seeExpected && amounts
       ? ([
-          { key: "expected", header: "Esperado", kind: "money", value: (row: CashSessionReportRow) => row.expectedCashCents ?? 0 },
+          { key: "expected", header: "Esperado efectivo", kind: "money", value: (row: CashSessionReportRow) => row.expectedCashCents ?? 0 },
           {
             key: "counted",
             header: "Contado",
@@ -400,23 +440,38 @@ function SessionsBlock({
               row.countedCashCents === undefined ? "—" : formatMoney(row.countedCashCents),
           },
           {
+            key: "expectedTransfer",
+            header: "Esperado transferencia",
+            kind: "money",
+            value: (row: CashSessionReportRow) => row.expectedTransferCents ?? 0,
+          },
+          {
+            key: "countedTransfer",
+            header: "Saldo real",
+            kind: "money",
+            value: (row: CashSessionReportRow) => row.countedTransferCents ?? "",
+            render: (row) =>
+              row.countedTransferCents === undefined ? "—" : formatMoney(row.countedTransferCents),
+          },
+          {
             key: "difference",
-            header: "Diferencia",
+            header: "Dif. efectivo",
             kind: "money",
             // A number so it sorts and exports as one; the session in progress has none.
             value: (row: CashSessionReportRow) => row.differenceCents ?? "",
             render: (row) => {
               if (row.differenceCents === undefined) return "—";
-              return (
-                <span
-                  className={cn(
-                    "font-bold",
-                    row.differenceCents > 0 ? "text-success" : row.differenceCents < 0 ? "text-danger" : "text-muted",
-                  )}
-                >
-                  {formatCashDifference(row.differenceCents)}
-                </span>
-              );
+              return <DifferenceValue cents={row.differenceCents} />;
+            },
+          },
+          {
+            key: "transferDifference",
+            header: "Dif. transferencia",
+            kind: "money",
+            value: (row: CashSessionReportRow) => row.transferDifferenceCents ?? "",
+            render: (row) => {
+              if (row.transferDifferenceCents === undefined) return "—";
+              return <DifferenceValue cents={row.transferDifferenceCents} />;
             },
           },
         ] satisfies ReportColumn<CashSessionReportRow>[])

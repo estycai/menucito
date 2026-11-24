@@ -58,8 +58,24 @@ export function CashSessionDetailPage() {
           </section>
 
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2">
-            <MethodCard title="Efectivo" totals={detail.totals.cash} />
-            <MethodCard title="Transferencia" totals={detail.totals.transfer} />
+            <MethodCard
+              title="Caja efectivo"
+              totals={detail.totals.cash}
+              expectedLabel="Esperado en caja"
+              expectedCents={detail.session.expectedCashCents ?? 0}
+              countedLabel="Contado"
+              countedCents={detail.session.countedCashCents ?? 0}
+              differenceCents={detail.session.differenceCents ?? 0}
+            />
+            <MethodCard
+              title="Caja transferencia"
+              totals={detail.totals.transfer}
+              expectedLabel="Esperado en cuenta"
+              expectedCents={detail.session.expectedTransferCents ?? 0}
+              countedLabel="Saldo real"
+              countedCents={detail.session.countedTransferCents ?? 0}
+              differenceCents={detail.session.transferDifferenceCents ?? 0}
+            />
           </section>
 
           <section className="flex flex-col gap-2 rounded-2xl border border-line bg-white p-5 text-[15px]">
@@ -70,18 +86,6 @@ export function CashSessionDetailPage() {
             <div className="flex justify-between text-lg font-extrabold">
               <span>Total consolidado</span>
               <span className="tabular-nums">{formatArs(detail.totals.consolidatedCents ?? 0)}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-              <span className="text-sm text-muted">Efectivo contado</span>
-              <b className="tabular-nums">{formatArs(detail.session.countedCashCents ?? 0)}</b>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-muted">Efectivo esperado</span>
-              <b className="tabular-nums">{formatArs(detail.session.expectedCashCents ?? 0)}</b>
-            </div>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-sm text-muted">Diferencia</span>
-              <DifferencePill difference={detail.session.differenceCents ?? 0} />
             </div>
             {detail.session.closeNote && (
               <p className="m-0 mt-1 text-sm text-muted">Nota: {detail.session.closeNote}</p>
@@ -164,7 +168,23 @@ export function CashSessionDetailPage() {
   );
 }
 
-function MethodCard({ title, totals }: { title: string; totals: CashMethodTotals }) {
+function MethodCard({
+  title,
+  totals,
+  expectedLabel,
+  expectedCents,
+  countedLabel,
+  countedCents,
+  differenceCents,
+}: {
+  title: string;
+  totals: CashMethodTotals;
+  expectedLabel: string;
+  expectedCents: number;
+  countedLabel: string;
+  countedCents: number;
+  differenceCents: number;
+}) {
   return (
     <section className="rounded-2xl border border-line bg-white p-5">
       <h2 className="m-0 mb-2 text-xs font-bold tracking-wide text-muted uppercase">{title}</h2>
@@ -179,7 +199,12 @@ function MethodCard({ title, totals }: { title: string; totals: CashMethodTotals
       {(totals.expenseCents ?? 0) > 0 && (
         <Line label={`Egresos (${totals.expenseCount})`} value={`−${formatArs(totals.expenseCents ?? 0)}`} />
       )}
-      <Line label={title === "Efectivo" ? "Esperado en caja" : "Total"} value={formatArs(totals.totalCents ?? 0)} strong />
+      <Line label={expectedLabel} value={formatArs(expectedCents)} strong />
+      <Line label={countedLabel} value={formatArs(countedCents)} />
+      <div className="mt-1 flex justify-between gap-3 border-t border-line pt-2 text-sm">
+        <span>Diferencia</span>
+        <DifferencePill difference={differenceCents} />
+      </div>
     </section>
   );
 }

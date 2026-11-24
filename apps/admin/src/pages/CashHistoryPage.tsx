@@ -45,9 +45,12 @@ export function CashHistoryPage() {
                 <tr className="border-b border-line text-xs text-muted">
                   <th className="px-4 py-3.5 font-bold">Apertura de caja</th>
                   <th className="px-4 py-3.5 font-bold">Cierre de caja</th>
-                  <th className="px-4 py-3.5 text-right font-bold">Esperado</th>
+                  <th className="px-4 py-3.5 text-right font-bold">Esperado efectivo</th>
                   <th className="px-4 py-3.5 text-right font-bold">Contado</th>
-                  <th className="px-4 py-3.5 font-bold">Diferencia</th>
+                  <th className="px-4 py-3.5 text-right font-bold">Esperado transferencia</th>
+                  <th className="px-4 py-3.5 text-right font-bold">Saldo real</th>
+                  <th className="px-4 py-3.5 font-bold">Dif. efectivo</th>
+                  <th className="px-4 py-3.5 font-bold">Dif. transferencia</th>
                   <th className="px-4 py-3.5 text-right font-bold">Acciones</th>
                 </tr>
               </thead>
@@ -66,8 +69,17 @@ export function CashHistoryPage() {
                     </td>
                     <td className="px-4 py-3.5 text-right tabular-nums">{formatArs(session.expectedCashCents ?? 0)}</td>
                     <td className="px-4 py-3.5 text-right tabular-nums">{formatArs(session.countedCashCents ?? 0)}</td>
+                    <td className="px-4 py-3.5 text-right tabular-nums">
+                      {formatArs(session.expectedTransferCents ?? 0)}
+                    </td>
+                    <td className="px-4 py-3.5 text-right tabular-nums">
+                      {formatArs(session.countedTransferCents ?? 0)}
+                    </td>
                     <td className="px-4 py-3.5">
                       <DifferencePill difference={session.differenceCents ?? 0} />
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <DifferencePill difference={session.transferDifferenceCents ?? 0} />
                     </td>
                     <td className="px-4 py-3.5 text-right whitespace-nowrap">
                       <Button asChild variant="outline" className="mr-2 min-h-10 px-3 text-sm">
@@ -88,14 +100,23 @@ export function CashHistoryPage() {
               <article key={session.id} className="flex flex-col gap-2 rounded-2xl border border-line bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
                   <b>{formatLocalDateTime(session.openedAt)}</b>
-                  <DifferencePill difference={session.differenceCents ?? 0} />
+                </div>
+                <div className="flex flex-col gap-1 text-sm">
+                  <span className="flex items-center justify-between gap-2">
+                    <span>Dif. efectivo</span>
+                    <DifferencePill difference={session.differenceCents ?? 0} />
+                  </span>
+                  <span className="flex items-center justify-between gap-2">
+                    <span>Dif. transferencia</span>
+                    <DifferencePill difference={session.transferDifferenceCents ?? 0} />
+                  </span>
                 </div>
                 <span className="text-[13px] text-muted">
                   Cerró {session.closedByName ?? "—"} · {session.closedAt !== null ? formatLocalDateTime(session.closedAt) : "—"}
                 </span>
-                <div className="flex justify-between text-sm">
-                  <span>Esperado {formatArs(session.expectedCashCents ?? 0)}</span>
+                <div className="flex justify-between gap-2 text-sm">
                   <span>Contado {formatArs(session.countedCashCents ?? 0)}</span>
+                  <span>Saldo real {formatArs(session.countedTransferCents ?? 0)}</span>
                 </div>
                 <div className="mt-1 flex gap-2">
                   <Button asChild variant="outline" className="min-h-10 flex-1 px-3 text-sm">

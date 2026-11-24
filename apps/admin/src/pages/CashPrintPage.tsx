@@ -37,7 +37,8 @@ export function CashPrintPage() {
   const session = detail.session;
   const cash = detail.totals.cash;
   const transfer = detail.totals.transfer;
-  const difference = session.differenceCents ?? 0;
+  const cashDifference = session.differenceCents ?? 0;
+  const transferDifference = session.transferDifferenceCents ?? 0;
 
   return (
     <div className="min-h-screen bg-bg p-6 print:bg-white print:p-0">
@@ -68,7 +69,7 @@ export function CashPrintPage() {
 
         <div className="grid grid-cols-2 gap-7">
           <MethodBlock
-            title="Efectivo"
+            title="Caja efectivo"
             rows={[
               ["Monto inicial", formatArs(cash.openingCents ?? 0)],
               [`Ventas (${cash.salesCount})`, formatArs(cash.salesCents)],
@@ -76,16 +77,25 @@ export function CashPrintPage() {
               ...((cash.expenseCents ?? 0) > 0 ? [[`Egresos (${cash.expenseCount})`, `−${formatArs(cash.expenseCents ?? 0)}`] as [string, string]] : []),
             ]}
             total={["Esperado en caja", formatArs(cash.totalCents ?? 0)]}
+            close={[
+              ["Contado", formatArs(session.countedCashCents ?? 0)],
+              ["Diferencia", formatCashDifference(cashDifference)],
+            ]}
           />
           <MethodBlock
-            title="Transferencia"
+            title="Caja transferencia"
             rows={[
+              ["Monto inicial", formatArs(transfer.openingCents ?? 0)],
               [`Ventas (${transfer.salesCount})`, formatArs(transfer.salesCents)],
               ["Propinas (a repartidores)", formatArs(transfer.tipCents)],
               ...((transfer.incomeCents ?? 0) > 0 ? [[`Ingresos (${transfer.incomeCount})`, `+${formatArs(transfer.incomeCents ?? 0)}`] as [string, string]] : []),
               ...((transfer.expenseCents ?? 0) > 0 ? [[`Egresos (${transfer.expenseCount})`, `−${formatArs(transfer.expenseCents ?? 0)}`] as [string, string]] : []),
             ]}
-            total={["Total", formatArs(transfer.totalCents ?? 0)]}
+            total={["Esperado en cuenta", formatArs(transfer.totalCents ?? 0)]}
+            close={[
+              ["Saldo real", formatArs(session.countedTransferCents ?? 0)],
+              ["Diferencia", formatCashDifference(transferDifference)],
+            ]}
           />
         </div>
 
@@ -158,29 +168,9 @@ export function CashPrintPage() {
           }
         />
 
-        <div className="border-2 border-black p-4">
-          <div className="text-xs font-bold tracking-wide uppercase">Cierre de caja</div>
-          <table className="w-full border-collapse text-[12.5px]">
-            <tbody>
-              <tr>
-                <td className="py-0.5">Efectivo contado</td>
-                <td className="py-0.5 text-right tabular-nums whitespace-nowrap">{formatArs(session.countedCashCents ?? 0)}</td>
-              </tr>
-              <tr>
-                <td className="py-0.5">Efectivo esperado</td>
-                <td className="py-0.5 text-right tabular-nums whitespace-nowrap">{formatArs(session.expectedCashCents ?? 0)}</td>
-              </tr>
-              <tr className="font-bold">
-                <td className="py-0.5">Diferencia: {formatCashDifference(difference).replace(/ \$.*$/, "").toUpperCase()}</td>
-                <td className="py-0.5 text-right tabular-nums whitespace-nowrap">
-                  {difference < 0 ? "−" : difference > 0 ? "+" : ""}
-                  {formatArs(Math.abs(difference))}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-          {session.closeNote && <div className="mt-1 text-[12px]">Nota: {session.closeNote}</div>}
-        </div>
+        {session.closeNote && (
+          <div className="border-2 border-black p-4 text-[12px]">Nota: {session.closeNote}</div>
+        )}
 
         <footer className="mt-auto flex justify-between text-[11px]">
           <span>Impreso el {formatLocalDateTime(printedAt)} · menucito</span>
@@ -203,10 +193,12 @@ function MethodBlock({
   title,
   rows,
   total,
+  close = [],
 }: {
   title: string;
   rows: [string, string][];
   total: [string, string];
+  close?: [string, string][];
 }) {
   return (
     <div>
@@ -223,6 +215,12 @@ function MethodBlock({
             <td className="py-0.5">{total[0]}</td>
             <td className="py-0.5 text-right tabular-nums whitespace-nowrap">{total[1]}</td>
           </tr>
+          {close.map(([label, value]) => (
+            <tr key={label}>
+              <td className="py-0.5">{label}</td>
+              <td className="py-0.5 text-right tabular-nums whitespace-nowrap">{value}</td>
+            </tr>
+          ))}
         </tbody>
       </table>
     </div>

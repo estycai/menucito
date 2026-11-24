@@ -12,7 +12,6 @@ import { cn } from "@/lib/utils";
 /** Result of a close: difference in words, what passed to the next cash and where to go next. */
 export function CloseResultDialog({ result, onClose }: { result: CashCloseResult; onClose: () => void }) {
   const session = result.detail.session;
-  const difference = session.differenceCents ?? 0;
   const pendingCount = result.pending.count;
 
   return (
@@ -26,35 +25,20 @@ export function CloseResultDialog({ result, onClose }: { result: CashCloseResult
           <h3 className="m-0 font-display text-xl font-extrabold">Arqueo del {formatLocalDateTime(session.openedAt).slice(0, 10)}</h3>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-xl border border-line p-4">
-            <span className="text-[13px] text-muted">Esperado en caja</span>
-            <b className="block font-display text-xl tabular-nums">{formatArs(session.expectedCashCents ?? 0)}</b>
-          </div>
-          <div className="rounded-xl border border-line p-4">
-            <span className="text-[13px] text-muted">Contado</span>
-            <b className="block font-display text-xl tabular-nums">{formatArs(session.countedCashCents ?? 0)}</b>
-          </div>
-        </div>
-
-        <div
-          role="status"
-          className={cn(
-            "flex items-center gap-3 rounded-xl border p-4",
-            difference > 0
-              ? "border-success/30 bg-success-soft text-success"
-              : difference < 0
-                ? "border-danger/30 bg-danger-soft text-danger"
-                : "border-line bg-bg text-muted",
-          )}
-        >
-          <b className="text-lg">{formatCashDifference(difference)}</b>
-        </div>
-
-        <div className="flex justify-between text-sm">
-          <span>Transferencias del turno</span>
-          <span className="tabular-nums">{formatArs(result.detail.totals.transfer.totalCents ?? 0)}</span>
-        </div>
+        <DifferenceBox
+          title="Caja efectivo"
+          expectedCents={session.expectedCashCents ?? 0}
+          countedLabel="Contado"
+          countedCents={session.countedCashCents ?? 0}
+          differenceCents={session.differenceCents ?? 0}
+        />
+        <DifferenceBox
+          title="Caja transferencia"
+          expectedCents={session.expectedTransferCents ?? 0}
+          countedLabel="Saldo real"
+          countedCents={session.countedTransferCents ?? 0}
+          differenceCents={session.transferDifferenceCents ?? 0}
+        />
 
         {pendingCount > 0 && (
           <p className="m-0 text-[13px] text-muted">
@@ -73,5 +57,46 @@ export function CloseResultDialog({ result, onClose }: { result: CashCloseResult
         </div>
       </div>
     </Modal>
+  );
+}
+
+function DifferenceBox({
+  title,
+  expectedCents,
+  countedLabel,
+  countedCents,
+  differenceCents,
+}: {
+  title: string;
+  expectedCents: number;
+  countedLabel: string;
+  countedCents: number;
+  differenceCents: number;
+}) {
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-line p-4">
+      <b className="font-display text-base font-extrabold">{title}</b>
+      <div className="flex justify-between text-sm">
+        <span className="text-muted">Esperado</span>
+        <span className="tabular-nums">{formatArs(expectedCents)}</span>
+      </div>
+      <div className="flex justify-between text-sm">
+        <span className="text-muted">{countedLabel}</span>
+        <span className="tabular-nums">{formatArs(countedCents)}</span>
+      </div>
+      <div
+        role="status"
+        className={cn(
+          "mt-1 rounded-lg border p-2 text-center font-bold",
+          differenceCents > 0
+            ? "border-success/30 bg-success-soft text-success"
+            : differenceCents < 0
+              ? "border-danger/30 bg-danger-soft text-danger"
+              : "border-line bg-bg text-muted",
+        )}
+      >
+        {formatCashDifference(differenceCents)}
+      </div>
+    </div>
   );
 }

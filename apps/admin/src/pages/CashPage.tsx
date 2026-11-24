@@ -156,7 +156,11 @@ function ClosedCash({
           </div>
         </div>
         {canOpen ? (
-          <OpenCashForm suggestionCents={current.openingSuggestionCents} hasPreviousClose={current.lastClosed !== null} />
+          <OpenCashForm
+            suggestionCents={current.openingSuggestionCents}
+            suggestionTransferCents={current.openingTransferSuggestionCents}
+            hasPreviousClose={current.lastClosed !== null}
+          />
         ) : (
           <p className="m-0 text-sm text-muted">No tenés permiso para abrir la caja.</p>
         )}
@@ -176,15 +180,27 @@ function ClosedCash({
                   {current.lastClosed.closedAt !== null ? formatLocalDateTime(current.lastClosed.closedAt) : "—"}
                 </b>
                 <span className="text-[13px] text-muted">
-                  Cerró {current.lastClosed.closedByName ?? ""} · contado {formatArs(current.lastClosed.countedCashCents ?? 0)}
+                  Cerró {current.lastClosed.closedByName ?? ""} · contado{" "}
+                  {formatArs(current.lastClosed.countedCashCents ?? 0)} · saldo real{" "}
+                  {formatArs(current.lastClosed.countedTransferCents ?? 0)}
                 </span>
               </span>
-              <DifferencePill difference={current.lastClosed.differenceCents ?? 0} />
+              <span className="flex shrink-0 flex-col items-end gap-1 text-[13px]">
+                <span className="flex items-center gap-2">
+                  <span className="text-muted">Efectivo</span>
+                  <DifferencePill difference={current.lastClosed.differenceCents ?? 0} />
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="text-muted">Transferencia</span>
+                  <DifferencePill difference={current.lastClosed.transferDifferenceCents ?? 0} />
+                </span>
+              </span>
             </Link>
           ) : (
             <div className="rounded-2xl border border-line bg-white px-5 py-4">
               Cerró {current.lastClosed.closedByName ?? ""} · contado{" "}
-              {formatArs(current.lastClosed.countedCashCents ?? 0)}
+              {formatArs(current.lastClosed.countedCashCents ?? 0)} · saldo real{" "}
+              {formatArs(current.lastClosed.countedTransferCents ?? 0)}
             </div>
           )}
         </section>
@@ -193,18 +209,32 @@ function ClosedCash({
   );
 }
 
-function OpenCashForm({ suggestionCents, hasPreviousClose }: { suggestionCents: number; hasPreviousClose: boolean }) {
+function OpenCashForm({
+  suggestionCents,
+  suggestionTransferCents,
+  hasPreviousClose,
+}: {
+  suggestionCents: number;
+  suggestionTransferCents: number;
+  hasPreviousClose: boolean;
+}) {
   const mutation = useOpenCash();
   const [amount, setAmount] = useState(centsInput(suggestionCents));
+  const [transferAmount, setTransferAmount] = useState(centsInput(suggestionTransferCents));
   const [error, setError] = useState<string | null>(null);
   const cents = pesosCents(amount);
+  const transferCents = pesosCents(transferAmount);
   const invalid = typeof cents !== "number" || cents < 0;
+  const transferInvalid = typeof transferCents !== "number" || transferCents < 0;
 
   async function open() {
     setError(null);
-    if (invalid) return;
+    if (invalid || transferInvalid) return;
     try {
-      await mutation.mutateAsync({ openingCashCents: cents as number });
+      await mutation.mutateAsync({
+        openingCashCents: cents as number,
+        openingTransferCents: transferCents as number,
+      });
     } catch (err) {
       setError(cashErrorMessage(err));
     }
@@ -213,7 +243,7 @@ function OpenCashForm({ suggestionCents, hasPreviousClose }: { suggestionCents: 
   return (
     <div className="flex flex-col gap-3">
       <label className="flex flex-col gap-1 text-xs font-bold text-muted">
-        Monto inicial en efectivo
+        Inicial caja efectivo
         <Input inputMode="numeric" value={amount} onChange={(event) => setAmount(event.target.value)} />
         <span className="font-normal text-muted">
           {hasPreviousClose
@@ -222,10 +252,20 @@ function OpenCashForm({ suggestionCents, hasPreviousClose }: { suggestionCents: 
         </span>
       </label>
       {invalid && <p className="m-0 text-[13px] text-danger">{CASH_MESSAGES.openingInvalid}</p>}
+      <label className="flex flex-col gap-1 text-xs font-bold text-muted">
+        Inicial caja transferencia
+        <Input inputMode="numeric" value={transferAmount} onChange={(event) => setTransferAmount(event.target.value)} />
+        <span className="font-normal text-muted">
+          {hasPreviousClose
+            ? "El saldo de la cuenta al cerrar la caja anterior. Cambialo si cambió."
+            : "El saldo de la cuenta (banco o Mercado Pago) al arrancar. Puede ser 0."}
+        </span>
+      </label>
+      {transferInvalid && <p className="m-0 text-[13px] text-danger">{CASH_MESSAGES.openingTransferInvalid}</p>}
       {error && <Notice tone="error">{error}</Notice>}
       <Button
         type="button"
-        disabled={mutation.isPending || invalid}
+        disabled={mutation.isPending || invalid || transferInvalid}
         onClick={() => void open()}
         className="min-h-12 self-start rounded-xl px-5 text-[15px]"
       >
@@ -281,7 +321,7 @@ function OpenCash({
 
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
             <div className="flex flex-col">
-              <span className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Efectivo</span>
+              <span className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Caja efectivo</span>
               {canSeeExpected && <Row label="Monto inicial" value={formatArs(cash.openingCents ?? 0)} />}
               <Row
                 label={
@@ -312,7 +352,8 @@ function OpenCash({
             </div>
 
             <div className="flex flex-col">
-              <span className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Transferencia</span>
+              <span className="pb-1 text-xs font-bold tracking-wide text-muted uppercase">Caja transferencia</span>
+              {canSeeExpected && <Row label="Monto inicial" value={formatArs(transfer.openingCents ?? 0)} />}
               <Row
                 label={
                   canOrders ? (
@@ -340,14 +381,21 @@ function OpenCash({
                   tone="danger"
                 />
               )}
-              <Row label="Total" value={formatArs(transfer.totalCents ?? 0)} strong />
+              {canSeeExpected && (
+                <Row label="Esperado en cuenta" value={formatArs(transfer.totalCents ?? 0)} strong />
+              )}
+              {!canSeeExpected && (
+                <p className="m-0 mt-2 text-[13px] text-muted">
+                  Tu rol cierra a ciegas: cargás el saldo real y la diferencia se ve después de cerrar.
+                </p>
+              )}
             </div>
           </div>
 
           <div className="flex flex-col gap-1 border-t border-line pt-2">
             <Row label={`Total ventas (${totals.salesCount})`} value={formatArs(totals.salesCents)} />
             {canSeeExpected && (
-              <Row label="Total consolidado" value={formatArs(totals.consolidatedCents ?? 0)} strong />
+              <Row label="Total consolidado" value={formatArs(totals.consolidatedCents ?? 0)} />
             )}
             <div className="mt-1 rounded-xl bg-tab p-3 text-sm">
               <b>En la calle: {formatArs(current.onTheStreet.totalCents)}</b> (no cuenta). Pedidos sin ingresar{" "}

@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cashErrorMessage, pesosCents, useCloseCash } from "@/lib/cash";
 
-/** Close dialog: counted cash is mandatory (`0` is valid); without `cash.expected` the difference is blind. */
+/** Close dialog: counted cash and real balance are mandatory (`0` is valid); without `cash.expected` both are blind. */
 export function CloseCashDialog({
   current,
   canSeeExpected,
@@ -26,23 +26,32 @@ export function CloseCashDialog({
 }) {
   const mutation = useCloseCash();
   const [counted, setCounted] = useState("");
+  const [countedTransfer, setCountedTransfer] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const cents = pesosCents(counted);
+  const transferCents = pesosCents(countedTransfer);
   const invalid = typeof cents !== "number";
+  const transferInvalid = typeof transferCents !== "number";
   const expected = current.totals?.expectedCashCents ?? null;
+  const expectedTransfer = current.totals?.expectedTransferCents ?? null;
   const difference = typeof cents === "number" && expected !== null ? cashDifference(cents, expected) : null;
+  const transferDifference =
+    typeof transferCents === "number" && expectedTransfer !== null
+      ? cashDifference(transferCents, expectedTransfer)
+      : null;
   const pending = current.toSettle;
   const pendingCount = pending.reduce((sum, group) => sum + group.orders.length, 0);
   const pendingCents = pending.reduce((sum, group) => sum + group.ordersCents, 0);
 
   async function save() {
     setError(null);
-    if (invalid) return;
+    if (invalid || transferInvalid) return;
     try {
       const result = await mutation.mutateAsync({
         countedCashCents: cents as number,
+        countedTransferCents: transferCents as number,
         ...(note.trim() ? { note: note.trim() } : {}),
       });
       onClosed(result);
@@ -56,8 +65,8 @@ export function CloseCashDialog({
       <div className="flex flex-col gap-4">
         <p className="m-0 text-sm text-muted">
           {canSeeExpected
-            ? "Contá el efectivo de la caja. La diferencia se actualiza mientras escribís."
-            : "Contá el efectivo de la caja. La diferencia se ve después de cerrar."}
+            ? "Contá el efectivo y mirá el saldo de la cuenta. Las diferencias se actualizan mientras escribís."
+            : "Contá el efectivo y mirá el saldo de la cuenta. Las diferencias se ven después de cerrar."}
         </p>
 
         {pendingCount > 0 && (
@@ -67,23 +76,51 @@ export function CloseCashDialog({
           </Notice>
         )}
 
-        <label className="flex flex-col gap-1 text-xs font-bold text-muted">
-          Efectivo contado *
-          <Input inputMode="numeric" value={counted} onChange={(event) => setCounted(event.target.value)} placeholder="0" />
-          <span className="font-normal text-muted">Obligatorio. Si la caja está vacía, escribí 0.</span>
-        </label>
-
-        {canSeeExpected && expected !== null && (
-          <div className="rounded-xl bg-bg p-4 text-sm">
-            <div className="flex justify-between py-1">
-              <span>Esperado en caja</span>
+        <section className="flex flex-col gap-2 rounded-xl border border-line p-4">
+          <h3 className="m-0 font-display text-lg font-extrabold">Caja efectivo</h3>
+          {canSeeExpected && expected !== null && (
+            <div className="flex justify-between text-sm">
+              <span>Esperado</span>
               <span className="tabular-nums">{formatArs(expected)}</span>
             </div>
-            {difference && (
-              <div className="pt-2 text-base font-extrabold">{formatCashDifference(difference.cents)}</div>
-            )}
-          </div>
-        )}
+          )}
+          <label className="flex flex-col gap-1 text-xs font-bold text-muted">
+            Contado *
+            <Input
+              inputMode="numeric"
+              value={counted}
+              onChange={(event) => setCounted(event.target.value)}
+              placeholder="0"
+            />
+            <span className="font-normal text-muted">Obligatorio. Si la caja está vacía, escribí 0.</span>
+          </label>
+          {canSeeExpected && difference && (
+            <b className="text-base">{formatCashDifference(difference.cents)}</b>
+          )}
+        </section>
+
+        <section className="flex flex-col gap-2 rounded-xl border border-line p-4">
+          <h3 className="m-0 font-display text-lg font-extrabold">Caja transferencia</h3>
+          {canSeeExpected && expectedTransfer !== null && (
+            <div className="flex justify-between text-sm">
+              <span>Esperado</span>
+              <span className="tabular-nums">{formatArs(expectedTransfer)}</span>
+            </div>
+          )}
+          <label className="flex flex-col gap-1 text-xs font-bold text-muted">
+            Saldo real *
+            <Input
+              inputMode="numeric"
+              value={countedTransfer}
+              onChange={(event) => setCountedTransfer(event.target.value)}
+              placeholder="0"
+            />
+            <span className="font-normal text-muted">Obligatorio. Si la cuenta está vacía, escribí 0.</span>
+          </label>
+          {canSeeExpected && transferDifference && (
+            <b className="text-base">{formatCashDifference(transferDifference.cents)}</b>
+          )}
+        </section>
 
         <label className="flex flex-col gap-1 text-xs font-bold text-muted">
           Nota de cierre <span className="font-normal">(opcional)</span>
@@ -98,8 +135,9 @@ export function CloseCashDialog({
           <span className="self-end font-normal text-muted">{note.length}/200</span>
         </label>
 
-        <p className="m-0 text-[13px] text-muted">Las transferencias no se cuentan: se ven en el banco.</p>
-        {invalid && counted.trim() !== "" && <p className="m-0 text-[13px] text-danger">Ingresá un monto entero.</p>}
+        {(counted.trim() !== "" && cents === null) || (countedTransfer.trim() !== "" && transferCents === null) ? (
+          <p className="m-0 text-[13px] text-danger">Ingresá montos enteros en las dos cajas.</p>
+        ) : null}
         {error && <Notice tone="error">{error}</Notice>}
 
         <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
@@ -108,7 +146,7 @@ export function CloseCashDialog({
           </Button>
           <Button
             type="button"
-            disabled={mutation.isPending || invalid}
+            disabled={mutation.isPending || invalid || transferInvalid}
             onClick={() => void save()}
             className="min-h-12 rounded-xl bg-danger px-5 text-[15px] hover:bg-danger/90"
           >
