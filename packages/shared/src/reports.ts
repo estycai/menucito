@@ -545,6 +545,10 @@ export interface CashReportOpen {
   transferSalesCount: number;
   /** Removed without `stats.amounts`. */
   transferSalesCents?: number;
+  /** Balance of the account at the opening. Masked without `cash.expected`. */
+  openingTransferCents?: number;
+  /** Expected in the account now. Masked without `cash.expected`. */
+  transferCents?: number;
   onTheStreet: { ordersCents?: number; changeCents?: number; totalCents?: number };
 }
 
@@ -566,7 +570,13 @@ export interface CashReportKpis {
   expectedCents?: number;
   /** Masked without `cash.expected`. */
   countedCents?: number;
-  /** Closed sessions with difference 0. Masked without `cash.expected`: it tells whether a close was right. */
+  /** Closed sessions only. Masked without `cash.expected`. */
+  transferDifferenceCents?: number;
+  /** Masked without `cash.expected`. */
+  transferExpectedCents?: number;
+  /** Masked without `cash.expected`. */
+  transferCountedCents?: number;
+  /** Closed sessions with both differences 0. Masked without `cash.expected`: it tells whether a close was right. */
   balanced?: number;
 }
 
@@ -584,6 +594,8 @@ export interface CashShiftRow {
   expenseCents?: number;
   /** Closed sessions only. Masked without `cash.expected`. */
   differenceCents?: number;
+  /** Closed sessions only. Masked without `cash.expected`. */
+  transferDifferenceCents?: number;
 }
 
 export interface CashMethodReportRow {
@@ -629,6 +641,12 @@ export interface CashSessionReportRow {
   countedCashCents?: number;
   /** Masked without `cash.expected`. */
   differenceCents?: number;
+  /** Masked without `cash.expected`. */
+  expectedTransferCents?: number;
+  /** Masked without `cash.expected`. */
+  countedTransferCents?: number;
+  /** Masked without `cash.expected`. */
+  transferDifferenceCents?: number;
 }
 
 export interface CashWidgets {
@@ -664,16 +682,47 @@ export function maskCashReportWidgets(widgets: CashWidgets): CashWidgets {
   const { open, kpis, by_shift, sessions, ...rest } = widgets;
   return {
     ...rest,
-    ...(open && { open: without(open, "openingCashCents", "cashIncomeCents", "cashExpenseCents", "cashCents") }),
-    ...(kpis && { kpis: without(kpis, "expectedCents", "countedCents", "differenceCents", "balanced") }),
+    ...(open && {
+      open: without(
+        open,
+        "openingCashCents",
+        "cashIncomeCents",
+        "cashExpenseCents",
+        "cashCents",
+        "openingTransferCents",
+        "transferCents",
+      ),
+    }),
+    ...(kpis && {
+      kpis: without(
+        kpis,
+        "expectedCents",
+        "countedCents",
+        "differenceCents",
+        "transferExpectedCents",
+        "transferCountedCents",
+        "transferDifferenceCents",
+        "balanced",
+      ),
+    }),
     ...(by_shift && {
       by_shift: {
-        rows: by_shift.rows.map((row) => without(row, "differenceCents")),
-        total: without(by_shift.total, "differenceCents"),
+        rows: by_shift.rows.map((row) => without(row, "differenceCents", "transferDifferenceCents")),
+        total: without(by_shift.total, "differenceCents", "transferDifferenceCents"),
       },
     }),
     ...(sessions && {
-      sessions: sessions.map((row) => without(row, "expectedCashCents", "countedCashCents", "differenceCents")),
+      sessions: sessions.map((row) =>
+        without(
+          row,
+          "expectedCashCents",
+          "countedCashCents",
+          "differenceCents",
+          "expectedTransferCents",
+          "countedTransferCents",
+          "transferDifferenceCents",
+        ),
+      ),
     }),
   };
 }

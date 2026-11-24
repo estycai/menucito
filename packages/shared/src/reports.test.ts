@@ -186,6 +186,8 @@ describe("maskCashReportWidgets (16c blind close)", () => {
         cashCents: 155,
         transferSalesCount: 1,
         transferSalesCents: 200,
+        openingTransferCents: 80,
+        transferCents: 280,
         onTheStreet: { totalCents: 30 },
       },
       kpis: {
@@ -199,11 +201,14 @@ describe("maskCashReportWidgets (16c blind close)", () => {
         differenceCents: 0,
         expectedCents: 155,
         countedCents: 155,
+        transferDifferenceCents: 0,
+        transferExpectedCents: 280,
+        transferCountedCents: 280,
         balanced: 1,
       },
       by_shift: {
-        rows: [{ shift: "off", label: "Fuera de horario", sessions: 1, orders: 3, percent: 100, differenceCents: 0 }],
-        total: { shift: "", label: "Total", sessions: 1, orders: 3, percent: 100, differenceCents: 0 },
+        rows: [{ shift: "off", label: "Fuera de horario", sessions: 1, orders: 3, percent: 100, differenceCents: 0, transferDifferenceCents: 0 }],
+        total: { shift: "", label: "Total", sessions: 1, orders: 3, percent: 100, differenceCents: 0, transferDifferenceCents: 0 },
       },
       sessions: [
         {
@@ -218,17 +223,29 @@ describe("maskCashReportWidgets (16c blind close)", () => {
           expectedCashCents: 155,
           countedCashCents: 155,
           differenceCents: 0,
+          expectedTransferCents: 280,
+          countedTransferCents: 280,
+          transferDifferenceCents: 0,
         },
       ],
     });
 
     expect(masked.open).not.toHaveProperty("cashCents");
+    expect(masked.open).not.toHaveProperty("openingTransferCents");
+    expect(masked.open).not.toHaveProperty("transferCents");
     expect(masked.kpis).not.toHaveProperty("balanced");
     expect(masked.open?.cashSalesCents).toBe(100);
     expect(masked.kpis).not.toHaveProperty("differenceCents");
     expect(masked.kpis).not.toHaveProperty("expectedCents");
+    expect(masked.kpis).not.toHaveProperty("transferDifferenceCents");
+    expect(masked.kpis).not.toHaveProperty("transferExpectedCents");
+    expect(masked.kpis).not.toHaveProperty("transferCountedCents");
     expect(masked.by_shift?.rows[0]).not.toHaveProperty("differenceCents");
+    expect(masked.by_shift?.rows[0]).not.toHaveProperty("transferDifferenceCents");
     expect(masked.sessions?.[0]).not.toHaveProperty("expectedCashCents");
     expect(masked.sessions?.[0]).not.toHaveProperty("countedCashCents");
+    expect(masked.sessions?.[0]).not.toHaveProperty("expectedTransferCents");
+    expect(masked.sessions?.[0]).not.toHaveProperty("countedTransferCents");
+    expect(masked.sessions?.[0]).not.toHaveProperty("transferDifferenceCents");
   });
 });

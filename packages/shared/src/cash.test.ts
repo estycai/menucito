@@ -11,6 +11,7 @@ import {
   formatCashDifference,
   groupCashMovements,
   maskCashTotals,
+  openCashSessionSchema,
   settleOrdersSchema,
   type CashSession,
 } from "./cash";
@@ -19,10 +20,14 @@ const session: CashSession = {
   id: "s1",
   openedAt: 0,
   openingCashCents: 20_000_000,
+  openingTransferCents: 0,
   closedAt: null,
   countedCashCents: null,
   expectedCashCents: null,
   differenceCents: null,
+  countedTransferCents: null,
+  expectedTransferCents: null,
+  transferDifferenceCents: null,
   closeNote: null,
   openedByName: "Ana",
   closedByName: null,
@@ -32,6 +37,7 @@ describe("computeCashTotals", () => {
   it("matches the competition example (scenario 38)", () => {
     const totals = computeCashTotals({
       openingCashCents: 35_500_000,
+      openingTransferCents: 0,
       sales: [{ method: "cash", amountCents: 132_432_300 }],
       movements: [
         { method: "cash", kind: "income", amountCents: 20_870_000 },
@@ -46,6 +52,7 @@ describe("computeCashTotals", () => {
   it("keeps transfer sales without the tip and shows tips in their own row (scenario 17)", () => {
     const totals = computeCashTotals({
       openingCashCents: 0,
+      openingTransferCents: 0,
       sales: [{ method: "transfer", amountCents: 900_000, tipCents: 50_000 }],
       movements: [],
     });
@@ -58,6 +65,7 @@ describe("computeCashTotals", () => {
   it("counts split incomes, change and ignores voided movements", () => {
     const totals = computeCashTotals({
       openingCashCents: 100_000,
+      openingTransferCents: 0,
       sales: [{ method: "cash", amountCents: 200_000 }],
       movements: [
         { method: "cash", kind: "order_split_income", amountCents: 50_000 },
@@ -76,6 +84,7 @@ describe("computeCashTotals", () => {
   it("masks the expected and the cash totals for a blind close", () => {
     const totals = computeCashTotals({
       openingCashCents: 100_000,
+      openingTransferCents: 0,
       sales: [{ method: "cash", amountCents: 200_000 }],
       movements: [{ method: "cash", kind: "income", amountCents: 50_000 }],
     });
@@ -83,13 +92,42 @@ describe("computeCashTotals", () => {
     expect(masked.cash.salesCents).toBe(200_000);
     expect(masked.cash.openingCents).toBeNull();
     expect(masked.cash.totalCents).toBeNull();
+    expect(masked.transfer.openingCents).toBeNull();
+    expect(masked.transfer.totalCents).toBeNull();
     expect(masked.expectedCashCents).toBeNull();
+    expect(masked.expectedTransferCents).toBeNull();
     expect(masked.consolidatedCents).toBeNull();
+  });
+
+  it("adds the transfer opening to the expected in the account", () => {
+    const totals = computeCashTotals({
+      openingCashCents: 0,
+      openingTransferCents: 200_000,
+      sales: [{ method: "transfer", amountCents: 300_000, tipCents: 10_000 }],
+      movements: [
+        { method: "transfer", kind: "income", amountCents: 50_000 },
+        { method: "transfer", kind: "expense", amountCents: 20_000 },
+      ],
+    });
+    expect(totals.transfer.openingCents).toBe(200_000);
+    expect(totals.expectedTransferCents).toBe(540_000);
+    expect(totals.expectedCashCents).toBe(0);
+    expect(totals.consolidatedCents).toBe(540_000);
   });
 
   it("rebuilds the totals of a closed session from its snapshot", () => {
     const totals = cashTotalsFromSnapshot(
-      { ...session, openingCashCents: 0, closedAt: 10, expectedCashCents: 330_000, countedCashCents: 335_000 },
+      {
+        ...session,
+        openingCashCents: 0,
+        openingTransferCents: 100_000,
+        closedAt: 10,
+        expectedCashCents: 330_000,
+        countedCashCents: 335_000,
+        expectedTransferCents: 210_000,
+        countedTransferCents: 205_000,
+        transferDifferenceCents: -5_000,
+      },
       [
         {
           method: "cash",
@@ -116,8 +154,10 @@ describe("computeCashTotals", () => {
       ],
     );
     expect(totals.expectedCashCents).toBe(330_000);
+    expect(totals.expectedTransferCents).toBe(210_000);
     expect(totals.cash.totalCents).toBe(330_000);
-    expect(totals.transfer.totalCents).toBe(110_000);
+    expect(totals.transfer.openingCents).toBe(100_000);
+    expect(totals.transfer.totalCents).toBe(210_000);
     expect(totals.salesCents).toBe(400_000);
   });
 });
@@ -155,9 +195,18 @@ describe("14b schemas", () => {
   });
 
   it("accepts counted 0, deduplicates order ids and requires at least one", () => {
-    expect(closeCashSessionSchema.safeParse({ countedCashCents: 0 }).success).toBe(true);
+    expect(closeCashSessionSchema.safeParse({ countedCashCents: 0, countedTransferCents: 0 }).success).toBe(true);
+    expect(closeCashSessionSchema.safeParse({ countedCashCents: 0 }).success).toBe(false);
+    expect(closeCashSessionSchema.safeParse({ countedCashCents: 0, countedTransferCents: -1 }).success).toBe(false);
     expect(settleOrdersSchema.parse({ orderIds: ["o1", "o1", "o2"] }).orderIds).toEqual(["o1", "o2"]);
     expect(settleOrdersSchema.safeParse({ orderIds: [] }).success).toBe(false);
+  });
+
+  it("requires both openings, and 0 is a valid transfer opening", () => {
+    expect(openCashSessionSchema.safeParse({ openingCashCents: 0, openingTransferCents: 0 }).success).toBe(true);
+    expect(openCashSessionSchema.safeParse({ openingCashCents: 0 }).success).toBe(false);
+    expect(openCashSessionSchema.safeParse({ openingCashCents: 0, openingTransferCents: -1 }).success).toBe(false);
+    expect(closeCashSessionSchema.safeParse({ countedCashCents: 0, countedTransferCents: 0.5 }).success).toBe(false);
   });
 });
 

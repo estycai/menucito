@@ -47,6 +47,7 @@ export const CASH_HISTORY_PAGE_SIZE_MAX = 50;
 
 export const CASH_MESSAGES = {
   openingInvalid: "Ingresá un monto inicial entero, en pesos",
+  openingTransferInvalid: "Ingresá un monto inicial de transferencia entero, en pesos",
   amountInvalid: "Ingresá un monto entero mayor a $0",
   splitAmounts: "Cargá cuánto va en efectivo y cuánto por transferencia",
   splitBothPositive: "Las dos partes de un pago dividido tienen que ser mayores a $0",
@@ -55,6 +56,7 @@ export const CASH_MESSAGES = {
   commentTooLong: `El comentario puede tener hasta ${CASH_COMMENT_MAX_LENGTH} caracteres`,
   commentRequired: "El comentario es obligatorio",
   closedCountedInvalid: "Ingresá el efectivo contado, aunque sea 0",
+  closedTransferInvalid: "Ingresá el saldo real de transferencia, aunque sea 0",
   noteTooLong: `La nota puede tener hasta ${CASH_CLOSE_NOTE_MAX_LENGTH} caracteres`,
   orderIdsRequired: "Elegí al menos un pedido",
   changeInvalid: "Ingresá un monto de cambio entero, puede ser 0",
@@ -67,6 +69,7 @@ const moneyCents = (message: string) => z.number(message).int(message).min(0, me
 /** Body of `POST /api/cash-sessions`. */
 export const openCashSessionSchema = z.object({
   openingCashCents: moneyCents(CASH_MESSAGES.openingInvalid),
+  openingTransferCents: moneyCents(CASH_MESSAGES.openingTransferInvalid),
 });
 
 export type OpenCashSessionInput = z.infer<typeof openCashSessionSchema>;
@@ -132,6 +135,7 @@ export type UpdateCashMovementInput = z.infer<typeof updateCashMovementSchema>;
 /** Body of `POST /api/cash-sessions/current/close`. */
 export const closeCashSessionSchema = z.object({
   countedCashCents: moneyCents(CASH_MESSAGES.closedCountedInvalid),
+  countedTransferCents: moneyCents(CASH_MESSAGES.closedTransferInvalid),
   note: z.string().trim().max(CASH_CLOSE_NOTE_MAX_LENGTH, CASH_MESSAGES.noteTooLong).optional(),
 });
 
@@ -192,7 +196,7 @@ export interface CashMovementTotalInput {
 }
 
 export interface CashMethodTotals {
-  /** Only cash has an opening amount; `null` when the member may not see the expected. */
+  /** The amount the drawer (cash) or the account (transfer) started with; `null` when the member may not see the expected. */
   openingCents: number | null;
   salesCount: number;
   salesCents: number;
@@ -202,7 +206,7 @@ export interface CashMethodTotals {
   expenseCents: number | null;
   tipCount: number;
   tipCents: number;
-  /** Cash: the expected in the drawer. Transfer: sales + tips + incomes − expenses. */
+  /** Cash: the expected in the drawer. Transfer: the expected in the account. `null` when masked. */
   totalCents: number | null;
 }
 
@@ -216,10 +220,13 @@ export interface CashTotals {
   consolidatedCents: number | null;
   /** `null` when the member may not see the expected (blind close). */
   expectedCashCents: number | null;
+  /** `null` when the member may not see the expected (blind close). */
+  expectedTransferCents: number | null;
 }
 
 export interface CashTotalsInput {
   openingCashCents: number;
+  openingTransferCents: number;
   sales: readonly CashSale[];
   movements: readonly CashMovementTotalInput[];
 }
@@ -246,9 +253,14 @@ function emptyMethodTotals(openingCents: number): CashMethodTotals {
  * Totals of a cash session, by method. Cancelled orders and voided movements must already be left
  * out by the caller. Split orders do not come as sales: they arrive as `order_split_income` rows.
  */
-export function computeCashTotals({ openingCashCents, sales, movements }: CashTotalsInput): CashTotals {
+export function computeCashTotals({
+  openingCashCents,
+  openingTransferCents,
+  sales,
+  movements,
+}: CashTotalsInput): CashTotals {
   const cash = emptyMethodTotals(Math.max(0, Math.round(openingCashCents)));
-  const transfer = emptyMethodTotals(0);
+  const transfer = emptyMethodTotals(Math.max(0, Math.round(openingTransferCents)));
 
   for (const sale of sales) {
     const amount = Math.max(0, Math.round(sale.amountCents));
@@ -281,7 +293,11 @@ export function computeCashTotals({ openingCashCents, sales, movements }: CashTo
 
   cash.totalCents = (cash.openingCents ?? 0) + cash.salesCents + (cash.incomeCents ?? 0) - (cash.expenseCents ?? 0);
   transfer.totalCents =
-    transfer.salesCents + transfer.tipCents + (transfer.incomeCents ?? 0) - (transfer.expenseCents ?? 0);
+    (transfer.openingCents ?? 0) +
+    transfer.salesCents +
+    transfer.tipCents +
+    (transfer.incomeCents ?? 0) -
+    (transfer.expenseCents ?? 0);
 
   return {
     cash,
@@ -290,6 +306,7 @@ export function computeCashTotals({ openingCashCents, sales, movements }: CashTo
     salesCents: cash.salesCents + transfer.salesCents,
     consolidatedCents: (cash.totalCents ?? 0) + (transfer.totalCents ?? 0),
     expectedCashCents: cash.totalCents,
+    expectedTransferCents: transfer.totalCents,
   };
 }
 
@@ -304,8 +321,16 @@ export function maskCashTotals(totals: CashTotals): CashTotals {
       expenseCents: null,
       totalCents: null,
     },
+    transfer: {
+      ...totals.transfer,
+      openingCents: null,
+      incomeCents: null,
+      expenseCents: null,
+      totalCents: null,
+    },
     consolidatedCents: null,
     expectedCashCents: null,
+    expectedTransferCents: null,
   };
 }
 
@@ -432,10 +457,14 @@ export interface CashSession {
   id: string;
   openedAt: number;
   openingCashCents: number;
+  openingTransferCents: number;
   closedAt: number | null;
   countedCashCents: number | null;
   expectedCashCents: number | null;
   differenceCents: number | null;
+  countedTransferCents: number | null;
+  expectedTransferCents: number | null;
+  transferDifferenceCents: number | null;
   closeNote: string | null;
   openedByName: string;
   closedByName: string | null;
@@ -511,6 +540,8 @@ export interface CashCurrent {
   movements: CashMovement[];
   /** Counted at the previous close, or 0. */
   openingSuggestionCents: number;
+  /** Balance of the account at the previous close, or 0. */
+  openingTransferSuggestionCents: number;
   chargedWithoutCashToday: { count: number; totalCents: number };
   toSettle: CashSettlementGroup[];
   courierAccounts: CashCourierAccount[];
@@ -580,7 +611,7 @@ export function cashTotalsFromSnapshot(
   const rowFor = (method: CashMethod): CashMethodTotals => {
     const row = rows.find((candidate) => candidate.method === method);
     return {
-      openingCents: method === "cash" ? session.openingCashCents : 0,
+      openingCents: method === "cash" ? session.openingCashCents : session.openingTransferCents,
       salesCount: row?.salesCount ?? 0,
       salesCents: row?.salesCents ?? 0,
       incomeCount: row?.incomeCount ?? 0,
@@ -595,7 +626,12 @@ export function cashTotalsFromSnapshot(
   const cash = rowFor("cash");
   const transfer = rowFor("transfer");
   cash.totalCents = (cash.openingCents ?? 0) + cash.salesCents + (cash.incomeCents ?? 0) - (cash.expenseCents ?? 0);
-  transfer.totalCents = transfer.salesCents + transfer.tipCents + (transfer.incomeCents ?? 0) - (transfer.expenseCents ?? 0);
+  transfer.totalCents =
+    (transfer.openingCents ?? 0) +
+    transfer.salesCents +
+    transfer.tipCents +
+    (transfer.incomeCents ?? 0) -
+    (transfer.expenseCents ?? 0);
   return {
     cash,
     transfer,
@@ -603,5 +639,6 @@ export function cashTotalsFromSnapshot(
     salesCents: cash.salesCents + transfer.salesCents,
     consolidatedCents: (cash.totalCents ?? 0) + (transfer.totalCents ?? 0),
     expectedCashCents: session.expectedCashCents ?? cash.totalCents,
+    expectedTransferCents: session.expectedTransferCents ?? transfer.totalCents,
   };
 }
